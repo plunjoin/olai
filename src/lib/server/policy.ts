@@ -1,0 +1,46 @@
+import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
+import { DEFAULT_SETTINGS, type MediaKind } from '../types';
+
+export function env(name: string, fallback = ''): string {
+  return process.env[name] ?? import.meta.env[name] ?? fallback;
+}
+export function dailyLimit(loggedIn: boolean): number {
+  const raw = env(loggedIn ? 'USER_DAILY_GENERATION_LIMIT' : 'GUEST_DAILY_GENERATION_LIMIT', loggedIn ? '15' : '1');
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('每日额度环境变量必须是非负整数。');
+  return Number(raw);
+}
+export function dayKey(now = Date.now()): string {
+  return new Date(now + 8 * 3600_000).toISOString().slice(0, 10);
+}
+export const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+export class ClientIPError extends Error {}
+export function clientIP(request: Request, address: string): string {
+  // Only enable behind a proxy which replaces this header and blocks direct access.
+  const trustProxy = env('TRUST_PROXY') === 'true';
+  // The Node adapter itself reads X-Forwarded-For into clientAddress. Reject
+  // that header when untrusted so it cannot change the guest quota identity.
+  if (!trustProxy && request.headers.has('x-forwarded-for')) throw new ClientIPError('请配置可信代理后再使用转发 IP 标头。');
+  const forwarded = trustProxy ? request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() : undefined;
+  const ip = forwarded || address;
+  if (!isIP(ip)) throw new ClientIPError('无法确定客户端 IP，请检查代理配置。');
+  return ip.startsWith('::ffff:') && isIP(ip.slice(7)) === 4 ? ip.slice(7) : ip.toLowerCase();
+}
+export function sameOrigin(request: Request): boolean {
+  const origin = request.headers.get('origin');
+  return !!origin && origin === (env('SITE_ORIGIN') || new URL(request.url).origin);
+}
+export function generationKind(path: string, payload: Record<string, unknown>): MediaKind | null {
+  if (path === 'videos') return 'video';
+  if (path.startsWith('images/')) return 'image';
+  if (path.startsWith('audio/')) return 'music';
+  if (path !== 'chat/completions') throw new Error('接口路径或方法不受支持。');
+  for (const [kind, key, variable] of [
+    ['image', 'imageModel', 'AI_IMAGE_MODEL'], ['music', 'musicModel', 'AI_MUSIC_MODEL'],
+    ['video', 'videoModel', 'AI_VIDEO_MODEL'],
+  ] as const) {
+    if (payload.model === DEFAULT_SETTINGS[key] || payload.model === env(variable, DEFAULT_SETTINGS[key])) return kind;
+  }
+  if (payload.model === DEFAULT_SETTINGS.chatModel || payload.model === env('AI_CHAT_MODEL', DEFAULT_SETTINGS.chatModel)) return null;
+  throw new Error('请求的创作引擎不受支持。');
+}
