@@ -3,9 +3,12 @@ dist/
 scripts/
 .qa/
 .astro/
+.pnpm-store/
 .env
 .env.*
 !.env.example
 package-lock.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
 test-results/
 playwright-report/
