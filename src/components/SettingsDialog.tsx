@@ -5,7 +5,8 @@ import StatusBeaconSvg from './svg/StatusBeaconSvg';
 import Dialog from './ui/Dialog';
 import BrandLogoSvg from './svg/BrandLogoSvg';
 
-export default function SettingsDialog({ initial, serverKey, models, loadingModels, onClose, onSave, onRefresh }: {
+export default function SettingsDialog({ initial, serverKey, models, loadingModels, onClose, onSave, onRefresh, cloudStorage = false }: {
+  cloudStorage?: boolean;
   initial: Settings; serverKey: boolean; models: Model[]; loadingModels: boolean;
   onClose: () => void; onSave: (settings: Settings) => void; onRefresh: (key: string) => Promise<void>;
 }) {
@@ -21,7 +22,7 @@ export default function SettingsDialog({ initial, serverKey, models, loadingMode
         <button className="secondary-button" disabled={loadingModels} onClick={() => void onRefresh(draft.key)}>{loadingModels ? '正在连接…' : '检查连接'}</button>
       </div>
       <div className="settings-section"><h3>对话偏好</h3><label className="field-label">希望助手如何陪你对话<textarea rows={4} maxLength={10000} value={draft.systemPrompt} onChange={e => update('systemPrompt', e.target.value)} /></label><label className="field-label range-label">创造性 <span>{draft.temperature.toFixed(1)}</span><input type="range" min="0" max="2" step="0.1" value={draft.temperature} onChange={e => update('temperature', Number(e.target.value))} /></label></div>
-      <div className="privacy-note"><ShieldCheck size={20} /><div><strong>留住每一步灵感</strong><p>会话、作品与关联歌词保存在当前浏览器，可随时下载。</p></div></div>
+      <div className="privacy-note"><ShieldCheck size={20} /><div><strong>留住每一步灵感</strong><p>会话、作品与关联歌词保存在{cloudStorage ? '你的账号' : '当前浏览器'}，可随时下载。</p></div></div>
     </div><div className="modal-footer"><button className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" onClick={() => onSave({ ...draft, key: draft.key.trim() })}><Check size={16} />保存设置</button></div>
   </div></Dialog>;
 }

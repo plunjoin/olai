@@ -4,7 +4,9 @@ import { base64Blob, chat, generateAudio, generateImage, generateVideo, mediaOut
 import { downloadLrcBlob, generateLrcFromPrompt } from '../lib/lrc';
 import { ensurePlayableAudioBlob } from '../lib/audio';
 import { alignLyricsToAudio, readAudioDuration } from '../lib/lyricAlignment';
-import { getAll, loadSettings, put, remove, saveSettings, storageMode } from '../lib/storage';
+import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, storageMode } from '../lib/storage';
+import type { AccountState } from '../lib/account';
+import AccountDialog from './AccountDialog';
 import { DEFAULT_SETTINGS, type Asset, type Conversation, type MediaKind, type Model, type Settings, type View } from '../lib/types';
 import { composeSong, parseSong, songLyrics, sungLines } from '../lib/music';
 import { imageDimensions } from '../lib/generation';
@@ -85,6 +87,8 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
   });
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [account, setAccount] = useState<AccountState>({ user: null, generationLimit: 1 });
+  const [accountOpen, setAccountOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('olai.sidebar');
@@ -112,13 +116,19 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
     return '';
   });
   const [ready, setReady] = useState(false); const [chatBusy, setChatBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [models, setModels] = useState<Model[]>([]); const [modelsLoading, setModelsLoading] = useState(false); const [connected, setConnected] = useState(false);
   const [toast, setToast] = useState(''); const [sessionSearch, setSessionSearch] = useState(''); const [searchOpen, setSearchOpen] = useState(false);
   const assetsRef = useRef<Asset[]>([]); const conversationsRef = useRef<Conversation[]>([]); const settingsRef = useRef(settings);
   const chatController = useRef<AbortController | null>(null); const jobs = useRef(new Map<string, AbortController>()); const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const notify = useCallback((text: string) => { setToast(text); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 5000); }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const persistError = (error: unknown) => notify(`本地保存失败：${errorText(error)}。请下载重要内容并检查浏览器存储空间。`);
+  const persistError = (error: unknown) => notify(`保存失败：${errorText(error)}。请下载重要内容备份。`);
+  const openAccount = () => {
+    if (!ready) return;
+    if (chatController.current || assetsRef.current.some(a => a.status === 'pending') || jobs.current.size || aligningIds.length) { notify('请先等待创作完成或停止当前回答，再切换账号。'); return; }
+    setAccountOpen(true);
+  };
   const saveConversation = (conversation: Conversation, persist = true) => {
     conversationsRef.current = [conversation, ...conversationsRef.current.filter(c => c.id !== conversation.id)].sort((a, b) => b.updatedAt - a.updatedAt);
     setConversations(conversationsRef.current);
@@ -169,10 +179,10 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
       }
     }
 
-    const readyTimer = setTimeout(() => setReady(true), 1500);
     void (async () => {
       try {
         const saved = loadSettings(); settingsRef.current = saved; setSettings(saved);
+        const accountState = await initializeStorage(); setAccount(accountState);
         const [chats, works] = await Promise.all([getAll<Conversation>('conversations'), getAll<Asset>('assets')]);
         const restored = (chats || []).map(c => ({
           ...c,
@@ -193,11 +203,10 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         const recovered = (works || []).map(a => a && a.status === 'pending' && !(a.kind === 'video' && a.remoteId) ? { ...a, status: 'failed' as const, error: '上次请求被中断，请点击重试。' } : a).filter(Boolean).sort((a, b) => b.createdAt - a.createdAt);
         assetsRef.current = recovered; setAssets(recovered);
         await Promise.all(recovered.filter(a => a.status === 'failed').map(a => put('assets', a)));
-      } catch (error) { notify(`读取本地数据失败：${errorText(error)}`); }
-      finally { clearTimeout(readyTimer); setReady(true); }
+        setReady(true);
+      } catch (error) { const message = `读取数据失败：${errorText(error)}`; setLoadError(message); notify(message); }
     })();
     return () => {
-      clearTimeout(readyTimer);
       window.removeEventListener('popstate', onLocationChange);
       window.removeEventListener('hashchange', onLocationChange);
       chatController.current?.abort();
@@ -259,7 +268,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
   };
   const deleteConversation = async (conversation: Conversation) => {
     if (chatBusy) { notify('请先停止回答，再删除会话。'); return; }
-    if (!await confirm('删除这段会话？', `「${conversation.title}」和其中的消息将从此浏览器删除，此操作无法撤销。`)) return;
+    if (!await confirm('删除这段会话？', `「${conversation.title}」和其中的消息将从${account.user ? '你的账号' : '此浏览器'}删除，此操作无法撤销。`)) return;
     if (chatController.current) { notify('请先停止回答，再删除会话。'); return; }
     try {
       await remove('conversations', conversation.id);
@@ -475,7 +484,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
     } catch (error) { await saveAsset({ ...asset, status: 'failed', coverStatus: undefined, error: errorText(error) }); notify(errorText(error)); }
   };
   const deleteAsset = async (id: string) => {
-    if (!await confirm('删除这件作品？', '作品及关联歌词将从此浏览器删除。建议先下载备份，此操作无法撤销。')) return;
+    if (!await confirm('删除这件作品？', `作品及关联歌词将从${account.user ? '你的账号' : '此浏览器'}删除。建议先下载备份，此操作无法撤销。`)) return;
     try {
       jobs.current.get(`lyrics:${id}`)?.abort();
       jobs.current.get(`cover:${id}`)?.abort();
@@ -603,10 +612,11 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         <div className="local-storage-note">
           <ShieldCheck size={15} />
           <div>
-            创作数据，本地安全
-            <small>{ready && storageMode === 'localstorage' ? '本地缓存持久化' : '隐私驻留于浏览器'}</small>
+            {account.user ? '创作记录，账号保存' : '创作数据，本地保存'}
+            <small>{account.user ? '在其他设备继续灵感' : ready && storageMode === 'localstorage' ? '本地缓存持久化' : '隐私驻留于浏览器'}</small>
           </div>
         </div>
+        <button className="account-button secondary-button" disabled={!ready} onClick={openAccount}>{account.user ? account.user.email : '登录 / 注册'}<small>各 {account.generationLimit} 次 / 天 · 对话不限</small></button>
         <button className="profile-button" onClick={() => { setSettingsOpen(true); if (typeof window !== 'undefined' && window.innerWidth <= 768) setSidebarOpen(false); }}>
           <span className="profile-avatar"><BrandLogoSvg size={30} /></span>
           <span>我的小o<small>连接与创作偏好</small></span>
@@ -631,6 +641,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
           <span>{label}</span>
         </div>
         <div className="topbar-actions">
+          <button className="topbar-settings" disabled={!ready} onClick={openAccount}><span>{account.user ? '我的账号' : '登录 / 注册'}</span></button>
           <StatusBeaconSvg connected={connected} modelCount={models.length} loading={modelsLoading} />
           <button className="topbar-settings" onClick={() => setSettingsOpen(true)}>
             <SettingsIcon size={15} />
@@ -643,12 +654,14 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         <div className="loading-workspace">
           <Companion size={100} animated />
           <span className="loading-track"><i /></span>
-          <p>正在准备你的创作空间…</p>
+          <p>{loadError || '正在准备你的创作空间…'}</p>
+          {loadError && <button className="secondary-button" onClick={() => window.location.reload()}>重新加载</button>}
         </div>
       ) : (
         <>
           {view !== 'library' && (
             <ChatWorkspace
+              cloudStorage={!!account.user}
               conversation={active}
               busy={chatBusy}
               onSend={text => void sendMessage(text)}
@@ -698,6 +711,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
     </main>
     {settingsOpen && (
       <SettingsDialog
+        cloudStorage={!!account.user}
         initial={settings}
         serverKey={serverKey}
         models={models}
@@ -707,6 +721,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         onRefresh={refreshModels}
       />
     )}
+    {accountOpen && <AccountDialog account={account} onClose={() => setAccountOpen(false)} />}
     {toast && (
       <div className="toast" role="status">
         <CircleAlert size={17} />

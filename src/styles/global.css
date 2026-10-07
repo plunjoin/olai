@@ -4340,4 +4340,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
   border-color: var(--accent-lime);
   box-shadow: 0 6px 20px rgba(112, 71, 235, 0.18);
 }
-
+/* Account access remains visible in the sidebar and on compact layouts. */
+.app-dialog.account-modal { width: min(440px, calc(100vw - 32px)); overflow: auto; }
+.account-dialog { padding: 24px; }
+.account-dialog .modal-heading { padding: 0 0 16px; margin-bottom: 16px; }
+.account-dialog .field-label { margin-top: 16px; }
+.account-dialog .modal-footer { padding: 20px 0 0; gap: 10px; flex-wrap: wrap; }
+.account-email { overflow-wrap: anywhere; font-weight: 600; }
+.account-button { width: 100%; flex-direction: column; overflow-wrap: anywhere; margin-bottom: 10px; font-size: 12px; }
+.account-button small { font-size: 10px; color: var(--text-secondary, #68748b); }
