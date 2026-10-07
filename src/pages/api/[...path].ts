@@ -1,21 +1,28 @@
 import type { APIRoute } from 'astro';
 import { DEFAULT_SETTINGS } from '../../lib/types';
+import { db, VideoJob, eq } from 'astro:db';
+import { currentUser } from '../../lib/server/auth';
+import { ClientIPError, clientIP, dailyLimit, generationKind, hash, sameOrigin } from '../../lib/server/policy';
+import { reserveGeneration } from '../../lib/server/quota';
 
 export const prerender = false;
 const allowed = /^(models|chat\/completions|images\/[a-zA-Z0-9_-]+|audio\/[a-zA-Z0-9_-]+|videos(?:\/[a-zA-Z0-9_-]+(?:\/content)?)?)$/;
 
-export const ALL: APIRoute = async ({ request, params }) => {
+export const ALL: APIRoute = async context => {
+  const { request, params } = context;
   const path = params.path ?? '';
   if (!allowed.test(path) || !['GET', 'POST'].includes(request.method)) {
     return Response.json({ error: { message: '接口路径或方法不受支持。' } }, { status: 404 });
   }
+  if ((request.method === 'GET') !== (path === 'models' || path.startsWith('videos/'))) {
+    return Response.json({ error: { message: '接口路径或方法不受支持。' } }, { status: 405 });
+  }
+  if (request.method === 'POST' && !sameOrigin(request)) return Response.json({ error: { message: '不允许跨站调用。' } }, { status: 403 });
 
   const origin = request.headers.get('origin');
   if (origin) {
     try {
-      const originHost = new URL(origin).host;
-      const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || new URL(request.url).host;
-      if (originHost !== host && origin !== new URL(request.url).origin) {
+      if (!sameOrigin(request)) {
         return Response.json({ error: { message: '不允许跨站调用。' } }, { status: 403 });
       }
     } catch {
@@ -28,8 +35,18 @@ export const ALL: APIRoute = async ({ request, params }) => {
   if (!key) return Response.json({ error: { message: '请先在设置中填写 API Key，或由部署者配置服务端密钥。' } }, { status: 401 });
   const base = (process.env.AI_API_BASE_URL || import.meta.env.AI_API_BASE_URL || 'https://ai.bllii.com/v1').replace(/\/$/, '');
   const timeout = AbortSignal.timeout(180_000);
+  let upstreamStarted = false;
 
   try {
+    let owner = '';
+    if (request.method === 'POST' || path.startsWith('videos/')) {
+      const user = await currentUser(context);
+      owner = user ? `user:${user.id}` : `ip:${hash(clientIP(request, context.clientAddress))}`;
+      if (path.startsWith('videos/')) {
+        const [job] = await db.select().from(VideoJob).where(eq(VideoJob.id, path.split('/')[1])).limit(1);
+        if (!job || job.owner !== owner) return Response.json({ error: { message: '视频任务不存在。' } }, { status: 404 });
+      }
+    }
     const upstreamHeaders: Record<string, string> = {
       Authorization: key,
       Accept: request.headers.get('accept') || '*/*',
@@ -46,6 +63,18 @@ export const ALL: APIRoute = async ({ request, params }) => {
         } catch {
           return Response.json({ error: { message: '请求内容需要是有效的 JSON 对象。' } }, { status: 400 });
         }
+        let kind;
+        try { kind = generationKind(path, payload); }
+        catch { return Response.json({ error: { message: '请求的创作引擎不受支持。' } }, { status: 400 }); }
+        if (kind) {
+          const limit = dailyLimit(owner.startsWith('user:'));
+          if (!await reserveGeneration(owner, kind, limit)) {
+            const label = { image: '图片', music: '音乐', video: '视频' }[kind];
+            return Response.json({ error: { message: `今日${label}生成额度已用完（每天 ${limit} 次）。${owner.startsWith('ip:') ? '登录后可使用账号额度。' : '请北京时间零点后再试。'}` } }, { status: 429 });
+          }
+          // Each submitted request creates one output, regardless of client input.
+          if ('n' in payload) payload.n = 1;
+        }
         const aliases: Record<string, string | undefined> = {
           [DEFAULT_SETTINGS.chatModel]: process.env.AI_CHAT_MODEL || import.meta.env.AI_CHAT_MODEL,
           [DEFAULT_SETTINGS.imageModel]: process.env.AI_IMAGE_MODEL || import.meta.env.AI_IMAGE_MODEL,
@@ -56,8 +85,10 @@ export const ALL: APIRoute = async ({ request, params }) => {
         body = JSON.stringify(payload);
         upstreamHeaders['Content-Type'] = request.headers.get('content-type') || 'application/json';
       }
+      if (!body) return Response.json({ error: { message: '请求内容不能为空。' } }, { status: 400 });
     }
 
+    upstreamStarted = true;
     const upstream = await fetch(`${base}/${path}`, {
       method: request.method,
       headers: upstreamHeaders,
@@ -71,8 +102,19 @@ export const ALL: APIRoute = async ({ request, params }) => {
       'X-Accel-Buffering': 'no',
       'X-Content-Type-Options': 'nosniff',
     });
+    if (path === 'videos' && upstream.ok) {
+      const video = await upstream.json();
+      if (typeof video.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(video.id)) return Response.json({ error: { message: '服务未返回有效视频任务。' } }, { status: 502 });
+      await db.insert(VideoJob).values({ id: video.id, owner, createdAt: Date.now() });
+      return Response.json(video, { status: upstream.status, headers });
+    }
     return new Response(upstream.body, { status: upstream.status, headers });
   } catch (error) {
+    if (error instanceof ClientIPError) return Response.json({ error: { message: error.message } }, { status: 400 });
+    if (!upstreamStarted) {
+      console.error('Generation policy failed:', error);
+      return Response.json({ error: { message: '账号或额度服务暂不可用，请稍后重试。' } }, { status: 503 });
+    }
     const message = timeout.aborted ? '上游请求超时，请稍后重试。' : error instanceof Error && error.name === 'AbortError' ? '请求已停止。' : '暂时无法连接 AI 服务，请检查网络或服务配置。';
     return Response.json({ error: { message } }, { status: 502 });
   }
