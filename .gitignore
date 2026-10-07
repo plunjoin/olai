@@ -1,6 +1,7 @@
 node_modules/
 dist/
 scripts/
+tests/
 .qa/
 .astro/
 .pnpm-store/

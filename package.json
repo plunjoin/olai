@@ -6,12 +6,16 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev --host 0.0.0.0",
-    "build": "astro check && astro build",
+    "build": "astro build",
+    "build:remote": "astro build --remote",
+    "db:push": "astro db push --remote",
     "preview": "node ./dist/server/entry.mjs",
     "check": "astro check",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:accounts": "node tests/accounts.e2e.mjs"
   },
   "dependencies": {
+    "@astrojs/db": "^0.21.3",
     "@astrojs/node": "^9.4.0",
     "@astrojs/react": "^4.4.0",
     "astro": "^5.13.0",
@@ -24,18 +28,12 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
+    "@libsql/client": "^0.18.0",
+    "@playwright/test": "^1.55.0",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
-    "@playwright/test": "^1.55.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "astro",
-      "esbuild",
-      "sharp"
-    ]
   }
 }
