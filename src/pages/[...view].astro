@@ -1,7 +1,13 @@
 ---
 import Studio from '../components/Studio';
+import type { ImageEngineMode } from '../lib/types';
+import { DEFAULT_SETTINGS } from '../lib/types';
+import { videoEngineForModel } from '../lib/video';
 import '../styles/global.css';
 import '../styles/brand.css';
+const configuredImageMode = process.env.AI_IMAGE_API_MODE || import.meta.env.AI_IMAGE_API_MODE;
+const imageEngineMode: ImageEngineMode | undefined = ['auto', 'native', 'upstream', 'interactions'].includes(configuredImageMode) ? configuredImageMode as ImageEngineMode : undefined;
+const videoEngineMode = videoEngineForModel(process.env.AI_VIDEO_MODEL || import.meta.env.AI_VIDEO_MODEL || DEFAULT_SETTINGS.videoModel);
 ---
 <!doctype html>
 <html lang="zh-CN">
@@ -13,5 +19,5 @@ import '../styles/brand.css';
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Olai · Online AI Companion</title>
   </head>
-  <body><Studio client:only="react" serverKey={Boolean(import.meta.env.AI_API_KEY || process.env.AI_API_KEY)} /><noscript>请启用 JavaScript 以使用 Olai。</noscript></body>
+  <body><Studio client:only="react" serverKey={Boolean(import.meta.env.AI_API_KEY || process.env.AI_API_KEY)} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} /><noscript>请启用 JavaScript 以使用 Olai。</noscript></body>
 </html>

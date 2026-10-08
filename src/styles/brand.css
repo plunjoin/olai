@@ -85,12 +85,19 @@ input::placeholder, textarea::placeholder { color: #8b96ad; }
 .profile-button > svg { width: 15px; color: #8c98b0; margin-left: auto; }
 @media (min-width: 769px) { .main-shell { margin-left: 240px; width: calc(100% - 240px); } }
 .main-shell { min-width: 0; }
+.guest-sync-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; flex-shrink: 0; background: var(--bg-elevated); color: var(--text-secondary); font-size: 12px; }
+.guest-sync-notice span { min-width: 0; }
+.guest-sync-notice button { flex-shrink: 0; }
+.guest-sync-errors { max-height: 35vh; overflow: auto; overflow-wrap: anywhere; }
 .topbar { height: 67px; flex-shrink: 0; padding: 0 36px; background: #ffffffbd; backdrop-filter: blur(12px); border-color: var(--border-subtle); }
 .breadcrumbs { gap: 12px; font-size: 12px; color: #5b6884; }
 .topbar-brand { color: #9aa5b8; }
 .breadcrumb-slash { color: #c3cbd9; }
 .topbar-actions { gap: 20px; }
 .topbar-settings { background: white; border: 1px solid var(--border-subtle); border-radius: 9px; color: #64718a; font-size: 11px; padding: 8px 11px; }
+.topbar-github { display: inline-flex; align-items: center; justify-content: center; background: white; border: 1px solid var(--border-subtle); border-radius: 9px; color: #64718a; padding: 8px 10px; text-decoration: none; transition: all var(--transition, 0.18s cubic-bezier(0.16, 1, 0.3, 1)); }
+.topbar-github:hover { background: #ede7ff; color: #27213d; border-color: #ddd4ee; }
+.topbar-github svg { display: block; }
 .status-beacon-container, .status-beacon-container:hover { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; padding: 0; border: 0; background: transparent; box-shadow: none; color: #8a95a9; }
 .status-beacon-container.is-connected { color: #6c8291; }
 .service-dot { width: 5px; height: 5px; border-radius: 50%; background: #b4bdcd; }
@@ -244,6 +251,12 @@ input::placeholder, textarea::placeholder { color: #8b96ad; }
 .checkbox-label { font-size: 11px; color: #8090ad; gap: 8px; }
 input[type="checkbox"] { accent-color: #6379db; width: 15px; height: 15px; }
 input[type="range"] { accent-color: #6379db; }
+.video-duration { grid-column: 1 / -1; }
+.video-duration-heading, .video-duration-limits { display: flex; align-items: center; justify-content: space-between; }
+.video-duration-heading output { color: #6379db; font-variant-numeric: tabular-nums; }
+.video-duration input[type="range"] { width: 100%; min-width: 0; height: 28px; margin: 3px 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.video-duration input[type="range"]:disabled { cursor: default; }
+.video-duration-limits { color: var(--text-muted); font-size: 10px; }
 .error-text, .message-error { font-size: 11px; line-height: 1.8; padding: 10px 12px; border: 1px solid #f1d6df; background: #fff7f9; border-radius: 9px; }
 .asset-card { border-color: var(--border-subtle); border-radius: 15px; box-shadow: none; overflow: hidden; }
 .asset-card:hover { box-shadow: 0 6px 20px #475d9210; border-color: #c8d4ec; }
@@ -251,6 +264,8 @@ input[type="range"] { accent-color: #6379db; }
 .asset-info { padding: 13px 15px; }
 .asset-info p { font-size: 11px; }
 .asset-meta { font-size: 9px; color: #99a5ba; }
+.image-resolution { margin-bottom: 8px; font-size: 11px; line-height: 1.7; color: #75839b; overflow-wrap: anywhere; }
+.image-resolution-warning { margin-bottom: 10px; padding: 8px 10px; border-radius: 8px; background: #fff8e9; color: #946b26; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; }
 .asset-meta .icon-button { width: 28px; height: 28px; }
 .asset-meta > div { gap: 1px; }
 .asset-song-details { font-size: 9px; color: #95a2bb; }
@@ -525,8 +540,11 @@ input[type="range"] { accent-color: #6379db; }
   .topbar { height: 59px; padding: 0 16px; }
   .breadcrumbs { gap: 8px; font-size: 11px; }
   .topbar-brand, .breadcrumb-slash { display: none; }
+  .topbar-actions { gap: 10px; }
   .topbar-settings { font-size: 10px; padding: 7px 9px; }
   .topbar-settings > svg:last-child { display: none; }
+  .topbar-github { padding: 6px 8px; }
+  .topbar-github svg { width: 14px; height: 14px; }
   .home-page, .media-workspace, .library-page { padding: 23px 18px 26px; }
   .page-intro { flex-direction: row; align-items: center; margin-bottom: 20px; gap: 9px; }
   .page-intro h1 { font-size: 23px; }

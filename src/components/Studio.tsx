@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, CircleAlert, Command, Menu, MessageSquare, PanelLeftClose, Pencil, Plus, Search, Settings as SettingsIcon, ShieldCheck, Trash2, X } from 'lucide-react';
+import GithubSvg from './svg/GithubSvg';
 import { base64Blob, chat, generateAudio, generateImage, generateVideo, mediaOutputs, publicServiceError, request, safeMediaURL, videoContent } from '../lib/api';
 import { downloadLrcBlob, generateLrcFromPrompt } from '../lib/lrc';
 import { ensurePlayableAudioBlob } from '../lib/audio';
 import { alignLyricsToAudio, readAudioDuration } from '../lib/lyricAlignment';
-import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, storageMode } from '../lib/storage';
+import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, storageMode, syncGuestRecords } from '../lib/storage';
 import type { AccountState } from '../lib/account';
 import AccountDialog from './AccountDialog';
-import { DEFAULT_SETTINGS, type Asset, type Conversation, type MediaKind, type Model, type Settings, type View } from '../lib/types';
+import { DEFAULT_SETTINGS, type Asset, type Conversation, type ImageEngineMode, type MediaKind, type Model, type Settings, type View } from '../lib/types';
 import { composeSong, parseSong, songLyrics, sungLines } from '../lib/music';
 import { imageDimensions } from '../lib/generation';
+import { imageResolutionWarning, readImageResolution } from '../lib/imageResolution';
+import { videoEngineForModel, type VideoEngineMode } from '../lib/video';
 import BrandLogoSvg from './svg/BrandLogoSvg';
 import {
   ChatAgentSvg,
@@ -78,7 +81,7 @@ function buildUrl(targetView: View, conversationId?: string): string {
   return `/${targetView}`;
 }
 
-function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
+function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode }) {
   const { confirm, prompt, dialog } = useDialogs();
   const { activeMedia, close: closePlayer, updateLyrics, updateCover } = usePlayer();
   const [view, setView] = useState<View>(() => {
@@ -89,6 +92,10 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [account, setAccount] = useState<AccountState>({ user: null, generationLimit: 1 });
   const [accountOpen, setAccountOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncFailures, setSyncFailures] = useState<string[]>([]);
+  const syncingRef = useRef(false);
+  const importedRef = useRef({ conversations: new Set<string>(), assets: new Set<string>() });
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('olai.sidebar');
@@ -124,6 +131,33 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
   const notify = useCallback((text: string) => { setToast(text); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 5000); }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const persistError = (error: unknown) => notify(`保存失败：${errorText(error)}。请下载重要内容备份。`);
+  const runGuestSync = async (userId: string) => {
+    if (syncingRef.current) return;
+    syncingRef.current = true; setSyncing(true);
+    // Merge only newly imported records; keep edits and deletions made while uploading.
+    const knownChats = new Set(conversationsRef.current.map(c => c.id));
+    const knownAssets = new Set(assetsRef.current.map(a => a.id));
+    try {
+      const report = await syncGuestRecords(userId);
+      setSyncFailures(report.failures);
+      for (const id of report.synced.conversations) importedRef.current.conversations.add(id);
+      for (const id of report.synced.assets) importedRef.current.assets.add(id);
+      if (importedRef.current.conversations.size || importedRef.current.assets.size) {
+        const [chats, works] = await Promise.all([getAll<Conversation>('conversations'), getAll<Asset>('assets')]);
+        const newChats = chats.filter(c => importedRef.current.conversations.has(c.id) && !knownChats.has(c.id) && !conversationsRef.current.some(current => current.id === c.id));
+        conversationsRef.current = [...conversationsRef.current, ...newChats].sort((a, b) => b.updatedAt - a.updatedAt);
+        setConversations(conversationsRef.current);
+        const newWorks = works.filter(a => importedRef.current.assets.has(a.id) && !knownAssets.has(a.id) && !assetsRef.current.some(current => current.id === a.id));
+        const recovered = newWorks.map(a => a.status === 'pending' && !(a.kind === 'video' && a.remoteId) ? { ...a, status: 'failed' as const, error: '上次请求被中断，请点击重试。' } : a);
+        assetsRef.current = [...assetsRef.current, ...recovered].sort((a, b) => b.createdAt - a.createdAt);
+        setAssets(assetsRef.current);
+        importedRef.current.conversations.clear(); importedRef.current.assets.clear();
+        for (const asset of recovered) if (asset.status === 'failed') void put('assets', asset).catch(persistError);
+      }
+    } catch (error) {
+      setSyncFailures(previous => [...previous, `游客记录后台同步未完成，本地内容已保留。${error instanceof Error ? error.message : '请重试。'}`]);
+    } finally { syncingRef.current = false; setSyncing(false); }
+  };
   const openAccount = () => {
     if (!ready) return;
     if (chatController.current || assetsRef.current.some(a => a.status === 'pending') || jobs.current.size || aligningIds.length) { notify('请先等待创作完成或停止当前回答，再切换账号。'); return; }
@@ -204,6 +238,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         assetsRef.current = recovered; setAssets(recovered);
         await Promise.all(recovered.filter(a => a.status === 'failed').map(a => put('assets', a)));
         setReady(true);
+        if (accountState.user) void runGuestSync(accountState.user.id);
       } catch (error) { const message = `读取数据失败：${errorText(error)}`; setLoadError(message); notify(message); }
     })();
     return () => {
@@ -351,7 +386,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
     jobs.current.set(jobId, controller);
     const config = { ...settingsRef.current };
     try {
-      const response = await generateImage({ key: config.key, model: config.imageModel, mode: config.imageEngineMode, aspectRatio: '1:1', imageSize: '1K', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]),
+      const response = await generateImage({ key: config.key, model: config.imageModel, mode: imageEngineMode || config.imageEngineMode, aspectRatio: '1:1', imageSize: '1K', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]),
         prompt: `为原创歌曲设计一张精美的方形专辑封面，以视觉画面表达歌曲主题与情绪，构图完整，适合音乐作品展示。只生成一张封面图片。\n歌曲：${original.song?.title || original.prompt.slice(0, 100)}\n音乐风格：${original.song?.style || '根据主题设计'}\n主题灵感：${original.options.inspiration || original.prompt.slice(0, 3000)}\n歌词意象：${(original.song ? sungLines(original.song) : original.lyrics || '').slice(0, 3000)}\n无需文字，不要水印。`,
       });
       let coverUrl: string;
@@ -393,6 +428,15 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
     if (ready && (settings.key || serverKey)) for (const asset of assets) if (asset.kind === 'music' && asset.status === 'completed' && asset.coverStatus === 'pending') void generateMusicCover(asset);
   }, [ready, settings.key, serverKey, assets]);
   const saveCompletedAsset = async (asset: Asset) => {
+    let resolutionWarning: string | undefined;
+    if (asset.kind === 'image' && (asset.blob || asset.url)) {
+      try {
+        const resolution = await readImageResolution(asset.blob || asset.url!);
+        asset.imageWidth = resolution.width;
+        asset.imageHeight = resolution.height;
+        resolutionWarning = imageResolutionWarning(resolution, asset.options.image_size);
+      } catch { /* Keep the original image when its dimensions cannot be read. */ }
+    }
     if (asset.kind === 'music' && asset.song && !asset.song.instrumental && asset.blob) {
       try {
         asset.audioDuration = await readAudioDuration(asset.blob);
@@ -400,6 +444,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
       } catch { /* Keep the clearly labelled estimate if metadata cannot be read. */ }
     }
     await saveAsset(asset);
+    return resolutionWarning;
   };
   const generate = async (kind: MediaKind, prompt: string, options: Record<string, string | number>, retry?: Asset) => {
     if (!requireConnection() || !prompt.trim()) return;
@@ -420,13 +465,13 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
       }
       let response: Response;
       if (kind === 'video') {
-        response = await generateVideo({ key: config.key, model, prompt, options });
+        response = await generateVideo({ key: config.key, model, prompt, options, mode: videoEngineMode });
       } else if (kind === 'image') {
         response = await generateImage({
           key: config.key,
           model,
           prompt,
-          mode: config.imageEngineMode || 'auto',
+          mode: imageEngineMode || config.imageEngineMode || 'auto',
           size: imageDimensions(String(options.aspect_ratio || 'auto'), String(options.image_size || '1K')),
           aspectRatio: String(options.aspect_ratio || 'auto'),
           imageSize: String(options.image_size || '1K'),
@@ -450,16 +495,17 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
           extra,
         });
       }
+      let resolutionWarning: string | undefined;
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('json')) {
         const json = await response.json();
-        if (kind === 'video') {
-          if (json.status === 'failed') throw new Error('视频生成失败，请重试。');
+        if (kind === 'video' && json.status === 'failed') throw new Error(json.errors?.[0]?.message || '视频生成失败，请重试。');
+        if (kind === 'video' && (videoEngineMode || videoEngineForModel(model)) === 'task') {
           if (typeof json.id !== 'string' || !json.id || !['queued', 'pending', 'in_progress', 'processing', 'completed'].includes(json.status)) throw new Error('暂未收到视频任务，请重试或检查服务连接。');
           const task = { ...asset, remoteId: json.id }; await saveAsset(task); void pollVideo(task, config.key); return;
         }
         const outputs = mediaOutputs(json, kind);
-        if (!outputs.length) throw new Error(kind === 'music' ? '暂未收到音乐文件，请重试或检查服务连接。' : '暂未收到图片，请重试或检查服务连接。');
+        if (!outputs.length) throw new Error(kind === 'music' ? '暂未收到音乐文件，请重试或检查服务连接。' : kind === 'video' ? '暂未收到视频文件，请重试或检查服务连接。' : '暂未收到图片，请重试或检查服务连接。');
         for (let i = 0; i < outputs.length; i++) {
           const output = outputs[i]; let blob: Blob | undefined; let url: string | undefined;
           if (output.base64) blob = base64Blob(output.base64, output.mime);
@@ -469,7 +515,8 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
             try { const media = await fetch(mediaUrl, { signal: AbortSignal.timeout(20_000) }); if (media.ok) { const downloaded = await media.blob(); if (downloaded.size && (downloaded.type.startsWith('image/') || downloaded.type.startsWith('audio/') || downloaded.type.startsWith('video/') || downloaded.type === 'application/octet-stream')) { blob = kind === 'music' ? await ensurePlayableAudioBlob(downloaded) : downloaded; url = undefined; } } } catch { /* Retain remote URL when cross-origin download is unavailable. */ }
           }
           const lrc = asset.lrc;
-          await saveCompletedAsset({ ...asset, id: i ? uid() : asset.id, status: 'completed', blob, url, lrc });
+          const warning = await saveCompletedAsset({ ...asset, id: i ? uid() : asset.id, status: 'completed', blob, url, lrc });
+          resolutionWarning ||= warning;
         }
       } else {
         if (!contentType.startsWith(kind === 'image' ? 'image/' : kind === 'video' ? 'video/' : 'audio/') && !contentType.includes('octet-stream')) throw new Error('服务返回了不支持的媒体格式，请检查接口设置。');
@@ -478,9 +525,9 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
           blob = await ensurePlayableAudioBlob(blob);
         }
         const lrc = asset.lrc;
-        await saveCompletedAsset({ ...asset, status: 'completed', blob, lrc });
+        resolutionWarning = await saveCompletedAsset({ ...asset, status: 'completed', blob, lrc });
       }
-      notify('创作完成，已加入你的作品库。');
+      notify(resolutionWarning ? `${resolutionWarning} 原图已保存到作品库。` : '创作完成，已加入你的作品库。');
     } catch (error) { await saveAsset({ ...asset, status: 'failed', coverStatus: undefined, error: errorText(error) }); notify(errorText(error)); }
   };
   const deleteAsset = async (id: string) => {
@@ -641,6 +688,16 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
           <span>{label}</span>
         </div>
         <div className="topbar-actions">
+          <a
+            className="topbar-github"
+            href="https://github.com/plunjoin/olai"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="GitHub: plunjoin/olai"
+            aria-label="GitHub: plunjoin/olai"
+          >
+            <GithubSvg size={16} />
+          </a>
           <button className="topbar-settings" disabled={!ready} onClick={openAccount}><span>{account.user ? '我的账号' : '登录 / 注册'}</span></button>
           <StatusBeaconSvg connected={connected} modelCount={models.length} loading={modelsLoading} />
           <button className="topbar-settings" onClick={() => setSettingsOpen(true)}>
@@ -659,6 +716,10 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         </div>
       ) : (
         <>
+          {account.user && (syncing || syncFailures.length > 0) && <div className="guest-sync-notice" role="status">
+            <span>{syncing ? '正在后台同步游客记录，可继续创作。' : `${syncFailures.length} 条游客记录同步未完成，内容仍保留在本地，可继续创作。`}</span>
+            {syncFailures.length > 0 && <button className="secondary-button" disabled={syncing} onClick={() => void runGuestSync(account.user!.id)}>重试同步</button>}
+          </div>}
           {view !== 'library' && (
             <ChatWorkspace
               cloudStorage={!!account.user}
@@ -673,6 +734,8 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
               kind={mediaKind}
               onModeChange={kind => navigate(kind || 'chat')}
               media={{
+                imageEngineMode: imageEngineMode || settings.imageEngineMode,
+                videoEngineMode: videoEngineMode || videoEngineForModel(settings.videoModel),
                 assets: assets.filter(a => a.kind === mediaKind),
                 busy: assets.some(a => a.kind === mediaKind && a.status === 'pending'),
                 onCompose: async (prompt, style, instrumental) => {
@@ -721,7 +784,7 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
         onRefresh={refreshModels}
       />
     )}
-    {accountOpen && <AccountDialog account={account} onClose={() => setAccountOpen(false)} />}
+    {accountOpen && <AccountDialog account={account} syncing={syncing} syncFailures={syncFailures} onRetrySync={() => { if (account.user) void runGuestSync(account.user.id); }} onClose={() => setAccountOpen(false)} />}
     {toast && (
       <div className="toast" role="status">
         <CircleAlert size={17} />
@@ -734,10 +797,10 @@ function StudioInner({ serverKey = false }: { serverKey?: boolean }) {
   </div>;
 }
 
-export default function Studio({ serverKey = false }: { serverKey?: boolean }) {
+export default function Studio({ serverKey = false, imageEngineMode, videoEngineMode }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode }) {
   return (
     <PlayerProvider>
-      <StudioInner serverKey={serverKey} />
+      <StudioInner serverKey={serverKey} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} />
     </PlayerProvider>
   );
 }

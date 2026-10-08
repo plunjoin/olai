@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { Asset } from '../lib/types';
 import { publicServiceError } from '../lib/api';
+import { imageResolutionWarning, type ImageResolution } from '../lib/imageResolution';
 import { downloadLrcBlob } from '../lib/lrc';
 import { getAssetMediaURL, usePlayer } from '../lib/playerContext';
 import ThinkingOrbSvg from './svg/ThinkingOrbSvg';
@@ -53,9 +54,12 @@ export default function AssetCard({
 }) {
   const url = useAssetURL(asset);
   const [loadError, setLoadError] = useState(false);
+  const [loadedResolution, setLoadedResolution] = useState<ImageResolution>();
   const { activeMedia, isPlaying, play, pause, setIsExpanded } = usePlayer();
 
-  useEffect(() => setLoadError(false), [url]);
+  useEffect(() => { setLoadError(false); setLoadedResolution(undefined); }, [url]);
+  const resolution = loadedResolution || (asset.imageWidth && asset.imageHeight ? { width: asset.imageWidth, height: asset.imageHeight } : undefined);
+  const resolutionWarning = imageResolutionWarning(resolution, asset.options.image_size);
 
   const isCurrentActive = activeMedia?.id === asset.id;
   const isCurrentPlaying = isCurrentActive && isPlaying;
@@ -124,7 +128,10 @@ export default function AssetCard({
             <span>可重试生成，或尝试下载作品</span>
           </div>
         ) : asset.kind === 'image' ? (
-          <img src={url} alt={asset.prompt} loading="lazy" onError={() => setLoadError(true)} />
+          <img src={url} alt={asset.prompt} loading="lazy" onError={() => setLoadError(true)} onLoad={event => {
+            const image = event.currentTarget;
+            setLoadedResolution({ width: image.naturalWidth, height: image.naturalHeight });
+          }} />
         ) : asset.kind === 'video' ? (
           <div className="card-video-container" onClick={handleMediaToggle}>
             <video
@@ -196,6 +203,10 @@ export default function AssetCard({
       </div>
 
       <div className="asset-info">
+        {asset.kind === 'image' && asset.status === 'completed' && <>
+          <div className="image-resolution">{resolution ? `实际尺寸：${resolution.width} × ${resolution.height} 像素` : '实际尺寸：暂未读取'}{asset.options.image_size ? ` · 目标 ${asset.options.image_size}` : ''}</div>
+          {resolutionWarning && <div className="image-resolution-warning" role="status">{resolutionWarning}</div>}
+        </>}
         {asset.kind === 'music' && asset.song && (
           <div className="asset-song-details">
             <span>{asset.song.instrumental ? '纯音乐' : asset.lrcSource === 'audio' ? '歌词已按音频校准' : '歌词已关联 · 时间待校准'}</span>

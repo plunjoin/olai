@@ -63,7 +63,7 @@ export default function Home({
       title: '画出想象',
       text: '把脑海中的画面，变成看得见的美好。',
       color: 'blue',
-      badge: '多比例 · 4K',
+      badge: '多比例 · 画质偏好',
     },
     {
       view: 'video' as const,
@@ -71,7 +71,7 @@ export default function Home({
       title: '让故事动起来',
       text: '从一个镜头开始，让想象流动。',
       color: 'blue',
-      badge: '4 / 6 / 8 秒',
+      badge: '4–15 秒',
     },
     {
       view: 'music' as const,

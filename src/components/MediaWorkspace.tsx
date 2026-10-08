@@ -1,8 +1,9 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpRight, LoaderCircle, Plus, Sparkles, Trash2, WandSparkles } from 'lucide-react';
-import type { Asset, MediaKind, SongDraft, SongSection } from '../lib/types';
+import type { Asset, ImageEngineMode, MediaKind, SongDraft, SongSection } from '../lib/types';
 import { newSong, SECTION_LABELS, SECTION_TYPES, songPrompt } from '../lib/music';
 import { IMAGE_RATIOS, normalizeRatio } from '../lib/generation';
+import type { VideoEngineMode } from '../lib/video';
 import AssetCard from './AssetCard';
 import Companion from './Companion';
 import CreationParameters from './ui/CreationParameters';
@@ -16,6 +17,8 @@ export interface MediaWorkspaceProps {
   onDelete: (id: string) => void; onRetry: (asset: Asset) => void; onDownload: (asset: Asset) => void;
   embedded?: boolean; controller?: Ref<MediaWorkspaceHandle>; onComposerStateChange?: (state: MediaComposerState) => void;
   panelHost?: HTMLElement | null;
+  imageEngineMode?: ImageEngineMode;
+  videoEngineMode?: VideoEngineMode;
   onPromptSuggestion?: (prompt: string) => void;
   editRequest?: { asset: Asset; token: string };
   onEdit?: (asset: Asset) => void;
@@ -25,7 +28,7 @@ export interface MediaWorkspaceProps {
   onRetryCover?: (asset: Asset) => void;
 }
 
-export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCompose, onGenerate, onDelete, onRetry, onDownload, embedded = false, controller, onComposerStateChange, panelHost, onPromptSuggestion, editRequest, onEdit, onAlignLyrics, aligningIds, onDownloadCover, onRetryCover }: MediaWorkspaceProps) {
+export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCompose, onGenerate, onDelete, onRetry, onDownload, embedded = false, controller, onComposerStateChange, panelHost, imageEngineMode, videoEngineMode = 'chat', onPromptSuggestion, editRequest, onEdit, onAlignLyrics, aligningIds, onDownloadCover, onRetryCover }: MediaWorkspaceProps) {
   const [localPrompt, setPrompt] = useState(initialPrompt);
   const prompt = embedded ? initialPrompt : localPrompt;
   const [ratio, setRatio] = useState(kind === 'video' ? '16:9' : 'auto');
@@ -33,6 +36,8 @@ export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCo
   const [quality, setQuality] = useState(kind === 'image' ? '1K' : '720p');
   const [thinking, setThinking] = useState(kind === 'video' ? 'high' : 'medium');
   const [duration, setDuration] = useState(4);
+  const minimumDuration = videoEngineMode === 'task' ? 4 : 3;
+  const maximumDuration = videoEngineMode === 'task' ? 15 : 10;
   const [style, setStyle] = useState('');
   const [mode, setMode] = useState<'composer' | 'inspiration'>('inspiration');
   const [song, setSong] = useState<SongDraft>(newSong);
@@ -111,16 +116,17 @@ export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCo
             <div className="form-divider" />
             {kind === 'image' ? <><label className="field-label">画面比例</label><div className="aspect-options">{[...IMAGE_RATIOS, 'custom'].map(r => <button key={r} className={ratio === r ? 'selected' : ''} onClick={() => setRatio(r)}>{r === 'auto' ? 'Auto · 自动' : r === 'custom' ? '自定义' : r}</button>)}</div>{ratio === 'custom' && <label className="field-label">自定义比例<input aria-label="自定义图片比例" placeholder="例如 2.35:1" value={customRatio} onChange={e => setCustomRatio(e.target.value)} /></label>}<p className="field-hint">自动模式会根据你的描述决定画面构图。</p></> : null}
             <div className="settings-grid">
-              {kind === 'video' && <><label className="field-label">视频时长<select aria-label="视频时长" value={duration} onChange={e => setDuration(Number(e.target.value))}>{[4,6,8].map(d => <option key={d} value={d}>{d} 秒</option>)}</select></label><label className="field-label">画面比例<select aria-label="画面比例" value={ratio} onChange={e => setRatio(e.target.value)}><option value="16:9">16:9 · 横屏</option><option value="9:16">9:16 · 竖屏</option></select></label></>}
-              <label className="field-label">画质<select aria-label="画质" value={quality} onChange={e => setQuality(e.target.value)}>{(kind === 'image' ? ['1K','2K','4K'] : ['720p','1080p','4K']).map(q => <option key={q}>{q}</option>)}</select></label>
+              {kind === 'video' && <><label className="field-label video-duration"><span className="video-duration-heading">视频时长<output>{duration} 秒</output></span><input type="range" aria-label="视频时长" aria-valuetext={`${duration} 秒`} min={minimumDuration} max={maximumDuration} step={1} value={duration} onChange={e => setDuration(Number(e.target.value))} /><span className="video-duration-limits" aria-hidden="true"><span>{minimumDuration} 秒</span><span>{maximumDuration} 秒</span></span></label><label className="field-label">画面比例<select aria-label="画面比例" value={ratio} onChange={e => setRatio(e.target.value)}><option value="16:9">16:9 · 横屏</option><option value="9:16">9:16 · 竖屏</option></select></label></>}
+              <label className="field-label">{kind === 'image' ? '目标分辨率' : '画质'}<select aria-label="画质" value={quality} onChange={e => setQuality(e.target.value)}>{(kind === 'image' ? ['1K','2K','4K'] : ['720p','1080p','4K']).map(q => <option key={q}>{q}</option>)}</select></label>
               <label className="field-label">联想等级<select aria-label="联想等级" value={thinking} onChange={e => setThinking(e.target.value)}><option value="minimal">Minimal · 轻度</option><option value="medium">Medium · 适中</option><option value="high">High · 丰富</option></select></label>
             </div>
+            {kind === 'image' && <p className="field-hint">{imageEngineMode === 'interactions' ? '按所选分辨率请求生成，实际像素见作品卡片。自定义比例作为构图偏好。' : imageEngineMode === 'upstream' ? '按服务支持的尺寸请求生成，实际像素见作品卡片。' : '当前服务仅将分辨率作为创作偏好，选择 4K 不保证输出 4K。实际像素见作品卡片。'}</p>}
           </>}
           {kind === 'music' && mode === 'inspiration' && <button className="secondary-button organize-button" disabled={locked || !prompt.trim()} onClick={() => void organize()}><WandSparkles size={16} />整理段落并编辑</button>}
         </fieldset>
         {!embedded && error && <p className="error-text" role="alert">{error}</p>}
         {!embedded && <button className="primary-button generate-button" disabled={locked || !hasInput} onClick={() => void create()}>{locked ? <LoaderCircle size={18} className="spin" /> : <Sparkles size={18} />}{organizing ? '正在编排歌曲…' : busy ? '正在生成…' : `生成${name}`}<ArrowUpRight size={17} /></button>}
-        <p className="generation-note">{kind === 'music' ? '歌曲、段落与歌词一起保存。歌词可导出 TXT；LRC 时间为估算，方便后续校准。' : kind === 'image' ? '比例、画质与联想作为创作偏好，实际效果以生成结果为准。完成后自动收入作品库。' : '时长与画质组合以服务支持为准，联想等级作为创作偏好。完成后自动保存，可播放和下载。'}</p>
+        <p className="generation-note">{kind === 'music' ? '歌曲、段落与歌词一起保存。歌词可导出 TXT；LRC 时间为估算，方便后续校准。' : kind === 'image' ? '作品卡片显示实际像素，未达到目标分辨率时会提示。原图自动收入作品库，可下载。' : videoEngineMode === 'chat' ? '时长、比例和画质作为创作偏好，实际效果以返回视频为准。完成后自动保存，可播放和下载。' : '时长与画质组合以服务支持为准，联想等级作为创作偏好。完成后自动保存，可播放和下载。'}</p>
       </CreationParameters>
       {embedded && error && <p ref={errorNotice} className="error-text creation-error" role="alert">{error}</p>}
       <section className="generation-results"><div className="results-heading"><h2>创作结果 <span>{assets.length.toString().padStart(2, '0')}</span></h2><span>灵感在这里落地</span></div>{assets.length ? <div className={`results-grid ${kind === 'music' ? 'music-results' : ''}`}>{assets.map(asset => <AssetCard key={asset.id} asset={asset} onDelete={onDelete} onRetry={onRetry} onDownload={onDownload} onEdit={onEdit} onAlignLyrics={onAlignLyrics} aligning={aligningIds?.includes(asset.id)} onDownloadCover={onDownloadCover} onRetryCover={onRetryCover} />)}</div> : <div className={`generation-empty ${kind}-empty`}>

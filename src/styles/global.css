@@ -599,6 +599,24 @@ nav[aria-label="工作室导航"] {
   border-color: var(--border-medium);
 }
 
+.topbar-github {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all var(--transition);
+}
+.topbar-github:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+
 /* ==========================================================================
    Common Buttons & Controls
    ========================================================================== */

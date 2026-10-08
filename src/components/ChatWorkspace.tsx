@@ -293,7 +293,7 @@ export default function ChatWorkspace({
         </div>
         <div className="composer-hint">
           <span>Enter 发送 · Shift + Enter 换行</span>
-          <span>留住每一步灵感 · {cloudStorage ? '账号保存' : '本地保存'}</span>
+          <span>留住每一步灵感 · 个人学习开发 · {cloudStorage ? '账号保存' : '本地保存'}</span>
         </div>
       </div>
       </div>
