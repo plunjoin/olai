@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/Astro-5-BC52EE?logo=astro&logoColor=white" alt="Astro 5" />
     <img src="https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white" alt="React 19" />
     <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/Astro_DB-libSQL-6366F1" alt="Astro DB / libSQL" />
+    <img src="https://img.shields.io/badge/SQLite-libSQL-6366F1" alt="SQLite / libSQL" />
   </p>
 
   <p>
@@ -49,6 +49,8 @@ Olai 将 AI 对话与媒体创作放在同一个工作台。首页直接进入�
 ## 快速开始
 
 ### 1. 安装依赖
+
+使用 Node.js 22.9 或更新版本。
 
 ```bash
 npm install
@@ -148,7 +150,7 @@ npm run dev
 
 ## 环境配置
 
-完整示例见 [`.env.example`](.env.example)。构建和启动都会加载项目根目录的 `.env.production`、`.env`，运行环境已提供的变量优先。
+完整示例见 [`.env.example`](.env.example)。构建按 Astro 规则加载环境文件；启动通过 Node 自带的环境文件功能加载 `.env` 和 `.env.production`（后者优先），部署平台已提供的变量优先。数据库连接在运行时读取，已移除应用的 dotenv 依赖。
 
 | 环境变量 | 默认值 / 行为 | 用途 |
 | --- | --- | --- |
@@ -161,8 +163,9 @@ npm run dev
 | `AI_MUSIC_MODEL` | `lyria-3.5` | 音乐引擎在网关中的实际别名 |
 | `GUEST_DAILY_GENERATION_LIMIT` | `1` | 每个游客 IP、每种生成类型的每日次数 |
 | `USER_DAILY_GENERATION_LIMIT` | `15` | 每个登录账号、每种生成类型的每日次数 |
-| `ASTRO_DB_REMOTE_URL` | 未配置时使用本地数据库 | 远程 Astro DB / libSQL 地址 |
-| `ASTRO_DB_APP_TOKEN` | 远程数据库按需配置 | 远程数据库访问令牌 |
+| `DATABASE_URL` | 生产默认 `data/olai.db` | 本地文件路径、`file:` URL 或远程 libSQL 地址 |
+| `DATABASE_AUTH_TOKEN` | 本地无需配置 | 远程数据库提供的访问令牌 |
+| `ASTRO_DB_REMOTE_URL` / `ASTRO_DB_APP_TOKEN` | 兼容旧部署 | 未配置新的对应变量时继续读取旧变量 |
 | `HOST` | `0.0.0.0` | 服务监听地址 |
 | `PORT` | `4321` | 服务监听端口 |
 | `SITE_ORIGIN` | 本地访问无需设置 | 反向代理部署时的公开站点 origin |
@@ -179,33 +182,58 @@ npm run build
 npm start
 ```
 
-`npm run preview` 使用相同启动入口。未配置 `ASTRO_DB_REMOTE_URL` 时，自动使用 `data/olai.db` 持久化账号、会话和额度；构建会安全创建或更新该数据库的表结构，重启和重新构建保留已有记录。
+数据库环境变量可全部留空。`npm start` 直接启动 `dist/server/entry.mjs`，服务在首次接口请求时自动创建 `data/olai.db` 及所需表，持久保存账号、会话和额度；`npm run preview` 使用相同启动入口。构建不连接数据库，数据库地址仅在运行时读取，修改地址后重启即可。
+
+需要指定文件时，设置 `DATABASE_URL=data/olai.db`，普通路径和 `file:./data/olai.db` 均可。本地数据库不需要令牌。旧 `ASTRO_DB_REMOTE_URL` / `ASTRO_DB_APP_TOKEN` 配置继续兼容，本地令牌会被忽略；已有 Astro DB 文件直接沿用，自动初始化只添加缺少的表和索引，不删除账号或作品。
 
 部署时保留 `data` 目录并提供写入权限，容器部署将其挂载到持久化卷。服务默认监听 4321 端口，可通过 `HOST`、`PORT` 配置。
 
 ### 远程 libSQL / Turso
 
-在 `.env` 中配置 `ASTRO_DB_REMOTE_URL` 和 `ASTRO_DB_APP_TOKEN`，然后依次执行：
+在 `.env` 或部署平台设置远程连接：
+
+```dotenv
+DATABASE_URL=libsql://your-db.turso.io
+DATABASE_AUTH_TOKEN=数据库提供的访问令牌
+```
+
+使用相同构建和启动命令：
 
 ```bash
-npm run db:push
-npm run build:remote
+npm run build
 npm start
 ```
 
-启动时使用同一数据库配置。运行时的数据库地址优先于构建时地址，令牌在启动时读取。`build:remote` 在缺少数据库地址时会直接提示配置错误。表结构位于 [`db/config.ts`](db/config.ts)。
-
-> 当前 `@astrojs/db` 包已被官方标记为 deprecated，本项目按需求使用 Astro DB 接口。
+服务自动初始化表。数据库直接通过 libSQL 客户端和 Drizzle 访问，已移除 Astro DB 集成。表定义位于 [`db/schema.ts`](db/schema.ts)，兼容现有数据库的初始化 SQL 位于 [`db/runtime.mjs`](db/runtime.mjs)。
 
 ### 开发与生产数据库
 
 | 运行方式 | 数据库 | 持久化行为 |
 | --- | --- | --- |
-| `npm run dev` | `.astro/content.db` | 开发服务器重启时重建开发表 |
+| `npm run dev` | `.astro/olai-dev.db` | 开发重启保留记录，与默认生产数据库分开 |
 | `npm run build` + `npm start` | `data/olai.db` | 重启、重新构建保留记录 |
 | 远程数据库部署 | 配置的 libSQL 数据库 | 由远程数据库持久保存 |
 
-请使用项目的构建和启动命令，它们处理数据库初始化和环境变量加载；仅部署 `dist/client` 静态目录无法运行账号与生成接口。
+配置了数据库地址时，开发和生产均使用该地址。请从项目根目录启动服务，相对数据库路径以启动目录为准。部署需要 Node 服务及生产依赖；仅部署 `dist/client` 静态目录无法运行账号与生成接口。
+
+### Docker 部署
+
+仓库提供 [`Dockerfile`](Dockerfile)，构建阶段安装构建依赖，运行阶段单独安装生产依赖和当前 Linux 平台的 SQLite 原生驱动：
+
+```bash
+docker build -t olai .
+docker run -d --name olai -p 4321:4321 --env-file .env -v olai-data:/app/data olai
+```
+
+`.env` 中配置公开站点的 `SITE_ORIGIN` 和上游服务。数据库默认使用持久化卷内的 `/app/data/olai.db`。镜像不包含本地 `.env`、数据库或 Windows 的 `node_modules`。
+
+使用自己的容器构建流程时，运行镜像也需要 `package.json` 和在该镜像内安装的生产依赖：
+
+```bash
+npm install --omit=dev --include=optional
+```
+
+只从构建阶段复制 `dist` 会遗漏 SQLite 驱动和其他外部依赖。构建产物已内置 Drizzle，环境文件由 Node 原生读取，原生 SQLite 驱动仍由生产依赖提供。
 
 ### 反向代理与来源校验
 
@@ -270,10 +298,8 @@ AI_IMAGE_MODEL=gemini-3.1-flash-image
 | `npm run dev` | 启动开发服务器 |
 | `npm run check` | Astro / TypeScript 检查 |
 | `npm test` | 运行单元测试 |
-| `npm run build` | 构建并初始化生产数据库 |
-| `npm start` / `npm run preview` | 启动构建产物 |
-| `npm run db:push` | 创建或更新远程数据库表结构 |
-| `npm run build:remote` | 使用远程数据库配置构建 |
+| `npm run build` | 构建，不连接数据库 |
+| `npm start` / `npm run preview` | 直接启动 Node 构建产物，接口自动初始化数据库 |
 
 基础验证：
 
@@ -282,9 +308,9 @@ npm test
 npm run build
 ```
 
-### 集成与浏览器检查
+### 浏览器检查
 
-以下检查使用模拟 AI 服务，不会调用真实生成接口。账号浏览器检查需要 Playwright Chromium，首次使用可运行：
+浏览器检查需要 Playwright Chromium，首次使用可运行：
 
 ```bash
 npx playwright install chromium
@@ -292,14 +318,9 @@ npx playwright install chromium
 
 | 命令 | 主要覆盖内容 | 截图目录 |
 | --- | --- | --- |
-| `npm run test:accounts` | 注册 / 登录、并发额度、环境变量、账号隔离、大记录与媒体保存、浏览器注册、跨设备读取、游客 / 账号切换、手机布局 | `.qa/accounts` |
-| `npm run test:videos` | Omni 聊天请求与原始视频返回、共享额度；Veo 创建、查询、鉴权下载、409 等待、任务持久化、HTML 502 错误 | — |
-| `npm run test:production` | `.env` 加载、运行时数据库地址、账号注册、重启持久化、初始化错误响应 | — |
 | `node scripts/verify-studio.mjs` | 音乐编辑与保存、歌词下载、默认引擎、媒体参数、隐藏模型名称、移动端布局 | `.qa` |
 | `node scripts/verify-brand.mjs` | 桌面 / 手机 / 平板布局、SVG ID、菜单键盘操作、重命名与删除弹窗、焦点与滚动恢复、对话、减少动态效果 | `.qa/brand` |
 | `node scripts/verify-music.mjs` | 连续灵感生成、段落编辑与新灵感覆盖、音频校准请求、播放器更新、失败回退、LRC 下载与持久化、封面生成 / 重试 / 显示 / 下载、作品库编辑、手机布局 | `.qa/music` |
-
-`test:accounts` 启动隔离的临时开发数据库和模拟 AI 服务；`test:videos`、`test:production` 使用真实构建产物、隔离或临时数据库及模拟上游。
 
 三个 `scripts/verify-*.mjs` 检查需先启动开发服务器，可用 `STUDIO_URL` 指定地址。工作台与品牌检查默认使用端口 4322，音乐检查默认使用端口 4323。使用默认开发端口 4321 时，PowerShell 示例：
 
@@ -314,7 +335,9 @@ node scripts/verify-music.mjs
 
 ```text
 .
-├── db/config.ts             # 账号、记录与额度的数据库表结构
+├── db/schema.ts             # 账号、记录与额度的 Drizzle 表定义
+├── db/runtime.mjs           # 运行时数据库配置与自动建表
+├── Dockerfile               # 构建并安装运行镜像的生产依赖
 ├── public/brand/            # 小o插画与品牌字标
 ├── scripts/                 # 品牌资源处理、工作台与音乐浏览器检查
 ├── src/
@@ -323,7 +346,6 @@ node scripts/verify-music.mjs
 │   ├── pages/api/           # AI 转发、账号与记录接口
 │   ├── middleware.ts        # API 错误处理
 │   └── styles/              # 全局与品牌样式
-├── tooling/                 # 构建、启动与集成验证
 └── .env.example             # 环境配置示例
 ```
 
@@ -331,7 +353,13 @@ node scripts/verify-music.mjs
 
 ### 登录接口返回 HTML，而不是 JSON
 
-`GET /api/auth/me` 应返回 `application/json`。未登录时返回 `{"user":null,"generationLimit":1}`（次数取自环境配置）。出现包含「请启用 JavaScript 以使用 Olai」的 HTML 表示接口落入页面或服务器错误页。新的 API 中间件会将初始化错误转换为 JSON 错误，客户端也会提示路由/服务配置问题。
+`GET /api/auth/me` 应返回 `application/json`。未登录时返回 `{"user":null,"generationLimit":1}`（次数取自环境配置）。出现包含「请启用 JavaScript 以使用 Olai」的 HTML 表示接口落入页面或服务器错误页；请确保 `/api/*` 转发到 Node 服务，而不是静态首页。API 中间件会将应用初始化错误转换为 JSON，具体异常输出到服务端日志。
+
+### 服务初始化失败
+
+日志出现 `ERR_MODULE_NOT_FOUND` / `Cannot find package` 表示运行镜像缺少依赖，接口模块尚未执行。使用仓库 Dockerfile，或在运行镜像中执行 `npm install --omit=dev --include=optional`；原生 SQLite 驱动需要与服务器的操作系统和架构匹配。接口会用 `DEPENDENCY_MISSING` 区分此问题。
+
+本地数据库无需远程地址或访问令牌，首次接口请求自动创建 `data/olai.db` 和表。检查服务日志中的文件权限或连接错误，确保启动目录正确、数据库及其所在目录可写；容器部署需要保留持久化卷。修改数据库环境变量后重启即可，不需要重新构建。数据库初始化失败时，接口返回 JSON 错误，服务端日志记录具体原因。
 
 ### 选择 4K 后，实际输出没有达到 4K
 
@@ -339,7 +367,7 @@ node scripts/verify-music.mjs
 
 ### 开发服务器重启后，账号记录消失
 
-`npm run dev` 使用可重建的开发数据库。需要持久保存时，运行 `npm run build` 和 `npm start`，并保留 `data` 目录，或配置远程 libSQL 数据库。
+默认开发数据库为 `.astro/olai-dev.db`，重启不会清空；删除 `.astro` 会删除该开发文件。生产运行 `npm run build` 和 `npm start`，并保留 `data` 目录，或配置远程 libSQL 数据库。
 
 ## 后续计划
 
