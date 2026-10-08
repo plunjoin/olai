@@ -15,18 +15,32 @@ async function readBody(request: Request) {
   try {
     while (true) {
       const { value, done } = await reader.read();
-      if (done) return text + decoder.decode();
+      if (done) return size > MAX_BYTES ? null : text + decoder.decode();
       size += value.byteLength;
-      if (size > MAX_BYTES) { await reader.cancel(); return null; }
+      // Drain oversized requests without buffering them. Cancelling the Node
+      // request stream can close the connection before the 413 reaches the client.
+      if (size > MAX_BYTES) { text = ''; continue; }
       text += decoder.decode(value, { stream: true });
     }
   } finally { reader.releaseLock(); }
 }
-function validRecord(value: any, store: string): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value.id)) return false;
-  if (!Number.isFinite(value.createdAt)) return false;
-  if (store === 'conversations') return typeof value.title === 'string' && value.title.length <= 100 && Number.isFinite(value.updatedAt) && Array.isArray(value.messages) && value.messages.every((m: any) => m && typeof m.id === 'string' && ['user', 'assistant'].includes(m.role) && typeof m.content === 'string');
-  return ['image', 'music', 'video'].includes(value.kind) && ['pending', 'completed', 'failed'].includes(value.status) && typeof value.prompt === 'string' && value.options && typeof value.options === 'object';
+function recordError(value: any, store: string): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '记录需要是 JSON 对象。';
+  if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value.id)) return '记录编号无效。';
+  if (!Number.isFinite(value.createdAt)) return '记录缺少有效的创建时间。';
+  if (store === 'conversations') {
+    if (typeof value.title !== 'string' || value.title.length > 100) return '会话标题无效或超过 100 个字符。';
+    if (!Number.isFinite(value.updatedAt)) return '会话缺少有效的更新时间。';
+    if (!Array.isArray(value.messages)) return '会话消息需要是数组。';
+    const invalid = value.messages.findIndex((m: any) => !m || typeof m.id !== 'string' || !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string');
+    if (invalid >= 0) return `会话第 ${invalid + 1} 条消息的编号、角色或内容格式无效。`;
+    return null;
+  }
+  if (!['image', 'music', 'video'].includes(value.kind)) return '作品类型无效。';
+  if (!['pending', 'completed', 'failed'].includes(value.status)) return '作品状态无效。';
+  if (typeof value.prompt !== 'string') return '作品描述需要是文本。';
+  if (!value.options || typeof value.options !== 'object' || Array.isArray(value.options)) return '作品参数需要是 JSON 对象。';
+  return null;
 }
 export const ALL: APIRoute = async context => {
   const { request, params, url } = context;
@@ -60,7 +74,11 @@ export const ALL: APIRoute = async context => {
     if (raw === null) return fail('单条云端记录不能超过 64 MB，请下载较大的作品备份。', 413);
     let value;
     try { value = JSON.parse(raw); } catch { return fail('记录格式无效。', 400); }
-    if (!validRecord(value, store!)) return fail('记录字段无效。', 400);
+    const validationError = recordError(value, store!);
+    if (validationError) {
+      console.warn('Record validation failed:', { store, reason: validationError });
+      return fail(validationError, 400);
+    }
     const key = hash(`${user.id}:${store}:${value.id}`);
     const data = raw.length <= CHUNK_SIZE ? raw : '';
     const record = { key, userId: user.id, store: store!, recordId: value.id, data, updatedAt: Date.now() };
@@ -81,7 +99,9 @@ export const ALL: APIRoute = async context => {
       await db.transaction(async transaction => {
         const inserted = await transaction.insert(StudioRecord).values(record)
           .onConflictDoNothing({ target: StudioRecord.key }).returning({ key: StudioRecord.key });
-        if (inserted.length && chunks.length) await transaction.insert(RecordChunk).values(chunks);
+        if (inserted.length) for (let start = 0; start < chunks.length; start += 50) {
+          await transaction.insert(RecordChunk).values(chunks.slice(start, start + 50));
+        }
         if (guestOwner) await transaction.update(VideoJob).set({ owner: `user:${user.id}` })
           .where(and(eq(VideoJob.id, value.remoteId), eq(VideoJob.owner, guestOwner)));
       });

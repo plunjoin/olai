@@ -8,7 +8,6 @@ let accountId: string | null = null;
 const pending = new Map<string, Promise<void>>();
 export async function initializeStorage(): Promise<AccountState> {
   const state = await accountRequest('me');
-  if (state.user) await syncGuestRecords(state.user.id);
   accountId = state.user?.id || null;
   if (accountId) storageMode = 'cloud';
   return state;
@@ -18,9 +17,11 @@ async function cloudRequest(store: string, init: RequestInit = {}, id?: string, 
   headers.set('X-Olai-User', userId!);
   if (init.body) headers.set('Content-Type', 'application/json');
   const query = importing ? '?import=guest' : id ? `?id=${encodeURIComponent(id)}` : '';
-  const response = await fetch(`/api/records/${store}${query}`, { ...init, headers, credentials: 'same-origin' });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || '云端保存失败。');
+  const response = await fetch(`/api/records/${store}${query}`, { ...init, headers, credentials: 'same-origin', signal: init.signal || AbortSignal.timeout(60_000) });
+  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(`云端记录接口未返回 JSON（HTTP ${response.status}），请检查服务配置。`);
+  let data;
+  try { data = await response.json(); } catch { throw new Error('云端记录接口返回的数据格式无效。'); }
+  if (!response.ok) throw new Error(`${data?.error?.message || '云端保存失败。'}（HTTP ${response.status}）`);
   return data;
 }
 function enqueue(key: string, write: () => Promise<void>): Promise<void> {
@@ -39,7 +40,7 @@ async function openWithTimeout(name: string, version: number, options?: Paramete
 
 async function db() {
   if (typeof window === 'undefined' || typeof indexedDB === 'undefined') {
-    storageMode = 'localstorage';
+    if (!accountId) storageMode = 'localstorage';
     return null;
   }
   database ??= openWithTimeout('olai', 1, {
@@ -69,7 +70,7 @@ async function db() {
     } catch { /* Migration is best-effort */ }
     return databaseInstance;
   } catch {
-    storageMode = 'localstorage';
+    if (!accountId) storageMode = 'localstorage';
     return null;
   }
 }
@@ -104,32 +105,47 @@ async function linkLocalRecord(store: 'conversations' | 'assets', value: LocalRe
     localStorage.setItem(`olai.${store}`, JSON.stringify(rows));
   }
 }
-let guestSync: Promise<void> | undefined;
-export function syncGuestRecords(userId: string): Promise<void> {
+const MAX_RECORD_BYTES = 64 * 1024 * 1024;
+async function recordBody(value: Conversation | Asset | LocalRecord) {
+  if ('blob' in value && value.blob && Math.ceil(value.blob.size / 3) * 4 > MAX_RECORD_BYTES) {
+    throw new Error('文件编码后超过单条记录 64 MB 的上限，请先下载备份。');
+  }
+  const item: Record<string, unknown> = { ...value };
+  delete item.linkedAccountId;
+  if ('blob' in value && value.blob) { item.blobData = await encodeBlob(value.blob); delete item.blob; }
+  if (typeof item.url === 'string' && item.url.startsWith('blob:')) delete item.url;
+  const body = JSON.stringify(item);
+  if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error('记录包含媒体编码后超过 64 MB 的上限，请先下载备份。');
+  return body;
+}
+export type GuestSyncReport = { synced: { conversations: string[]; assets: string[] }; failures: string[] };
+let guestSync: Promise<GuestSyncReport> | undefined;
+export function syncGuestRecords(userId: string): Promise<GuestSyncReport> {
   // Serialize imports within a page. Server-side insert-if-absent also makes
   // retries and concurrent tabs safe without overwriting existing cloud edits.
   const importRecords = async () => {
+    const report: GuestSyncReport = { synced: { conversations: [], assets: [] }, failures: [] };
     await flushStorage();
     for (const store of ['conversations', 'assets'] as const) {
       const records = await localRecords(store);
       for (const value of records) {
         if (value.linkedAccountId) continue;
-        const item: Record<string, unknown> = { ...value };
-        delete item.linkedAccountId;
-        if ('blob' in value && value.blob) { item.blobData = await encodeBlob(value.blob); delete item.blob; }
-        if (typeof item.url === 'string' && item.url.startsWith('blob:')) delete item.url;
         try {
-          await cloudRequest(store, { method: 'PUT', body: JSON.stringify(item) }, undefined, userId, true);
+          await cloudRequest(store, { method: 'PUT', body: await recordBody(value) }, undefined, userId, true);
           await linkLocalRecord(store, value, userId);
+          report.synced[store].push(value.id);
         } catch (error) {
-          throw new Error(`游客记录同步未完成，未同步的内容仍保留在本地。${error instanceof Error ? error.message : '请重试。'}`);
+          const label = 'title' in value ? value.title : value.prompt;
+          const detail = error instanceof Error && error.name === 'TimeoutError' ? '上传超时，请检查网络后重试。' : error instanceof Error ? error.message : '请重试。';
+          report.failures.push(`游客${store === 'conversations' ? '会话' : '作品'}「${label?.slice(0, 30) || value.id}」同步未完成，未同步的内容仍保留在本地。${detail}`);
         }
       }
     }
+    return report;
   };
   const sync = (guestSync || Promise.resolve()).catch(() => {}).then(async () => {
-    if (typeof navigator !== 'undefined' && navigator.locks) await navigator.locks.request('olai-guest-import', importRecords);
-    else await importRecords();
+    if (typeof navigator !== 'undefined' && navigator.locks) return navigator.locks.request('olai-guest-import', importRecords);
+    return importRecords();
   });
   guestSync = sync;
   void sync.finally(() => { if (guestSync === sync) guestSync = undefined; }).catch(() => {});
@@ -157,10 +173,7 @@ async function writeRecord(store: 'conversations' | 'assets', value: Conversatio
   if (accountId) {
     // Capture each snapshot now and encode inside its queue so older, slower
     // media writes cannot overwrite newer metadata or race deletion.
-    const item: Record<string, unknown> = { ...value };
-    if ('blob' in value && value.blob) { item.blobData = await encodeBlob(value.blob); delete item.blob; }
-    if (typeof item.url === 'string' && item.url.startsWith('blob:')) delete item.url;
-    await cloudRequest(store, { method: 'PUT', body: JSON.stringify(item) });
+    await cloudRequest(store, { method: 'PUT', body: await recordBody(value) });
     return;
   }
   const database = await db();
