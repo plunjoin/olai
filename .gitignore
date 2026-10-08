@@ -5,7 +5,6 @@ tests/
 .qa/
 .astro/
 data/
-tooling/
 .pnpm-store/
 .env
 .env.*

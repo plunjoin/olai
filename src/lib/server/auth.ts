@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { APIContext } from 'astro';
-import { db, User, LoginSession, eq, and, gt } from 'astro:db';
+import { db, User, LoginSession, eq, and, gt } from './database';
 import { hash, env } from './policy';
 
 const scrypt = promisify(scryptCallback);

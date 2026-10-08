@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { db, User, eq } from 'astro:db';
+import { db, User, eq } from '../../../lib/server/database';
 import { currentUser, endSession, passwordHash, startSession, userId, verifyPassword } from '../../../lib/server/auth';
 import { ClientIPError, clientIP, dailyLimit, hash, sameOrigin } from '../../../lib/server/policy';
 import { reserve } from '../../../lib/server/quota';

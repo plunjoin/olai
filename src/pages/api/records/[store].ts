@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { db, StudioRecord, RecordChunk, VideoJob, eq, and, asc } from 'astro:db';
+import { db, StudioRecord, RecordChunk, VideoJob, eq, and, asc } from '../../../lib/server/database';
 import { currentUser } from '../../../lib/server/auth';
 import { clientIP, hash, sameOrigin } from '../../../lib/server/policy';
 

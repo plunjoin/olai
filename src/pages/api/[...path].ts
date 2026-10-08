@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { DEFAULT_SETTINGS } from '../../lib/types';
-import { db, VideoJob, eq } from 'astro:db';
+import { db, VideoJob, eq } from '../../lib/server/database';
 import { currentUser } from '../../lib/server/auth';
 import { ClientIPError, clientIP, dailyLimit, generationKind, hash, sameOrigin } from '../../lib/server/policy';
 import { reserveGeneration } from '../../lib/server/quota';

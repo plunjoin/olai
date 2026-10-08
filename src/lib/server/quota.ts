@@ -1,4 +1,4 @@
-import { db, DailyUsage, LoginSession, sql, lt } from 'astro:db';
+import { db, DailyUsage, LoginSession, sql, lt } from './database';
 import { dayKey, hash } from './policy';
 
 // A single conditional UPSERT reserves a slot, including across server instances.
