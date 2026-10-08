@@ -7,7 +7,7 @@ describe('models utility', () => {
     expect(getModelCategory('deep-research-preview-04-2026')).toBe('chat');
     expect(getModelCategory('gemini-3.1-flash-image')).toBe('image');
     expect(getModelCategory('gemini-nano-banana-2.1')).toBe('image');
-    expect(getModelCategory('gemini-omni-1.1-flash')).toBe('chat');
+    expect(getModelCategory('gemini-omni-1.1-flash')).toBe('video');
     expect(getModelCategory('veo-3.1-fast-generate-preview')).toBe('video');
     expect(getModelCategory('lyria-3.5')).toBe('music');
     expect(getModelCategory('gemini-2.5-flash-preview-tts')).toBe('music');

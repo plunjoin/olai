@@ -4,9 +4,10 @@ import { db, VideoJob, eq } from 'astro:db';
 import { currentUser } from '../../lib/server/auth';
 import { ClientIPError, clientIP, dailyLimit, generationKind, hash, sameOrigin } from '../../lib/server/policy';
 import { reserveGeneration } from '../../lib/server/quota';
+import { upstreamErrorResponse } from '../../lib/server/upstream';
 
 export const prerender = false;
-const allowed = /^(models|chat\/completions|images\/[a-zA-Z0-9_-]+|audio\/[a-zA-Z0-9_-]+|videos(?:\/[a-zA-Z0-9_-]+(?:\/content)?)?)$/;
+const allowed = /^(models|chat\/completions|interactions|images\/[a-zA-Z0-9_-]+|audio\/[a-zA-Z0-9_-]+|videos(?:\/[a-zA-Z0-9_-]+(?:\/content)?)?)$/;
 
 export const ALL: APIRoute = async context => {
   const { request, params } = context;
@@ -36,6 +37,7 @@ export const ALL: APIRoute = async context => {
   const base = (process.env.AI_API_BASE_URL || import.meta.env.AI_API_BASE_URL || 'https://ai.bllii.com/v1').replace(/\/$/, '');
   const timeout = AbortSignal.timeout(180_000);
   let upstreamStarted = false;
+  let useBetaInteractions = false;
 
   try {
     let owner = '';
@@ -64,8 +66,29 @@ export const ALL: APIRoute = async context => {
           return Response.json({ error: { message: '请求内容需要是有效的 JSON 对象。' } }, { status: 400 });
         }
         let kind;
+        const actualVideoModel = payload.model === DEFAULT_SETTINGS.videoModel ? (process.env.AI_VIDEO_MODEL || import.meta.env.AI_VIDEO_MODEL || payload.model) : payload.model;
+        if (path === 'videos' && /^gemini-omni-/i.test(String(actualVideoModel))) {
+          return Response.json({ error: { message: '当前视频引擎使用聊天生成接口，请刷新页面后重新生成。' } }, { status: 400 });
+        }
         try { kind = generationKind(path, payload); }
         catch { return Response.json({ error: { message: '请求的创作引擎不受支持。' } }, { status: 400 }); }
+        if (path === 'interactions') {
+          // Validate before reserving quota; only forward synchronous media generation.
+          const format = payload.response_format;
+          if (typeof payload.input !== 'string' || !payload.input.trim() || !format || format.type !== kind) {
+            return Response.json({ error: { message: '请提供有效的媒体描述与生成参数。' } }, { status: 400 });
+          }
+          if (kind === 'video') {
+            if (!['16:9', '9:16'].includes(format.aspect_ratio) || !['360p', '720p', '1080p', '4k'].includes(format.resolution) || !/^(?:[3-9]|10)s$/.test(format.duration)) {
+              return Response.json({ error: { message: '请提供有效的视频比例、分辨率和 3–10 秒时长。' } }, { status: 400 });
+            }
+            payload = { model: payload.model, input: payload.input, response_format: { type: 'video', aspect_ratio: format.aspect_ratio, resolution: format.resolution, duration: format.duration, delivery: 'inline' }, stream: false, store: false };
+            useBetaInteractions = true;
+          } else {
+            if (!['1K', '2K', '4K'].includes(format.image_size)) return Response.json({ error: { message: '请提供有效的图片分辨率参数。' } }, { status: 400 });
+            payload = { model: payload.model, input: payload.input, response_format: { type: 'image', image_size: format.image_size, delivery: 'inline', ...(format.aspect_ratio ? { aspect_ratio: format.aspect_ratio } : {}) }, stream: false, store: false };
+          }
+        }
         if (kind) {
           const limit = dailyLimit(owner.startsWith('user:'));
           if (!await reserveGeneration(owner, kind, limit)) {
@@ -89,12 +112,15 @@ export const ALL: APIRoute = async context => {
     }
 
     upstreamStarted = true;
-    const upstream = await fetch(`${base}/${path}`, {
+    const upstreamURL = useBetaInteractions ? `${base.replace(/\/v1(?:beta)?$/, '')}/v1beta/interactions` : `${base}/${path}`;
+    const upstream = await fetch(upstreamURL, {
       method: request.method,
       headers: upstreamHeaders,
       body,
       signal: AbortSignal.any([request.signal, timeout]),
     });
+    const upstreamError = await upstreamErrorResponse(upstream, useBetaInteractions ? 'videos' : path);
+    if (upstreamError) return upstreamError;
 
     const headers = new Headers({
       'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',

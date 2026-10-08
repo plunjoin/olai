@@ -28,13 +28,34 @@ export function clientIP(request: Request, address: string): string {
 }
 export function sameOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
-  return !!origin && origin === (env('SITE_ORIGIN') || new URL(request.url).origin);
+  if (!origin || origin === 'null') return false;
+  try {
+    const source = new URL(origin);
+    if (!['http:', 'https:'].includes(source.protocol) || origin !== source.origin) return false;
+    const configured = env('SITE_ORIGIN').trim();
+    if (configured) return source.origin === new URL(configured).origin;
+    const url = new URL(request.url);
+    // The Node adapter can normalize an unlisted host to localhost and drop
+    // its port. Host still carries the browser's actual destination authority.
+    // Forwarded headers are deliberately excluded; proxies use SITE_ORIGIN.
+    const host = request.headers.get('host');
+    if (!host) return source.origin === url.origin;
+    const destination = new URL(`${url.protocol}//${host}`);
+    if (host !== destination.host || destination.username || destination.password) return false;
+    return source.origin === destination.origin;
+  } catch { return false; }
 }
 export function generationKind(path: string, payload: Record<string, unknown>): MediaKind | null {
   if (path === 'videos') return 'video';
   if (path.startsWith('images/')) return 'image';
   if (path.startsWith('audio/')) return 'music';
-  if (path !== 'chat/completions') throw new Error('接口路径或方法不受支持。');
+  if (path !== 'chat/completions' && path !== 'interactions') throw new Error('接口路径或方法不受支持。');
+  // Official media interactions share their respective generation quotas.
+  if (path === 'interactions') {
+    if (payload.model === DEFAULT_SETTINGS.imageModel || payload.model === env('AI_IMAGE_MODEL', DEFAULT_SETTINGS.imageModel)) return 'image';
+    if (payload.model === DEFAULT_SETTINGS.videoModel || payload.model === env('AI_VIDEO_MODEL', DEFAULT_SETTINGS.videoModel)) return 'video';
+    throw new Error('请求的创作引擎不受支持。');
+  }
   for (const [kind, key, variable] of [
     ['image', 'imageModel', 'AI_IMAGE_MODEL'], ['music', 'musicModel', 'AI_MUSIC_MODEL'],
     ['video', 'videoModel', 'AI_VIDEO_MODEL'],

@@ -19,6 +19,7 @@ export function getModelCategory(id: string): ModelCategory {
   const lower = id.toLowerCase();
   
   // 视频模型
+  if (lower === 'gemini-omni-1.1-flash') return 'video';
   if (lower.includes('veo') || lower.includes('video') || lower.includes('sora') || lower.includes('animate')) {
     return 'video';
   }
@@ -205,6 +206,7 @@ export function pickBestAvailableModel(
       'gemini-3.1-flash-lite-image',
     ],
     video: [
+      'gemini-omni-1.1-flash',
       'veo-3.1-fast-generate-preview',
       'veo-3.1-generate-preview',
       'veo-3.1-lite-generate-preview',

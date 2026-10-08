@@ -1,8 +1,10 @@
 import type { AudioEngineMode, ImageEngineMode, Message } from './types';
 import { base64ToBytes, isRiffWav, parseAudioDataUri } from './audio';
 import { songPrompt } from './music';
+import { videoEngineForModel, type VideoEngineMode } from './video';
 
 export function publicServiceError(message: string): string {
+  if (/官方 Gemini 后端未启用|gemini_api.*(?:disabled|not enabled)/i.test(message)) return '官方媒体生成接口尚未启用，请由服务提供方启用官方后端后再试。';
   return /gemini|lyria|veo|nano[\s-]?banana|omini|\bmodel\b|模型/i.test(message)
     ? '创作服务暂时无法完成请求，请重试或检查服务连接。'
     : message;
@@ -221,6 +223,14 @@ export function extractVideosFromContent(content: string): ExtractedMedia[] {
 export function mediaOutputs(json: any, kind: 'image' | 'music' | 'video'): { url?: string; base64?: string; mime: string }[] {
   if (!json) return [];
 
+  // Gemini Interactions returns generated media in model_output steps.
+  if ((kind === 'image' || kind === 'video') && Array.isArray(json.steps)) {
+    return json.steps.filter((step: any) => step?.type === 'model_output')
+      .flatMap((step: any) => Array.isArray(step.content) ? step.content : [])
+      .filter((part: any) => part?.type === kind && (part.data || part.uri))
+      .map((part: any) => ({ base64: part.data, url: part.uri, mime: part.mime_type || (kind === 'video' ? 'video/mp4' : 'image/jpeg') }));
+  }
+
   // 原生聊天模式 (POST /v1/chat/completions) 输出提取
   if (json.choices && Array.isArray(json.choices)) {
     const chatOutputs: { url?: string; base64?: string; mime: string }[] = [];
@@ -305,6 +315,21 @@ export async function generateImage({
   n = 1,
   signal,
 }: GenerateImageOptions): Promise<Response> {
+  if (mode === 'interactions') {
+    const supportedRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', '1:8', '8:1', '1:4', '4:1'];
+    return request('interactions', key, {
+      method: 'POST', signal,
+      body: JSON.stringify({
+        model,
+        input: `${prompt}\n画面比例：${aspectRatio === 'auto' ? '自动，根据描述构图' : aspectRatio}。联想等级：${reasoningEffort}。只生成图片，不输出文字说明。`,
+        response_format: { type: 'image', image_size: imageSize, delivery: 'inline',
+          ...(supportedRatios.includes(aspectRatio) ? { aspect_ratio: aspectRatio } : {}),
+        },
+        stream: false,
+        store: false,
+      }),
+    });
+  }
   const isUpstreamExplicit = mode === 'upstream';
   const isNativeExplicit = mode === 'native';
 
@@ -467,9 +492,18 @@ export async function generateAudio({
   return callNative();
 }
 
-export async function generateVideo({ key, model, prompt, options, signal }: {
-  key: string; model: string; prompt: string; options: Record<string, string | number>; signal?: AbortSignal;
+export async function generateVideo({ key, model, prompt, options, signal, mode = videoEngineForModel(model) }: {
+  key: string; model: string; prompt: string; options: Record<string, string | number>; signal?: AbortSignal; mode?: VideoEngineMode;
 }): Promise<Response> {
+  if (mode === 'chat') {
+    const seconds = Number(options.seconds ?? 4);
+    if (!Number.isInteger(seconds) || seconds < 3 || seconds > 10) throw new Error('当前视频生成支持 3–10 秒，请调整时长后重试。');
+    return request('chat/completions', key, { method: 'POST', signal, body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: `请根据以下描述生成视频，返回生成的视频文件或视频链接。\n${prompt}\n目标时长：${seconds} 秒。\n画面比例：${options.aspect_ratio || '16:9'}。\n目标画质：${String(options.resolution || '720p').toUpperCase()}。${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}` }],
+      stream: false,
+    }) });
+  }
   return request('videos', key, { method: 'POST', signal, body: JSON.stringify({
     model,
     prompt: `${prompt}${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}`,
