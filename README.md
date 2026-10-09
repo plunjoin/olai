@@ -436,7 +436,7 @@ node scripts/verify-music.mjs
 
 在继续修复现有问题的同时，计划探索以下创作能力：
 
-- ✅ 视频工作流（短片工坊）—— 已完成
+- 视频工作流（短片工坊）—— Bate
 - 客户端视频合成（ffmpeg.wasm 或 WebCodecs）
 - 流水线生成
 - 链式生成

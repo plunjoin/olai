@@ -30,8 +30,8 @@ import MoreMenu from './ui/MoreMenu';
 import { PlayerProvider, revokeAssetMediaURL, usePlayer } from '../lib/playerContext';
 
 const navigation = [
-  { view: 'chat' as const, label: 'AI 对话', icon: ChatAgentSvg },
-  { view: 'workflow' as const, label: '短片工坊', icon: Film },
+  { view: 'chat' as const, label: 'AI 对话', icon: ChatAgentSvg, badge: 'Hot' },
+  { view: 'workflow' as const, label: '短片工坊', icon: Film, badge: 'Beta' },
 ];
 const modelKey = { image: 'imageModel', video: 'videoModel', music: 'musicModel' } as const;
 const errorText = (error: unknown) => publicServiceError(error instanceof Error ? error.message : '发生未知错误，请重试。');
@@ -109,7 +109,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
   const toggleSidebar = () => {
     setSidebarOpen(prev => {
       const next = !prev;
-      try { localStorage.setItem('olai.sidebar', String(next)); } catch {}
+      try { localStorage.setItem('olai.sidebar', String(next)); } catch { }
       return next;
     });
   };
@@ -252,7 +252,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
     };
   }, []);
   useEffect(() => { if (activeId) { try { localStorage.setItem('olai.active', activeId); } catch { /* Session still works in memory. */ } } }, [activeId]);
-  
+
   const refreshModels = async (key = settingsRef.current.key, announce = true) => {
     if (modelsLoading) return;
     setModelsLoading(true);
@@ -388,7 +388,8 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
     jobs.current.set(jobId, controller);
     const config = { ...settingsRef.current };
     try {
-      const response = await generateImage({ key: config.key, model: config.imageModel, mode: imageEngineMode || config.imageEngineMode, aspectRatio: '1:1', imageSize: '1K', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]),
+      const response = await generateImage({
+        key: config.key, model: config.imageModel, mode: imageEngineMode || config.imageEngineMode, aspectRatio: '1:1', imageSize: '1K', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]),
         prompt: `为原创歌曲设计一张精美的方形专辑封面，以视觉画面表达歌曲主题与情绪，构图完整，适合音乐作品展示。只生成一张封面图片。\n歌曲：${original.song?.title || original.prompt.slice(0, 100)}\n音乐风格：${original.song?.style || '根据主题设计'}\n主题灵感：${original.options.inspiration || original.prompt.slice(0, 3000)}\n歌词意象：${(original.song ? sungLines(original.song) : original.lyrics || '').slice(0, 3000)}\n无需文字，不要水印。`,
       });
       let coverUrl: string;
@@ -482,7 +483,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
         });
       } else {
         let extra = {};
-        try { extra = JSON.parse(config.musicExtra || '{}'); } catch {}
+        try { extra = JSON.parse(config.musicExtra || '{}'); } catch { }
         response = await generateAudio({
           key: config.key,
           model,
@@ -626,7 +627,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
       </div>
       <span className="nav-caption">陪伴与灵感</span>
       <nav aria-label="工作室导航">
-        {navigation.map(({ view: target, label, icon: IconComponent }) => (
+        {navigation.map(({ view: target, label, icon: IconComponent, badge }) => (
           <button
             key={target}
             className={`nav-item ${view === target ? 'active' : ''}`}
@@ -637,6 +638,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
               <IconComponent size={19} active={view === target} />
             </span>
             {label}
+            {badge && <span className="nav-new">{badge}</span>}
             {view !== 'library' && <span className="nav-active-dot" />}
           </button>
         ))}
