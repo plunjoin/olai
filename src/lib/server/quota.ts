@@ -21,3 +21,10 @@ export async function reserve(key: string, limit: number, expiresAt: number): Pr
 export async function reserveGeneration(owner: string, kind: string, limit: number) {
   return reserve(hash(`${owner}:${dayKey()}:${kind}`), limit, Date.now() + 2 * 86400_000);
 }
+
+export async function refundGeneration(owner: string, kind: string): Promise<void> {
+  const key = hash(`${owner}:${dayKey()}:${kind}`);
+  await db.update(DailyUsage)
+    .set({ count: sql`MAX(0, ${DailyUsage.count} - 1)` })
+    .where(sql`${DailyUsage.key} = ${key}`);
+}

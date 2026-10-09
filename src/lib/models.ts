@@ -206,10 +206,10 @@ export function pickBestAvailableModel(
       'gemini-3.1-flash-lite-image',
     ],
     video: [
+      'gemini-omni-1.1-flash',
       'veo-3.1-lite-generate-preview',
       'veo-3.1-fast-generate-preview',
       'veo-3.1-generate-preview',
-      'gemini-omni-1.1-flash',
     ],
     music: [
       'lyria-3.5',

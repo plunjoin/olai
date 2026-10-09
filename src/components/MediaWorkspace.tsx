@@ -37,7 +37,7 @@ export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCo
   const [thinking, setThinking] = useState(kind === 'video' ? 'high' : 'medium');
   const [duration, setDuration] = useState(4);
   const minimumDuration = videoEngineMode === 'task' ? 4 : 3;
-  const maximumDuration = videoEngineMode === 'task' ? 15 : 10;
+  const maximumDuration = videoEngineMode === 'task' ? 8 : 10;
   const [style, setStyle] = useState('');
   const [mode, setMode] = useState<'composer' | 'inspiration'>('inspiration');
   const [song, setSong] = useState<SongDraft>(newSong);

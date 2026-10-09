@@ -107,17 +107,20 @@ npm run dev
 
 ### 视频创作
 
-默认使用 **Veo 3.1 Lite**，参数提供 16:9 / 9:16、4–8 秒滑块（步长 1 秒）与 720p / 1080p / 4K，默认 **4 秒 / 720p**。
+默认使用 **Omni 1.1 Flash**，参数提供 16:9 / 9:16、3–10 秒滑块（步长 1 秒）与 720p / 1080p / 4K，默认 **4 秒 / 720p**。
 
-**Veo 模式**（默认）：
+**Omni 模式**（默认 `gemini-omni-1.1-flash`）：
+- 通过 /v1/chat/completions 接口，约 43 秒返回
+- 顶层 `resolution` 参数（720p/1080p/4k）控制画质
+- 时长、比例写入提示词作为创作偏好
+- 支持 3–10 秒时长
+- 返回 Markdown 格式的 Base64 视频：`![media](data:video/mp4;base64,...)`
+
+**Veo 模式**（配置 `veo-*` 模型）：
 - 分辨率直接映射：720p (1280×720), 1080p (1920×1080), 4K (3840×2160)，竖屏比例自动调换
 - 4K 视频需要 8 秒时长，选择 4K 会自动使用 8 秒
 - 使用独立 /v1/videos 异步任务接口
-
-**Omni 模式**（配置 `gemini-omni-*` 模型）：
-- 时长、比例和画质作为创作偏好写入提示词
-- 使用 /v1/chat/completions 接口
-- 支持 3–10 秒时长
+- 支持 4–8 秒时长
 
 视频按 MIME 保存原始文件，可播放、下载并收入作品库。两种路由共用视频生成额度。具体协议见[上游接口与模型](#上游接口与模型)。
 
@@ -169,7 +172,7 @@ npm run dev
 | `AI_CHAT_MODEL` | `gemini-3.5-flash` | 对话引擎在网关中的实际别名 |
 | `AI_IMAGE_MODEL` | `gemini-3.1-flash-image` | 图片引擎在网关中的实际别名 |
 | `AI_IMAGE_API_MODE` | `auto` | 图片接口模式；web2api 通过 chat 接口返回 Markdown 图片 |
-| `AI_VIDEO_MODEL` | `veo-3.1-lite-generate-preview` | 视频引擎；veo 使用 /v1/videos 异步任务接口 |
+| `AI_VIDEO_MODEL` | `gemini-omni-1.1-flash` | 视频引擎；omni 使用 /v1/chat/completions，veo 使用 /v1/videos |
 | `AI_MUSIC_MODEL` | `lyria-3.5` | 音乐引擎在网关中的实际别名；通过 chat 接口返回音频 |
 | `GUEST_DAILY_GENERATION_LIMIT` | `1` | 每个游客 IP、每种生成类型的每日次数 |
 | `USER_DAILY_GENERATION_LIMIT` | `15` | 每个登录账号、每种生成类型的每日次数 |
@@ -260,8 +263,8 @@ npm install --omit=dev --include=optional
 **当前配置说明：**
 - **对话**：`gemini-3.5-flash` 或 `gemini-flash-latest` 通过 /v1/chat/completions
 - **图片**：`gemini-3.1-flash-image` 通过 /v1/chat/completions，响应中包含 Markdown 格式的 Base64 图片，支持 `image_size: 1K/2K/4K` 和 `max_tokens >= 2048`
-- **视频**：`veo-3.1-lite-generate-preview` 通过 /v1/videos 异步任务接口，`size` 根据画质和比例计算（720p: 1280×720, 1080p: 1920×1080, 4K: 3840×2160），竖屏自动调换，4K 需要 8 秒
-- **音乐**：`lyria-3.5`（约 62 秒）、`lyria-3-pro-preview`（约 62 秒）、`lyria-3-clip-preview`（约 30 秒）通过 /v1/chat/completions，响应中包含 Markdown 格式的 MP3 音频 `![media](data:audio/mpeg;base64,...)`
+- **视频**：`gemini-omni-1.1-flash`（默认）通过 /v1/chat/completions，顶层 `resolution: 720p|1080p|4k` 参数，响应中包含 Markdown 格式的 Base64 视频；`veo-*` 模型通过 /v1/videos 异步任务接口
+- **音乐**：`lyria-3.5`（约 180 秒）、`lyria-3-pro-preview`（约 180 秒）、`lyria-3-clip-preview`（约 30 秒）通过 /v1/chat/completions，响应中包含 Markdown 格式的 MP3 音频 `![media](data:audio/mpeg;base64,...)`
 
 <details>
 <summary><strong>图片生成：chat/completions 接口</strong></summary>
@@ -276,9 +279,17 @@ web2api v0.3.0 的 /v1/images/generations 接口当前返回 502，不可用。
 
 
 <details>
-<summary><strong>视频生成：Veo 任务接口与 Omni 聊天接口</strong></summary>
+<summary><strong>视频生成：Omni 聊天接口与 Veo 任务接口</strong></summary>
 
-**Veo 模式**（默认 `veo-3.1-lite-generate-preview`）：
+**Omni 模式**（默认 `gemini-omni-1.1-flash`）：
+- 通过 `POST /v1/chat/completions` 转发
+- 发送 `model`、`messages`、`stream: false`、顶层 `resolution`（`"720p"` | `"1080p"` | `"4k"`）
+- 在提示词中要求生成视频，写入时长、比例、画质
+- 响应约 43 秒，返回 Markdown 格式的 Base64 视频：`![media](data:video/mp4;base64,...)`
+- 聊天响应只有文字时提示未收到视频文件
+- 支持 3–10 秒时长
+
+**Veo 模式**（配置 `veo-*` 模型）：
 - 使用 `POST /v1/videos`、`GET /v1/videos/{id}` 和携带鉴权的 `GET /v1/videos/{id}/content`
 - 发送 `model`、`prompt`、`size`、`seconds`（4-8 秒）
 - `size` 根据画质和比例计算：
@@ -287,13 +298,6 @@ web2api v0.3.0 的 /v1/images/generations 接口当前返回 502，不可用。
   - 4K: 3840×2160 (16:9) 或 2160×3840 (9:16)
 - 4K 视频自动使用 8 秒时长
 - 下载返回 409 时继续等待，失败任务停止查询
-
-**Omni 模式**（`gemini-omni-*` 模型）：
-- 通过 `POST /v1/chat/completions` 转发
-- 仅发送 `model`、`messages`、`stream: false`、`resolution`
-- 在提示词中要求生成视频，写入时长、比例、画质
-- 读取 `choices[].message` 中的视频链接、Markdown/data URI 或视频内容数组
-- 聊天响应只有文字时提示未收到视频文件
 
 Omni 与 Veo 两种路由共用视频生成额度。上游视频服务返回 HTML 错误页时，本站转为 JSON 错误。
 
@@ -305,8 +309,8 @@ Omni 与 Veo 两种路由共用视频生成额度。上游视频服务返回 HTM
 音乐使用 `POST /v1/chat/completions` 非流式 JSON，发送 `model`、`messages`、`stream: false`。
 
 支持的模型：
-- `lyria-3.5`（约 62 秒）
-- `lyria-3-pro-preview`（约 62 秒）
+- `lyria-3.5`（约 180 秒）
+- `lyria-3-pro-preview`（约 180 秒）
 - `lyria-3-clip-preview`（约 30 秒）
 
 响应的 `choices[].message.content` 包含 Markdown 格式的 MP3 音频，例如 `![media](data:audio/mpeg;base64,...)`。解码后为标准 MP3 文件。
