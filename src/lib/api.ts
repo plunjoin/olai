@@ -518,7 +518,15 @@ export async function generateVideo({ key, model, prompt, options, signal, mode 
     throw new Error('Veo 视频生成支持 4–8 秒，4K 需要 8 秒，请调整时长后重试。');
   }
   const aspectRatio = String(options.aspect_ratio || '16:9');
-  const size = aspectRatio === '9:16' ? '480x848' : '848x480';
+  const isPortrait = aspectRatio === '9:16';
+  let size: string;
+  if (resolution === '4k') {
+    size = isPortrait ? '2160x3840' : '3840x2160';
+  } else if (resolution === '1080p') {
+    size = isPortrait ? '1080x1920' : '1920x1080';
+  } else {
+    size = isPortrait ? '720x1280' : '1280x720';
+  }
   return request('videos', key, { method: 'POST', signal, body: JSON.stringify({
     model,
     prompt: `${prompt}${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}`,

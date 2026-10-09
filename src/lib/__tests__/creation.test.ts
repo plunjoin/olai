@@ -17,7 +17,19 @@ describe('creation configuration and request contracts', () => {
     await generateVideo({ key: 'test-key', model: 'veo-3.1-fast-generate-preview', prompt: 'flowers', options: { aspect_ratio: '9:16', seconds: 8, resolution: '4K', reasoning_effort: 'high', size: 'fake-size' } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/videos');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ model: 'veo-3.1-fast-generate-preview', prompt: 'flowers\n创意丰富程度：high。', size: '480x848', seconds: 8 });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ model: 'veo-3.1-fast-generate-preview', prompt: 'flowers\n创意丰富程度：high。', size: '2160x3840', seconds: 8 });
+  });
+  it('calculates Veo size from resolution and aspect ratio', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"id":"task-1"}', { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await generateVideo({ key: '', model: 'veo-3.1-lite-generate-preview', prompt: 'test', options: { aspect_ratio: '16:9', resolution: '720p', seconds: 5 } });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).size).toBe('1280x720');
+    await generateVideo({ key: '', model: 'veo-3.1-lite-generate-preview', prompt: 'test', options: { aspect_ratio: '9:16', resolution: '1080p', seconds: 6 } });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).size).toBe('1080x1920');
+    await generateVideo({ key: '', model: 'veo-3.1-lite-generate-preview', prompt: 'test', options: { aspect_ratio: '16:9', resolution: '4K', seconds: 4 } });
+    const body4k = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(body4k.size).toBe('3840x2160');
+    expect(body4k.seconds).toBe(8);
   });
   it('routes Omni through chat completions with video preferences in the prompt', async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ choices: [] }));
@@ -29,6 +41,7 @@ describe('creation configuration and request contracts', () => {
     expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'resolution', 'stream']);
     expect(body.model).toBe('gemini-omni-1.1-flash');
     expect(body.stream).toBe(false);
+    expect(body.resolution).toBe('4k');
     expect(body.messages).toHaveLength(1);
     expect(body.messages[0].role).toBe('user');
     for (const preference of ['生成视频', 'flowers', '10 秒', '9:16', '4K', 'high']) expect(body.messages[0].content).toContain(preference);

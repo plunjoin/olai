@@ -107,9 +107,19 @@ npm run dev
 
 ### 视频创作
 
-默认使用 **Omni 1.1 Flash**，参数提供 16:9 / 9:16、3–10 秒滑块（步长 1 秒）与 720p / 1080p / 4K，默认 **4 秒 / 720p**。时长、比例和画质属于创作偏好，不保证精确控制，选择 4K 不保证输出 4K。
+默认使用 **Veo 3.1 Lite**，参数提供 16:9 / 9:16、4–8 秒滑块（步长 1 秒）与 720p / 1080p / 4K，默认 **4 秒 / 720p**。
 
-视频按 MIME 保存原始文件，可播放、下载并收入作品库。聊天响应只有文字时，界面提示未收到视频文件。配置 `veo-*` 模型时使用独立任务接口，保留 4–15 秒参数选择；两种路由共用视频生成额度。具体协议见[上游接口与模型](#上游接口与模型)。
+**Veo 模式**（默认）：
+- 分辨率直接映射：720p (1280×720), 1080p (1920×1080), 4K (3840×2160)，竖屏比例自动调换
+- 4K 视频需要 8 秒时长，选择 4K 会自动使用 8 秒
+- 使用独立 /v1/videos 异步任务接口
+
+**Omni 模式**（配置 `gemini-omni-*` 模型）：
+- 时长、比例和画质作为创作偏好写入提示词
+- 使用 /v1/chat/completions 接口
+- 支持 3–10 秒时长
+
+视频按 MIME 保存原始文件，可播放、下载并收入作品库。两种路由共用视频生成额度。具体协议见[上游接口与模型](#上游接口与模型)。
 
 ## 账号与生成额度
 
@@ -250,7 +260,7 @@ npm install --omit=dev --include=optional
 **当前配置说明：**
 - **对话**：`gemini-3.5-flash` 或 `gemini-flash-latest` 通过 /v1/chat/completions
 - **图片**：`gemini-3.1-flash-image` 通过 /v1/chat/completions，响应中包含 Markdown 格式的 Base64 图片，支持 `image_size: 1K/2K/4K` 和 `max_tokens >= 2048`
-- **视频**：`veo-3.1-lite-generate-preview` 通过 /v1/videos 异步任务接口，支持 `size` 和 `seconds` 参数，4K 需要 8 秒
+- **视频**：`veo-3.1-lite-generate-preview` 通过 /v1/videos 异步任务接口，`size` 根据画质和比例计算（720p: 1280×720, 1080p: 1920×1080, 4K: 3840×2160），竖屏自动调换，4K 需要 8 秒
 - **音乐**：`lyria-3.5`（约 62 秒）、`lyria-3-pro-preview`（约 62 秒）、`lyria-3-clip-preview`（约 30 秒）通过 /v1/chat/completions，响应中包含 Markdown 格式的 MP3 音频 `![media](data:audio/mpeg;base64,...)`
 
 <details>
@@ -270,8 +280,12 @@ web2api v0.3.0 的 /v1/images/generations 接口当前返回 502，不可用。
 
 **Veo 模式**（默认 `veo-3.1-lite-generate-preview`）：
 - 使用 `POST /v1/videos`、`GET /v1/videos/{id}` 和携带鉴权的 `GET /v1/videos/{id}/content`
-- 发送 `model`、`prompt`、`size`（`848x480` 或 `480x848`）、`seconds`（4-8 秒）
-- 4K 视频需要 8 秒时长
+- 发送 `model`、`prompt`、`size`、`seconds`（4-8 秒）
+- `size` 根据画质和比例计算：
+  - 720p: 1280×720 (16:9) 或 720×1280 (9:16)
+  - 1080p: 1920×1080 (16:9) 或 1080×1920 (9:16)
+  - 4K: 3840×2160 (16:9) 或 2160×3840 (9:16)
+- 4K 视频自动使用 8 秒时长
 - 下载返回 409 时继续等待，失败任务停止查询
 
 **Omni 模式**（`gemini-omni-*` 模型）：
