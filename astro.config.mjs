@@ -8,6 +8,9 @@ export default defineConfig({
   adapter: node({ mode: 'standalone' }),
   vite: {
     ssr: { noExternal: [/^drizzle-orm(?:\/|$)/] },
+    optimizeDeps: {
+      exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+    },
   },
   server: { port: 4321 },
   devToolbar: { enabled: false },

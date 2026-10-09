@@ -135,6 +135,7 @@ describe('generateImage', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 502,
+      headers: new Headers(),
       json: async () => ({ message: 'error code: 502' }),
     });
 

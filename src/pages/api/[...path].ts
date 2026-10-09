@@ -69,7 +69,8 @@ export const ALL: APIRoute = async context => {
         }
         let kind;
         const actualVideoModel = payload.model === DEFAULT_SETTINGS.videoModel ? (process.env.AI_VIDEO_MODEL || import.meta.env.AI_VIDEO_MODEL || payload.model) : payload.model;
-        if (path === 'videos' && /^gemini-omni-/i.test(String(actualVideoModel))) {
+        const videoOmniAsync = (process.env.AI_VIDEO_OMNI_ASYNC || import.meta.env.AI_VIDEO_OMNI_ASYNC) === 'true';
+        if (path === 'videos' && /^gemini-omni-/i.test(String(actualVideoModel)) && !videoOmniAsync) {
           return Response.json({ error: { message: '当前视频引擎使用聊天生成接口，请刷新页面后重新生成。' } }, { status: 400 });
         }
         try { kind = generationKind(path, payload); }

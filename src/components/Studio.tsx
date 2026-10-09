@@ -83,7 +83,7 @@ function buildUrl(targetView: View, conversationId?: string): string {
   return `/${targetView}`;
 }
 
-function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode }) {
+function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, videoOmniAsync = false, videoImageInput = false, videoExtendMaxSeconds = 30 }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; videoOmniAsync?: boolean; videoImageInput?: boolean; videoExtendMaxSeconds?: number }) {
   const { confirm, prompt, dialog } = useDialogs();
   const { activeMedia, close: closePlayer, updateLyrics, updateCover } = usePlayer();
   const [view, setView] = useState<View>(() => {
@@ -637,7 +637,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
               <IconComponent size={19} active={view === target} />
             </span>
             {label}
-            {view !== 'library' && <span className="nav-active-dot" />}
+            {view === target && <span className="nav-active-dot" />}
           </button>
         ))}
         <div className="nav-separator" />
@@ -673,7 +673,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
         </button>
       </div>
     </aside>
-    <main className={`main-shell ${view !== 'library' ? 'chat-main' : ''}`}>
+    <main className={`main-shell ${view === 'chat' ? 'chat-main' : ''}`}>
       <header className="topbar">
         <div className="breadcrumbs">
           <button
@@ -722,7 +722,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
             <span>{syncing ? '正在后台同步游客记录，可继续创作。' : `${syncFailures.length} 条游客记录同步未完成，内容仍保留在本地，可继续创作。`}</span>
             {syncFailures.length > 0 && <button className="secondary-button" disabled={syncing} onClick={() => void runGuestSync(account.user!.id)}>重试同步</button>}
           </div>}
-          {view !== 'library' && (
+          {view === 'chat' && (
             <ChatWorkspace
               cloudStorage={!!account.user}
               conversation={active}
@@ -779,10 +779,15 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
               videoModel={settings.videoModel}
               musicModel={settings.musicModel}
               generationLimit={account.generationLimit}
+              videoOmniAsync={videoOmniAsync}
+              videoImageInput={videoImageInput}
+              videoExtendMaxSeconds={videoExtendMaxSeconds}
               onRequestQuota={async (kind, count) => {
                 const confirmed = await confirm(
+                  '确认生成',
                   `生成 ${count} 个${kind === 'image' ? '关键帧' : kind === 'video' ? '视频' : '配乐'}将消耗 ${count} 次${kind === 'image' ? '图片' : kind === 'video' ? '视频' : '音乐'}额度。今日剩余：${account.generationLimit} 次。\n\n是否继续？`,
-                  '确认生成'
+                  '确认生成',
+                  'primary'
                 );
                 return confirmed;
               }}
@@ -817,10 +822,10 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
   </div>;
 }
 
-export default function Studio({ serverKey = false, imageEngineMode, videoEngineMode }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode }) {
+export default function Studio({ serverKey = false, imageEngineMode, videoEngineMode, videoOmniAsync = false, videoImageInput = false, videoExtendMaxSeconds = 30 }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; videoOmniAsync?: boolean; videoImageInput?: boolean; videoExtendMaxSeconds?: number }) {
   return (
     <PlayerProvider>
-      <StudioInner serverKey={serverKey} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} />
+      <StudioInner serverKey={serverKey} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} videoOmniAsync={videoOmniAsync} videoImageInput={videoImageInput} videoExtendMaxSeconds={videoExtendMaxSeconds} />
     </PlayerProvider>
   );
 }

@@ -36,6 +36,12 @@ function recordError(value: any, store: string): string | null {
     if (invalid >= 0) return `会话第 ${invalid + 1} 条消息的编号、角色或内容格式无效。`;
     return null;
   }
+  if (store === 'workflows') {
+    if (typeof value.title !== 'string' || value.title.length > 100) return '工作流标题无效或超过 100 个字符。';
+    if (!Number.isFinite(value.updatedAt)) return '工作流缺少有效的更新时间。';
+    if (typeof value.idea !== 'string') return '工作流创意需要是文本。';
+    return null;
+  }
   if (!['image', 'music', 'video'].includes(value.kind)) return '作品类型无效。';
   if (!['pending', 'completed', 'failed'].includes(value.status)) return '作品状态无效。';
   if (typeof value.prompt !== 'string') return '作品描述需要是文本。';
@@ -45,7 +51,7 @@ function recordError(value: any, store: string): string | null {
 export const ALL: APIRoute = async context => {
   const { request, params, url } = context;
   const store = params.store;
-  if (!['conversations', 'assets'].includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
+  if (!['conversations', 'assets', 'workflows'].includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
   if (request.method !== 'GET' && !sameOrigin(request)) return fail('不允许跨站调用。', 403);
   try {
     const user = await currentUser(context);

@@ -34,6 +34,9 @@ interface VideoWorkflowWorkspaceProps {
   videoModel: string;
   musicModel: string;
   generationLimit: number;
+  videoOmniAsync: boolean;
+  videoImageInput: boolean;
+  videoExtendMaxSeconds: number;
   onRequestQuota: (kind: 'image' | 'video' | 'music', count: number) => Promise<boolean>;
   onError: (message: string) => void;
 }
@@ -49,10 +52,6 @@ const STAGE_LABELS: Record<WorkflowStage, string> = {
   complete: '完成',
 };
 
-// 环境变量配置
-const AI_VIDEO_IMAGE_INPUT = import.meta.env.AI_VIDEO_IMAGE_INPUT === 'true';
-const AI_VIDEO_OMNI_ASYNC = import.meta.env.AI_VIDEO_OMNI_ASYNC === 'true';
-const AI_VIDEO_EXTEND_MAX_SECONDS = parseInt(import.meta.env.AI_VIDEO_EXTEND_MAX_SECONDS || '30', 10);
 const MAX_CONCURRENCY = 2; // 限制并发数
 
 export default function VideoWorkflowWorkspace({
@@ -62,6 +61,9 @@ export default function VideoWorkflowWorkspace({
   videoModel,
   musicModel,
   generationLimit,
+  videoOmniAsync,
+  videoImageInput,
+  videoExtendMaxSeconds,
   onRequestQuota,
   onError,
 }: VideoWorkflowWorkspaceProps) {
@@ -72,15 +74,62 @@ export default function VideoWorkflowWorkspace({
   const [editingShot, setEditingShot] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Helper: revive blob URLs from stored blobs
+  const reviveProjectBlobURLs = useCallback((project: VideoWorkflowProject): VideoWorkflowProject => {
+    const revived = { ...project };
+    
+    // Revive shot blobs
+    if (revived.shots) {
+      revived.shots = revived.shots.map(shot => {
+        const revivedShot = { ...shot };
+        if (shot.keyframeBlob && !shot.keyframeUrl) {
+          revivedShot.keyframeUrl = URL.createObjectURL(shot.keyframeBlob);
+        }
+        if (shot.videoBlob && !shot.videoUrl) {
+          revivedShot.videoUrl = URL.createObjectURL(shot.videoBlob);
+        }
+        return revivedShot;
+      });
+    }
+    
+    // Revive music blob
+    if (revived.musicBlob && !revived.musicUrl) {
+      revived.musicUrl = URL.createObjectURL(revived.musicBlob);
+    }
+    
+    // Revive final video blob
+    if (revived.finalVideoBlob && !revived.finalVideoUrl) {
+      revived.finalVideoUrl = URL.createObjectURL(revived.finalVideoBlob);
+    }
+    
+    return revived;
+  }, []);
+
   // 加载项目列表
   useEffect(() => {
-    getAll<VideoWorkflowProject>('workflows').then(setProjects).catch(console.error);
-  }, []);
+    getAll<VideoWorkflowProject>('workflows').then(loaded => {
+      const revived = loaded.map(reviveProjectBlobURLs);
+      setProjects(revived);
+    }).catch(console.error);
+  }, [reviveProjectBlobURLs]);
 
   // 保存项目
   const saveProject = useCallback(async (project: VideoWorkflowProject) => {
     const updated = { ...project, updatedAt: Date.now() };
-    await put('workflows', updated);
+    
+    // Strip blob: URLs before saving (they die after restart; we'll regenerate from blobs)
+    const toSave = { ...updated };
+    if (toSave.shots) {
+      toSave.shots = toSave.shots.map(shot => ({
+        ...shot,
+        keyframeUrl: shot.keyframeUrl?.startsWith('blob:') ? undefined : shot.keyframeUrl,
+        videoUrl: shot.videoUrl?.startsWith('blob:') ? undefined : shot.videoUrl,
+      }));
+    }
+    toSave.musicUrl = toSave.musicUrl?.startsWith('blob:') ? undefined : toSave.musicUrl;
+    toSave.finalVideoUrl = toSave.finalVideoUrl?.startsWith('blob:') ? undefined : toSave.finalVideoUrl;
+    
+    await put('workflows', toSave);
     setCurrentProject(updated);
     setProjects(prev => {
       const index = prev.findIndex(p => p.id === updated.id);
@@ -401,8 +450,8 @@ export default function VideoWorkflowWorkspace({
     const isOmni = /omni/i.test(videoModel);
     let generationCount = shotsToGenerate.length;
     
-    if (currentProject.useContinuousShot && isOmni && AI_VIDEO_OMNI_ASYNC) {
-      const { totalGenerations } = planContinuousShots(shotsToGenerate, AI_VIDEO_EXTEND_MAX_SECONDS);
+    if (currentProject.useContinuousShot && isOmni && videoOmniAsync) {
+      const { totalGenerations } = planContinuousShots(shotsToGenerate, videoExtendMaxSeconds);
       generationCount = totalGenerations;
     }
     
@@ -411,14 +460,14 @@ export default function VideoWorkflowWorkspace({
     
     setLoading(true);
     abortRef.current = new AbortController();
-    const videoMode = videoEngineForModel(videoModel, AI_VIDEO_OMNI_ASYNC);
+    const videoMode = videoEngineForModel(videoModel, videoOmniAsync);
     
     try {
       const updatedShots = [...currentProject.shots];
       
       // 连续长镜头模式
-      if (currentProject.useContinuousShot && isOmni && AI_VIDEO_OMNI_ASYNC) {
-        const { segments } = planContinuousShots(shotsToGenerate, AI_VIDEO_EXTEND_MAX_SECONDS);
+      if (currentProject.useContinuousShot && isOmni && videoOmniAsync) {
+        const { segments } = planContinuousShots(shotsToGenerate, videoExtendMaxSeconds);
         
         for (const segment of segments) {
           let extendFrom: string | undefined;
@@ -437,7 +486,7 @@ export default function VideoWorkflowWorkspace({
             await saveProject({ ...currentProject, shots: updatedShots });
             
             try {
-              const hasKeyframe = !!shot.keyframeBlob && AI_VIDEO_IMAGE_INPUT && !extendFrom;
+              const hasKeyframe = !!shot.keyframeBlob && videoImageInput && !extendFrom;
               const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe);
               
               const response = await generateVideo({
@@ -488,7 +537,23 @@ export default function VideoWorkflowWorkspace({
                   };
                   break;
                 } else if (status.status === 'failed') {
-                  throw new Error(status.error?.message || '视频生成失败');
+                  const errorMsg = status.error?.message || '视频生成失败';
+                  const err = new Error(errorMsg) as Error & { status?: number; retryAfter?: number };
+                  // Check for rate limit in async task error
+                  if (status.error?.code === 'rate_limit_exceeded') {
+                    err.status = 429;
+                    // Parse Retry-After from message
+                    const match = errorMsg.match(/最早恢复时间\s+([^\s]+)/);
+                    if (match) {
+                      try {
+                        const date = new Date(match[1]);
+                        err.retryAfter = Math.max(0, Math.floor((date.getTime() - Date.now()) / 1000));
+                      } catch {
+                        // ignore
+                      }
+                    }
+                  }
+                  throw err;
                 }
                 
                 if (attempts >= maxAttempts) {
@@ -500,7 +565,7 @@ export default function VideoWorkflowWorkspace({
               
               // 处理 429 限流
               if (error.status === 429) {
-                const retryAfter = parseRetryAfter(error.headers?.get?.('Retry-After'));
+                const retryAfter = error.retryAfter;
                 const waitMessage = retryAfter 
                   ? `请等待 ${retryAfter} 秒后重试` 
                   : '已达到每日额度上限，请明天再试';
@@ -524,10 +589,10 @@ export default function VideoWorkflowWorkspace({
       } else {
         // 普通模式：并发生成（限制并发数）
         const pending = [...shotsToGenerate];
-        const running: Promise<void>[] = [];
+        const running = new Map<string, Promise<void>>();
         
-        while (pending.length > 0 || running.length > 0) {
-          while (running.length < MAX_CONCURRENCY && pending.length > 0) {
+        while (pending.length > 0 || running.size > 0) {
+          while (running.size < MAX_CONCURRENCY && pending.length > 0) {
             const shot = pending.shift()!;
             const shotIndex = updatedShots.findIndex(s => s.id === shot.id);
             if (shotIndex === -1) continue;
@@ -539,7 +604,7 @@ export default function VideoWorkflowWorkspace({
               await saveProject({ ...currentProject, shots: updatedShots });
               
               try {
-                const hasKeyframe = !!shot.keyframeBlob && AI_VIDEO_IMAGE_INPUT;
+                const hasKeyframe = !!shot.keyframeBlob && videoImageInput;
                 const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe);
                 
                 const response = await generateVideo({
@@ -589,7 +654,23 @@ export default function VideoWorkflowWorkspace({
                       };
                       break;
                     } else if (status.status === 'failed') {
-                      throw new Error(status.error?.message || '视频生成失败');
+                      const errorMsg = status.error?.message || '视频生成失败';
+                      const err = new Error(errorMsg) as Error & { status?: number; retryAfter?: number };
+                      // Check for rate limit in async task error
+                      if (status.error?.code === 'rate_limit_exceeded') {
+                        err.status = 429;
+                        // Parse Retry-After from message
+                        const match = errorMsg.match(/最早恢复时间\s+([^\s]+)/);
+                        if (match) {
+                          try {
+                            const date = new Date(match[1]);
+                            err.retryAfter = Math.max(0, Math.floor((date.getTime() - Date.now()) / 1000));
+                          } catch {
+                            // ignore
+                          }
+                        }
+                      }
+                      throw err;
                     }
                     
                     if (attempts >= maxAttempts) {
@@ -631,7 +712,7 @@ export default function VideoWorkflowWorkspace({
                 if (error.name === 'AbortError') throw error;
                 
                 if (error.status === 429) {
-                  const retryAfter = parseRetryAfter(error.headers?.get?.('Retry-After'));
+                  const retryAfter = error.retryAfter;
                   const waitMessage = retryAfter 
                     ? `请等待 ${retryAfter} 秒后重试` 
                     : '已达到每日额度上限，请明天再试';
@@ -652,21 +733,18 @@ export default function VideoWorkflowWorkspace({
               await saveProject({ ...currentProject, shots: updatedShots });
             })();
             
-            running.push(task);
+            const taskId = shot.id;
+            running.set(taskId, task.finally(() => running.delete(taskId)));
           }
           
-          if (running.length > 0) {
-            await Promise.race(running);
-            const idx = running.findIndex(p => 
-              (p as any).status === 'fulfilled' || (p as any).status === 'rejected'
-            );
-            if (idx !== -1) running.splice(idx, 1);
+          if (running.size > 0) {
+            await Promise.race(running.values());
           }
         }
       }
       
-      const allCompleted = updatedShots.every(s => s.videoStatus === 'completed');
-      if (allCompleted && !regenerateShotId) {
+      // Always advance to videos stage after generation attempt (not just on all success)
+      if (!regenerateShotId) {
         await saveProject({ ...currentProject, stage: 'videos', shots: updatedShots });
       }
     } catch (error: any) {
@@ -862,7 +940,7 @@ export default function VideoWorkflowWorkspace({
                     </span>
                   </div>
                   <div className="workflow-project-actions">
-                    <button onClick={() => setCurrentProject(project)}>
+                    <button onClick={() => setCurrentProject(reviveProjectBlobURLs(project))}>
                       继续
                     </button>
                     <button onClick={() => handleDeleteProject(project.id)}>
@@ -883,10 +961,10 @@ export default function VideoWorkflowWorkspace({
   
   // 计算连续长镜头模式的生成次数
   let continuousGenerations = 0;
-  if (currentProject.useContinuousShot && isOmni && AI_VIDEO_OMNI_ASYNC && currentProject.shots) {
+  if (currentProject.useContinuousShot && isOmni && videoOmniAsync && currentProject.shots) {
     const shotsToGenerate = currentProject.shots.filter(s => !s.videoStatus || s.videoStatus === 'failed');
     if (shotsToGenerate.length > 0) {
-      const { totalGenerations } = planContinuousShots(shotsToGenerate, AI_VIDEO_EXTEND_MAX_SECONDS);
+      const { totalGenerations } = planContinuousShots(shotsToGenerate, videoExtendMaxSeconds);
       continuousGenerations = totalGenerations;
     }
   }
@@ -952,14 +1030,14 @@ export default function VideoWorkflowWorkspace({
               <h3>分镜列表 - 可编辑</h3>
               <p>
                 共 {currentProject.shots.length} 个镜头，总时长 {calculateTotalDuration(currentProject.shots)} 秒
-                {isOmni && AI_VIDEO_OMNI_ASYNC && (
+                {isOmni && videoOmniAsync && (
                   <span className="workflow-note-inline">
                     （Omni 每段固定 {OMNI_SEGMENT_DURATION} 秒）
                   </span>
                 )}
               </p>
               
-              {isOmni && AI_VIDEO_OMNI_ASYNC && (
+              {isOmni && videoOmniAsync && (
                 <label className="workflow-checkbox">
                   <input
                     type="checkbox"
@@ -967,7 +1045,7 @@ export default function VideoWorkflowWorkspace({
                     onChange={(e) => saveProject({ ...currentProject, useContinuousShot: e.target.checked })}
                   />
                   <span>
-                    连续长镜头模式（最多 {AI_VIDEO_EXTEND_MAX_SECONDS} 秒，使用 extend_from 保持连续性）
+                    连续长镜头模式（最多 {videoExtendMaxSeconds} 秒，使用 extend_from 保持连续性）
                   </span>
                 </label>
               )}
@@ -1075,7 +1153,7 @@ export default function VideoWorkflowWorkspace({
                 <button onClick={() => handleAddShot(currentProject.shots!.length - 1)}>
                   添加镜头
                 </button>
-                <button onClick={generateKeyframes} className="workflow-action-primary">
+                <button onClick={() => generateKeyframes()} className="workflow-action-primary">
                   下一步 - 生成关键帧（{pending.keyframes} 个）
                 </button>
               </div>
