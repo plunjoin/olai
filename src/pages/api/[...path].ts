@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS } from '../../lib/types';
 import { db, VideoJob, eq } from '../../lib/server/database';
 import { currentUser } from '../../lib/server/auth';
 import { ClientIPError, clientIP, dailyLimit, generationKind, hash, sameOrigin } from '../../lib/server/policy';
-import { reserveGeneration } from '../../lib/server/quota';
+import { reserveGeneration, refundGeneration } from '../../lib/server/quota';
 import { upstreamErrorResponse } from '../../lib/server/upstream';
 
 export const prerender = false;
@@ -38,6 +38,8 @@ export const ALL: APIRoute = async context => {
   const timeout = AbortSignal.timeout(180_000);
   let upstreamStarted = false;
   let useBetaInteractions = false;
+  let reservedKind: string | undefined;
+  let reservedOwner: string | undefined;
 
   try {
     let owner = '';
@@ -95,6 +97,8 @@ export const ALL: APIRoute = async context => {
             const label = { image: '图片', music: '音乐', video: '视频' }[kind];
             return Response.json({ error: { message: `今日${label}生成额度已用完（每天 ${limit} 次）。${owner.startsWith('ip:') ? '登录后可使用账号额度。' : '请北京时间零点后再试。'}` } }, { status: 429 });
           }
+          reservedKind = kind;
+          reservedOwner = owner;
           // Each submitted request creates one output, regardless of client input.
           if ('n' in payload) payload.n = 1;
         }
@@ -120,7 +124,10 @@ export const ALL: APIRoute = async context => {
       signal: AbortSignal.any([request.signal, timeout]),
     });
     const upstreamError = await upstreamErrorResponse(upstream, useBetaInteractions ? 'videos' : path);
-    if (upstreamError) return upstreamError;
+    if (upstreamError) {
+      if (reservedKind && reservedOwner) await refundGeneration(reservedOwner, reservedKind);
+      return upstreamError;
+    }
 
     const headers = new Headers({
       'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',
@@ -141,6 +148,7 @@ export const ALL: APIRoute = async context => {
       console.error('Generation policy failed:', error);
       return Response.json({ error: { message: '账号或额度服务暂不可用，请稍后重试。' } }, { status: 503 });
     }
+    if (reservedKind && reservedOwner) await refundGeneration(reservedOwner, reservedKind);
     const message = timeout.aborted ? '上游请求超时，请稍后重试。' : error instanceof Error && error.name === 'AbortError' ? '请求已停止。' : '暂时无法连接 AI 服务，请检查网络或服务配置。';
     return Response.json({ error: { message } }, { status: 502 });
   }

@@ -32,7 +32,7 @@ export interface Settings {
 }
 export const DEFAULT_SETTINGS: Settings = {
   key: '', rememberKey: false, chatModel: 'gemini-3.5-flash', imageModel: 'gemini-3.1-flash-image',
-  videoModel: 'veo-3.1-lite-generate-preview', musicModel: 'lyria-3.5',
+  videoModel: 'gemini-omni-1.1-flash', musicModel: 'lyria-3.5',
   systemPrompt: '你是小o，Olai（Online AI Chat Companion）的星球伙伴，一个温暖、善解人意且知识渊博的在线 AI 伴侣与创意助手。用“小o”介绍自己，默认用中文回答。陪伴用户畅聊日常、倾听心声、激发灵感并协助创作。', temperature: 0.7,
   musicPath: 'speech', musicExtra: '{}',
   imageEngineMode: 'auto',

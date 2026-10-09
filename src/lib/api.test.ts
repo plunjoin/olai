@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { base64Blob, extractImagesFromContent, generateImage, mediaOutputs, safeMediaURL } from './api';
+import { base64Blob, extractImagesFromContent, generateImage, mediaOutputs, publicServiceError, safeMediaURL } from './api';
 
 describe('safeMediaURL', () => {
   it('allows http and https URLs', () => {
@@ -103,6 +103,29 @@ describe('base64Blob', () => {
     const blob = base64Blob('AQ ID\n', 'image/jpeg');
     expect(blob.type).toBe('image/jpeg');
     expect(blob.size).toBe(3);
+  });
+});
+
+describe('publicServiceError', () => {
+  it('identifies rate limit errors from status code', () => {
+    expect(publicServiceError('Model not available', 429)).toBe('上游创作服务额度已用完或请求受限，请稍后重试。');
+  });
+
+  it('identifies rate limit errors from message content', () => {
+    expect(publicServiceError('Rate limit exceeded for ai.google.dev/gemini-api')).toBe('上游创作服务额度已用完或请求受限，请稍后重试。');
+    expect(publicServiceError('Quota exceeded, please retry later')).toBe('上游创作服务额度已用完或请求受限，请稍后重试。');
+    expect(publicServiceError('请求过于频繁')).toBe('上游创作服务额度已用完或请求受限，请稍后重试。');
+  });
+
+  it('masks model names in generic errors', () => {
+    const result = publicServiceError('Model gemini-3.5-flash not found');
+    expect(result).toBe('创作服务暂时无法完成请求，请重试或检查服务连接。');
+    expect(result).not.toContain('gemini');
+  });
+
+  it('preserves non-sensitive error messages', () => {
+    expect(publicServiceError('网络连接失败')).toBe('网络连接失败');
+    expect(publicServiceError('Invalid API key')).toBe('Invalid API key');
   });
 });
 

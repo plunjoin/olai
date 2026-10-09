@@ -60,10 +60,11 @@ describe('creation configuration and request contracts', () => {
   });
   it('keeps internal model identifiers out of visible service errors', () => {
     expect(publicServiceError('Model lyria-3.5 unavailable')).not.toContain('lyria');
-    expect(publicServiceError('每日额度不足')).toBe('每日额度不足');
+    expect(publicServiceError('每日额度不足')).toBe('上游创作服务额度已用完或请求受限，请稍后重试。');
+    expect(publicServiceError('网络连接失败')).toBe('网络连接失败');
   });
   it('uses the requested creative engines', () => {
-    expect([DEFAULT_SETTINGS.chatModel, DEFAULT_SETTINGS.musicModel, DEFAULT_SETTINGS.imageModel, DEFAULT_SETTINGS.videoModel]).toEqual(['gemini-3.5-flash', 'lyria-3.5', 'gemini-3.1-flash-image', 'veo-3.1-lite-generate-preview']);
+    expect([DEFAULT_SETTINGS.chatModel, DEFAULT_SETTINGS.musicModel, DEFAULT_SETTINGS.imageModel, DEFAULT_SETTINGS.videoModel]).toEqual(['gemini-3.5-flash', 'lyria-3.5', 'gemini-3.1-flash-image', 'gemini-omni-1.1-flash']);
   });
   it('preserves auto composition and accepts positive custom ratios', () => {
     expect(imageDimensions('auto', '4K')).toBeUndefined();
@@ -115,7 +116,7 @@ describe('creation configuration and request contracts', () => {
   it('does not redirect failed native music generation to an undocumented music API', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"error":{"message":"每日额度不足"}}', { status: 502 }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(generateAudio({ key: '', model: 'lyria-3.5', prompt: 'a song' })).rejects.toThrow('每日额度不足');
+    await expect(generateAudio({ key: '', model: 'lyria-3.5', prompt: 'a song' })).rejects.toThrow('上游创作服务额度已用完或请求受限');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('uses speech input and voice fields for explicit upstream audio', async () => {
@@ -155,7 +156,7 @@ describe('creation configuration and request contracts', () => {
     const text: string[] = [];
     await consumeSSE(makeStream(['你好', '世界']), value => text.push(value));
     expect(text.join('')).toBe('你好世界');
-    await expect(consumeSSE(makeStream(['[Err', 'or] 每日额度不足']), () => {})).rejects.toThrow('每日额度不足');
+    await expect(consumeSSE(makeStream(['[Err', 'or] 每日额度不足']), () => {})).rejects.toThrow('上游创作服务额度已用完或请求受限');
   });
 });
 describe('shared composer format', () => {

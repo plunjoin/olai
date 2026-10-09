@@ -3,8 +3,11 @@ import { base64ToBytes, isRiffWav, parseAudioDataUri } from './audio';
 import { songPrompt } from './music';
 import { videoEngineForModel, type VideoEngineMode } from './video';
 
-export function publicServiceError(message: string): string {
+export function publicServiceError(message: string, status?: number): string {
   if (/官方 Gemini 后端未启用|gemini_api.*(?:disabled|not enabled)/i.test(message)) return '官方媒体生成接口尚未启用，请由服务提供方启用官方后端后再试。';
+  if (status === 429 || /rate[_\s-]?limit|quota|额度|请求.*(?:受限|过多|频繁)/i.test(message)) {
+    return '上游创作服务额度已用完或请求受限，请稍后重试。';
+  }
   return /gemini|lyria|veo|nano[\s-]?banana|omini|\bmodel\b|模型/i.test(message)
     ? '创作服务暂时无法完成请求，请重试或检查服务连接。'
     : message;
@@ -18,7 +21,7 @@ export async function request(path: string, key: string, init: RequestInit = {})
   if (!response.ok) {
     let message = `请求失败（${response.status}）`;
     try { const body = await response.json(); message = body.error?.message || body.message || message; } catch { /* Keep HTTP error. */ }
-    const err = new Error(publicServiceError(message)) as Error & { status?: number };
+    const err = new Error(publicServiceError(message, response.status)) as Error & { status?: number };
     err.status = response.status;
     throw err;
   }
