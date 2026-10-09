@@ -66,6 +66,7 @@ export interface VideoWorkflowProject {
   // 阶段 2: 分镜
   targetLength?: number;          // 目标时长（秒），默认 30
   shots?: Shot[];
+  useContinuousShot?: boolean;    // 是否使用连续长镜头模式（extend_from）
   
   // 阶段 5: 配乐
   musicUrl?: string;
@@ -76,6 +77,8 @@ export interface VideoWorkflowProject {
   // 阶段 6: 成片
   finalVideoUrl?: string;
   finalVideoBlob?: Blob;
+  finalVideoStatus?: 'pending' | 'completed' | 'failed';
+  finalVideoError?: string;
   
   // 错误处理
   error?: string;
@@ -256,4 +259,163 @@ export function createWorkflowProject(idea: string, targetLength: number = 30): 
     idea,
     targetLength,
   };
+}
+
+/**
+ * 创建空镜头
+ */
+export function createEmptyShot(number: number): Shot {
+  return {
+    id: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    number,
+    duration: 4,
+    framing: '中景',
+    cameraMovement: '固定',
+    sceneDescription: '',
+    dialogue: '',
+    soundNotes: '',
+  };
+}
+
+/**
+ * 更新镜头
+ */
+export function updateShot(shot: Shot, updates: Partial<Shot>): Shot {
+  return { ...shot, ...updates };
+}
+
+/**
+ * 复制镜头
+ */
+export function duplicateShot(shot: Shot, newNumber: number): Shot {
+  return {
+    ...shot,
+    id: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    number: newNumber,
+    // 清除生成的内容，需要重新生成
+    keyframeUrl: undefined,
+    keyframeBlob: undefined,
+    keyframeStatus: undefined,
+    keyframeError: undefined,
+    videoUrl: undefined,
+    videoBlob: undefined,
+    videoRemoteId: undefined,
+    videoStatus: undefined,
+    videoError: undefined,
+  };
+}
+
+/**
+ * 移除镜头
+ */
+export function removeShot(shots: Shot[], shotId: string): Shot[] {
+  const filtered = shots.filter(s => s.id !== shotId);
+  // 重新编号
+  return filtered.map((shot, index) => ({ ...shot, number: index + 1 }));
+}
+
+/**
+ * 添加镜头
+ */
+export function addShot(shots: Shot[], afterIndex: number): Shot[] {
+  const newShot = createEmptyShot(afterIndex + 2);
+  const result = [
+    ...shots.slice(0, afterIndex + 1),
+    newShot,
+    ...shots.slice(afterIndex + 1),
+  ];
+  // 重新编号
+  return result.map((shot, index) => ({ ...shot, number: index + 1 }));
+}
+
+/**
+ * 移动镜头
+ */
+export function moveShot(shots: Shot[], fromIndex: number, toIndex: number): Shot[] {
+  if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= shots.length || toIndex < 0 || toIndex >= shots.length) {
+    return shots;
+  }
+  
+  const result = [...shots];
+  const [moved] = result.splice(fromIndex, 1);
+  result.splice(toIndex, 0, moved);
+  
+  // 重新编号
+  return result.map((shot, index) => ({ ...shot, number: index + 1 }));
+}
+
+/**
+ * 统计待生成的关键帧和视频数量
+ */
+export function countPendingGenerations(shots: Shot[]): { keyframes: number; videos: number } {
+  let keyframes = 0;
+  let videos = 0;
+  
+  for (const shot of shots) {
+    if (!shot.keyframeStatus || shot.keyframeStatus === 'failed') {
+      keyframes++;
+    }
+    if (!shot.videoStatus || shot.videoStatus === 'failed') {
+      videos++;
+    }
+  }
+  
+  return { keyframes, videos };
+}
+
+/**
+ * 规划连续长镜头分段
+ * Omni 每段固定 10 秒，最多延续到 30 秒（可配置到 40 秒）
+ */
+export function planContinuousShots(shots: Shot[], maxDuration: number = 30): { segments: Shot[][]; totalGenerations: number } {
+  const segments: Shot[][] = [];
+  let currentSegment: Shot[] = [];
+  let currentDuration = 0;
+  
+  for (const shot of shots) {
+    if (currentDuration + shot.duration <= maxDuration) {
+      currentSegment.push(shot);
+      currentDuration += shot.duration;
+    } else {
+      if (currentSegment.length > 0) {
+        segments.push(currentSegment);
+      }
+      currentSegment = [shot];
+      currentDuration = shot.duration;
+    }
+  }
+  
+  if (currentSegment.length > 0) {
+    segments.push(currentSegment);
+  }
+  
+  // 每个 segment 需要的生成次数 = ceil(总时长 / 10)
+  const totalGenerations = segments.reduce((sum, segment) => {
+    const segmentDuration = segment.reduce((d, s) => d + s.duration, 0);
+    return sum + Math.ceil(segmentDuration / 10);
+  }, 0);
+  
+  return { segments, totalGenerations };
+}
+
+/**
+ * 解析 Retry-After 头
+ */
+export function parseRetryAfter(retryAfter?: string | null): number | null {
+  if (!retryAfter) return null;
+  
+  // 尝试解析为秒数
+  const seconds = parseInt(retryAfter, 10);
+  if (!isNaN(seconds) && seconds > 0) return seconds;
+  
+  // 尝试解析为 HTTP 日期
+  try {
+    const date = new Date(retryAfter);
+    if (isNaN(date.getTime())) return null;
+    const now = new Date();
+    const diff = Math.max(0, Math.floor((date.getTime() - now.getTime()) / 1000));
+    return diff;
+  } catch {
+    return null;
+  }
 }

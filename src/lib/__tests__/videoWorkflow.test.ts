@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addShot,
   buildKeyframePrompt,
   buildMusicPrompt,
   buildScriptPrompt,
@@ -7,8 +8,14 @@ import {
   buildVideoPrompt,
   calculateTotalDuration,
   createWorkflowProject,
+  duplicateShot,
+  moveShot,
+  parseRetryAfter,
+  planContinuousShots,
+  removeShot,
   type Shot,
   type StyleBible,
+  updateShot,
   validateShotList,
 } from '../videoWorkflow';
 
@@ -215,6 +222,149 @@ describe('videoWorkflow', () => {
       const longIdea = 'a'.repeat(100);
       const project = createWorkflowProject(longIdea);
       expect(project.title.length).toBe(50);
+    });
+  });
+
+  describe('shot editing operations', () => {
+    it('添加镜头并重新编号', () => {
+      const shots: Shot[] = [
+        { ...shot, id: '1', number: 1 },
+        { ...shot, id: '2', number: 2 },
+      ];
+      
+      const result = addShot(shots, 0); // 在第一个镜头后添加
+      expect(result).toHaveLength(3);
+      expect(result[1].number).toBe(2);
+      expect(result[2].number).toBe(3);
+    });
+
+    it('删除镜头并重新编号', () => {
+      const shots: Shot[] = [
+        { ...shot, id: '1', number: 1 },
+        { ...shot, id: '2', number: 2 },
+        { ...shot, id: '3', number: 3 },
+      ];
+      
+      const result = removeShot(shots, '2');
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('1');
+      expect(result[1].id).toBe('3');
+      expect(result[1].number).toBe(2); // 重新编号
+    });
+
+    it('移动镜头并重新编号', () => {
+      const shots: Shot[] = [
+        { ...shot, id: '1', number: 1 },
+        { ...shot, id: '2', number: 2 },
+        { ...shot, id: '3', number: 3 },
+      ];
+      
+      const result = moveShot(shots, 0, 2); // 把第一个移到最后
+      expect(result[0].id).toBe('2');
+      expect(result[1].id).toBe('3');
+      expect(result[2].id).toBe('1');
+      expect(result.map(s => s.number)).toEqual([1, 2, 3]);
+    });
+
+    it('复制镜头清除生成内容', () => {
+      const original: Shot = {
+        ...shot,
+        id: '1',
+        number: 1,
+        keyframeUrl: 'http://example.com/keyframe.jpg',
+        keyframeStatus: 'completed',
+        videoUrl: 'http://example.com/video.mp4',
+        videoStatus: 'completed',
+      };
+      
+      const duplicate = duplicateShot(original, 2);
+      expect(duplicate.id).not.toBe(original.id);
+      expect(duplicate.number).toBe(2);
+      expect(duplicate.sceneDescription).toBe(original.sceneDescription);
+      expect(duplicate.keyframeUrl).toBeUndefined();
+      expect(duplicate.videoUrl).toBeUndefined();
+    });
+
+    it('更新镜头字段', () => {
+      const updated = updateShot(shot, {
+        duration: 8,
+        sceneDescription: '新描述',
+      });
+      
+      expect(updated.duration).toBe(8);
+      expect(updated.sceneDescription).toBe('新描述');
+      expect(updated.framing).toBe(shot.framing); // 未改变的字段保持
+    });
+  });
+
+  describe('planContinuousShots', () => {
+    it('将镜头分段到 30 秒以内', () => {
+      const shots: Shot[] = [
+        { ...shot, id: '1', number: 1, duration: 15 },
+        { ...shot, id: '2', number: 2, duration: 10 },
+        { ...shot, id: '3', number: 3, duration: 12 },
+        { ...shot, id: '4', number: 4, duration: 8 },
+      ];
+      
+      const { segments, totalGenerations } = planContinuousShots(shots, 30);
+      
+      // 第一段: 15 + 10 = 25s
+      // 第二段: 12 + 8 = 20s
+      expect(segments).toHaveLength(2);
+      expect(segments[0]).toHaveLength(2);
+      expect(segments[1]).toHaveLength(2);
+      
+      // 第一段需要 3 次生成（25 / 10 = 2.5 -> 3）
+      // 第二段需要 2 次生成（20 / 10 = 2）
+      expect(totalGenerations).toBe(5);
+    });
+
+    it('单个超长镜头独立成段', () => {
+      const shots: Shot[] = [
+        { ...shot, id: '1', number: 1, duration: 35 },
+        { ...shot, id: '2', number: 2, duration: 5 },
+      ];
+      
+      const { segments } = planContinuousShots(shots, 30);
+      
+      expect(segments).toHaveLength(2);
+      expect(segments[0][0].id).toBe('1');
+      expect(segments[1][0].id).toBe('2');
+    });
+
+    it('计算生成次数向上取整', () => {
+      const shots: Shot[] = [
+        { ...shot, id: '1', number: 1, duration: 9 },
+        { ...shot, id: '2', number: 2, duration: 9 },
+        { ...shot, id: '3', number: 3, duration: 9 },
+      ];
+      
+      const { totalGenerations } = planContinuousShots(shots, 30);
+      
+      // 27 秒 / 10 = 2.7 -> 3 次
+      expect(totalGenerations).toBe(3);
+    });
+  });
+
+  describe('parseRetryAfter', () => {
+    it('解析秒数', () => {
+      expect(parseRetryAfter('60')).toBe(60);
+      expect(parseRetryAfter('3600')).toBe(3600);
+    });
+
+    it('解析 HTTP 日期', () => {
+      const future = new Date(Date.now() + 120000); // 2 分钟后
+      const retryAfter = future.toUTCString();
+      const result = parseRetryAfter(retryAfter);
+      
+      expect(result).toBeGreaterThan(100);
+      expect(result).toBeLessThan(130);
+    });
+
+    it('返回 null 当无法解析', () => {
+      expect(parseRetryAfter(null)).toBeNull();
+      expect(parseRetryAfter('')).toBeNull();
+      expect(parseRetryAfter('invalid')).toBeNull();
     });
   });
 });

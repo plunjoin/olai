@@ -697,6 +697,29 @@ input[type="range"] { accent-color: #6379db; }
 .workflow-final-shot span { font-size: 15px; font-weight: 600; color: var(--text-primary); min-width: 80px; }
 .workflow-final-shot video { flex: 1; max-width: 400px; border-radius: var(--radius-sm); }
 .workflow-note { padding: 16px; background: var(--accent-lime-subtle); border-left: 3px solid var(--accent-lime); border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+.workflow-note-inline { font-size: 13px; color: var(--text-muted); margin-left: 8px; }
+.workflow-checkbox { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius-sm); margin-bottom: 16px; cursor: pointer; }
+.workflow-checkbox input { cursor: pointer; }
+.workflow-checkbox span { font-size: 14px; color: var(--text-primary); }
+.workflow-warning { padding: 12px 16px; background: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 14px; margin-top: 16px; }
+.workflow-shot-edit-card { padding: 16px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.workflow-shot-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.workflow-shot-header h4 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.workflow-shot-actions { display: flex; gap: 8px; }
+.workflow-shot-actions button { padding: 6px; border: 1px solid var(--border-medium); background: var(--bg-surface); border-radius: var(--radius-sm); cursor: pointer; transition: all .18s; }
+.workflow-shot-actions button:hover { background: var(--bg-hover); border-color: var(--accent-lime); }
+.workflow-shot-edit-form { display: grid; gap: 12px; }
+.workflow-shot-edit-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.workflow-shot-edit-form input,
+.workflow-shot-edit-form textarea { padding: 8px 12px; border: 1px solid var(--border-medium); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); font-size: 14px; }
+.workflow-shot-edit-form input:focus,
+.workflow-shot-edit-form textarea:focus { border-color: var(--accent-lime); outline: none; }
+.workflow-save-edit { padding: 10px 20px; background: var(--accent-lime); color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; cursor: pointer; }
+.workflow-shot-view p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
+.workflow-final-video { margin-bottom: 24px; }
+.workflow-final-video video { width: 100%; max-width: 800px; border-radius: var(--radius-md); margin-bottom: 16px; }
+.workflow-download { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--accent-lime); color: white; border: none; border-radius: var(--radius-sm); font-size: 15px; font-weight: 500; cursor: pointer; }
+.workflow-download:hover { background: var(--accent-lime-hover); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
