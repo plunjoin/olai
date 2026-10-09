@@ -65,7 +65,7 @@ AI_API_BASE_URL=https://ai.bllii.com/v1
 AI_API_KEY=你的上游服务密钥
 ```
 
-示例文件中的 `https://example.com/v1` 是占位地址，请替换为实际服务地址。上游地址只能由部署者配置；模型目录可读，也不代表账号拥有生成额度。
+默认配置为 web2api 在线版本（v0.3.0）。上游地址只能由部署者配置；模型目录可读，也不代表账号拥有生成额度。
 
 ### 3. 启动开发服务器
 
@@ -154,13 +154,13 @@ npm run dev
 
 | 环境变量 | 默认值 / 行为 | 用途 |
 | --- | --- | --- |
-| `AI_API_BASE_URL` | 未设置时为 `https://ai.bllii.com/v1` | 上游 OpenAI 兼容接口地址；示例文件中为占位地址 |
+| `AI_API_BASE_URL` | `https://ai.bllii.com/v1` | 上游 OpenAI 兼容接口地址；默认配置为 web2api 在线版本 |
 | `AI_API_KEY` | 可选 | 服务端 API Key，也可在界面中填写密钥 |
-| `AI_CHAT_MODEL` | `gemini-3.8-flash` | 对话引擎在网关中的实际别名 |
-| `AI_IMAGE_MODEL` | `gemini-nano-banana-2.1` | 图片引擎在网关中的实际别名 |
-| `AI_IMAGE_API_MODE` | `auto` | 图片接口模式；原生分辨率控制使用 `interactions` |
-| `AI_VIDEO_MODEL` | `gemini-omni-1.1-flash` | 视频引擎；`veo-*` 使用独立任务接口 |
-| `AI_MUSIC_MODEL` | `lyria-3.5` | 音乐引擎在网关中的实际别名 |
+| `AI_CHAT_MODEL` | `gemini-3.5-flash` | 对话引擎在网关中的实际别名 |
+| `AI_IMAGE_MODEL` | `gemini-3.1-flash-image` | 图片引擎在网关中的实际别名 |
+| `AI_IMAGE_API_MODE` | `auto` | 图片接口模式；web2api 通过 chat 接口返回 Markdown 图片 |
+| `AI_VIDEO_MODEL` | `veo-3.1-lite-generate-preview` | 视频引擎；veo 使用 /v1/videos 异步任务接口 |
+| `AI_MUSIC_MODEL` | `lyria-3.5` | 音乐引擎在网关中的实际别名；通过 chat 接口返回音频 |
 | `GUEST_DAILY_GENERATION_LIMIT` | `1` | 每个游客 IP、每种生成类型的每日次数 |
 | `USER_DAILY_GENERATION_LIMIT` | `15` | 每个登录账号、每种生成类型的每日次数 |
 | `DATABASE_URL` | 生产默认 `data/olai.db` | 本地文件路径、`file:` URL 或远程 libSQL 地址 |
@@ -245,47 +245,59 @@ npm install --omit=dev --include=optional
 
 ## 上游接口与模型
 
-接入依据：[web2api 新文档](https://ai.bllii.com/v1/docs)，核对日期 2026-10-08。默认服务地址为 `https://ai.bllii.com/v1`，使用 Bearer API Key；连接时读取实际模型目录，目录可用不代表账户有生成额度。核对时的只读检查显示官方 Gemini 后端未启用，默认图片、音乐与 Omni 视频使用聊天兼容接口；配置 Veo 时使用独立视频任务接口。
+接入依据：[web2api 文档](https://ai.bllii.com/v1/docs)，适配版本 v0.3.0。默认服务地址为 `https://ai.bllii.com/v1`，使用 Bearer API Key；连接时读取实际模型目录，目录可用不代表账户有生成额度。
+
+**当前配置说明：**
+- **对话**：`gemini-3.5-flash` 或 `gemini-flash-latest` 通过 /v1/chat/completions
+- **图片**：`gemini-3.1-flash-image` 通过 /v1/chat/completions，响应中包含 Markdown 格式的 Base64 图片，支持 `image_size: 1K/2K/4K` 和 `max_tokens >= 2048`
+- **视频**：`veo-3.1-lite-generate-preview` 通过 /v1/videos 异步任务接口，支持 `size` 和 `seconds` 参数，4K 需要 8 秒
+- **音乐**：`lyria-3.5`（约 62 秒）、`lyria-3-pro-preview`（约 62 秒）、`lyria-3-clip-preview`（约 30 秒）通过 /v1/chat/completions，响应中包含 Markdown 格式的 MP3 音频 `![media](data:audio/mpeg;base64,...)`
 
 <details>
-<summary><strong>图片与音乐：聊天兼容协议</strong></summary>
+<summary><strong>图片生成：chat/completions 接口</strong></summary>
 
-图片与音乐使用 `chat/completions` 非流式 JSON，仅发送 `model`、`messages`、`stream`；比例、画质、联想、歌词和歌曲段落写入文本提示词，属于创作偏好，不保证精确控制。
+图片使用 `POST /v1/chat/completions` 非流式 JSON，发送 `model`、`messages`、`stream: false`，以及顶层参数 `image_size`（"1K"/"2K"/"4K"）和 `max_tokens`（≥2048，4K 建议 8192）。
 
-网关会忽略 `image_config`、`modalities`、`reasoning_effort`、`composition`、`response_format` 等聊天顶层字段。歌曲整理通过系统提示要求 JSON，再校验完整段落结构。
+响应的 `choices[].message.content` 包含 Markdown 格式的 Base64 图片，例如 `![image](data:image/png;base64,...)`。比例和联想等级写入提示词，属于创作偏好。
 
-媒体从 `choices[].message.content` 的 Markdown/data URI 提取，PCM 音频按返回采样率封装为 WAV。原生音频失败不会自动转发到未确认支持的 `audio/generations`；专用图片和语音接口仅适用于部署者明确配置的 upstream 透传服务。
+web2api v0.3.0 的 /v1/images/generations 接口当前返回 502，不可用。
+
+</details>
+
+
+<details>
+<summary><strong>视频生成：Veo 任务接口与 Omni 聊天接口</strong></summary>
+
+**Veo 模式**（默认 `veo-3.1-lite-generate-preview`）：
+- 使用 `POST /v1/videos`、`GET /v1/videos/{id}` 和携带鉴权的 `GET /v1/videos/{id}/content`
+- 发送 `model`、`prompt`、`size`（`848x480` 或 `480x848`）、`seconds`（4-8 秒）
+- 4K 视频需要 8 秒时长
+- 下载返回 409 时继续等待，失败任务停止查询
+
+**Omni 模式**（`gemini-omni-*` 模型）：
+- 通过 `POST /v1/chat/completions` 转发
+- 仅发送 `model`、`messages`、`stream: false`、`resolution`
+- 在提示词中要求生成视频，写入时长、比例、画质
+- 读取 `choices[].message` 中的视频链接、Markdown/data URI 或视频内容数组
+- 聊天响应只有文字时提示未收到视频文件
+
+Omni 与 Veo 两种路由共用视频生成额度。上游视频服务返回 HTML 错误页时，本站转为 JSON 错误。
 
 </details>
 
 <details>
-<summary><strong>图片：原生 1K / 2K / 4K 分辨率控制</strong></summary>
+<summary><strong>音乐生成：chat/completions 接口</strong></summary>
 
-需要正式控制 1K/2K/4K 时，先由上游服务提供方启用 `gemini_api`（或配置其 `WEB2API_GEMINI_API_KEY`），再在本站配置以下变量并重启服务（模型可替换为实际支持分辨率的官方图片模型）：
+音乐使用 `POST /v1/chat/completions` 非流式 JSON，发送 `model`、`messages`、`stream: false`。
 
-```dotenv
-AI_IMAGE_API_MODE=interactions
-AI_IMAGE_MODEL=gemini-3.1-flash-image
-```
+支持的模型：
+- `lyria-3.5`（约 62 秒）
+- `lyria-3-pro-preview`（约 62 秒）
+- `lyria-3-clip-preview`（约 30 秒）
 
-此模式使用 `POST /v1/interactions`，在 `response_format` 中发送 `type: image`、`image_size: 4K`、`delivery: inline` 和受支持的标准 `aspect_ratio`；自动比例省略尺寸比例，自定义比例写入提示词。
+响应的 `choices[].message.content` 包含 Markdown 格式的 MP3 音频，例如 `![media](data:audio/mpeg;base64,...)`。解码后为标准 MP3 文件。
 
-读取 `steps[].type=model_output` 中的图片 `data` 或 `uri`。此接口共用图片生成额度，关闭后台任务与交互存储，失败时提示错误。
-
-默认 `auto` 不会静默切换到此接口；官方后端未启用时，仅修改本站设置无法得到原生 4K。歌曲封面使用同一图片协议。
-
-</details>
-
-<details>
-<summary><strong>视频：Omni 聊天响应与 Veo 任务接口</strong></summary>
-
-默认 `gemini-omni-1.1-flash` 通过本站 `POST /api/chat/completions` 转发到上游 `POST /v1/chat/completions`。仅发送 `model`、`messages`、`stream: false`，在用户提示词中要求生成视频，并写入时长、比例、画质及联想等级。
-
-读取 `choices[].message` 中的视频链接、Markdown/data URI 或视频内容数组，按 MIME 保存原始文件，可播放、下载并收入作品库。聊天响应只有文字时提示未收到视频文件；本站不会把文字当成生成成功。实际能否返回视频取决于上游对该模型的支持。
-
-仅当 `AI_VIDEO_MODEL` 配置为 `veo-*` 时，使用 `POST /v1/videos`、`GET /v1/videos/{id}` 和携带鉴权的 `GET /v1/videos/{id}/content`。该模式保留 4–15 秒参数选择，支持组合由上游模型目录校验；下载返回 409 时继续等待，失败任务停止查询。Omni 与 Veo 两种路由共用视频生成额度。
-
-上游视频服务返回 HTML 错误页（例如网关 HTTP 502）时，本站转为保留 HTTP 状态的 JSON 错误，显示「上游视频服务暂不可用」，避免误报数据库初始化失败。
+歌曲结构、歌词和风格写入提示词。歌曲整理通过系统提示要求 JSON，再校验完整段落结构。
 
 </details>
 

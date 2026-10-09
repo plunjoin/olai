@@ -333,16 +333,20 @@ export async function generateImage({
   const isUpstreamExplicit = mode === 'upstream';
   const isNativeExplicit = mode === 'native';
 
-  const callNative = () =>
-    request('chat/completions', key, {
+  const callNative = () => {
+    const maxTokens = imageSize === '4K' ? 8192 : imageSize === '2K' ? 4096 : 2048;
+    return request('chat/completions', key, {
       method: 'POST',
       signal,
       body: JSON.stringify({
         model,
-        messages: [{ role: 'user', content: `${prompt}\n画面比例：${aspectRatio === 'auto' ? '自动，根据描述构图' : aspectRatio}。画质：${imageSize}。联想等级：${reasoningEffort}。只生成图片，不输出文字说明。` }],
+        messages: [{ role: 'user', content: `${prompt}\n画面比例：${aspectRatio === 'auto' ? '自动，根据描述构图' : aspectRatio}。联想等级：${reasoningEffort}。只生成图片，不输出文字说明。` }],
         stream: false,
+        image_size: imageSize,
+        max_tokens: maxTokens,
       }),
     });
+  };
 
   const callUpstream = () =>
     request('images/generations', key, {
@@ -502,14 +506,24 @@ export async function generateVideo({ key, model, prompt, options, signal, mode 
       model,
       messages: [{ role: 'user', content: `请根据以下描述生成视频，返回生成的视频文件或视频链接。\n${prompt}\n目标时长：${seconds} 秒。\n画面比例：${options.aspect_ratio || '16:9'}。\n目标画质：${String(options.resolution || '720p').toUpperCase()}。${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}` }],
       stream: false,
+      resolution: String(options.resolution || '720p').toLowerCase(),
     }) });
   }
+  let seconds = Number(options.seconds ?? 4);
+  const resolution = String(options.resolution || '720p').toLowerCase();
+  if (resolution === '4k' && seconds < 8) {
+    seconds = 8;
+  }
+  if (!Number.isInteger(seconds) || seconds < 4 || seconds > 8) {
+    throw new Error('Veo 视频生成支持 4–8 秒，4K 需要 8 秒，请调整时长后重试。');
+  }
+  const aspectRatio = String(options.aspect_ratio || '16:9');
+  const size = aspectRatio === '9:16' ? '480x848' : '848x480';
   return request('videos', key, { method: 'POST', signal, body: JSON.stringify({
     model,
     prompt: `${prompt}${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}`,
-    aspect_ratio: options.aspect_ratio || '16:9',
-    seconds: options.seconds ?? 4,
-    resolution: String(options.resolution || '720p').toLowerCase(),
+    size,
+    seconds,
   }) });
 }
 

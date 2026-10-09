@@ -98,4 +98,23 @@ describe('audio utility and PCM WAV packaging', () => {
     expect(fixed.type).toBe('audio/wav');
     expect(fixed.size).toBe(octetBlob.size);
   });
+
+  it('extracts MP3 audio from lyria music generation response', async () => {
+    const { mediaOutputs } = await import('../api');
+    // 模拟 web2api lyria 音乐生成响应
+    const response = {
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: 'Generated music:\n![media](data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjYwLjE2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAADhAC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzYwLjMxAAAAAAAAAAAAAAAAJAQKAAAAAAAAA4To5zSr//sQZAAP8AAAaQAAAAgAAA0gAAABAAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==)'
+        }
+      }]
+    };
+
+    const audios = mediaOutputs(response, 'music');
+    expect(audios).toHaveLength(1);
+    expect(audios[0].mime).toBe('audio/mpeg');
+    expect(audios[0].base64).toBeTruthy();
+    expect(audios[0].base64?.startsWith('SUQz')).toBe(true); // MP3 ID3 header
+  });
 });

@@ -32,7 +32,7 @@ describe('alignment against actual audio', () => {
     const result = await alignLyricsToAudio(asset, 'key', DEFAULT_SETTINGS.chatModel, new AbortController().signal);
     expect(result.duration).toBe(20);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.model).toBe('gemini-3.8-flash');
+    expect(body.model).toBe('gemini-3.5-flash');
     expect(body.messages[1].content[0].text).toContain('0: 星光\n1: 晚风\n2: 星光');
     expect(body.messages[1].content[1].input_audio.format).toBe('wav');
     expect(atob(body.messages[1].content[1].input_audio.data).slice(0, 4)).toBe('RIFF');
