@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowDown, ArrowUp, ChevronLeft, Copy, Download, Edit2, Film, Play, Plus, Save, Trash2, X } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Download, Film, Plus, Trash2 } from 'lucide-react';
+import WorkflowBoard from './WorkflowBoard';
 import {
-  addShot,
   buildKeyframePrompt,
   buildMusicPrompt,
   buildScriptPrompt,
@@ -10,21 +10,16 @@ import {
   calculateTotalDuration,
   countPendingGenerations,
   createWorkflowProject,
-  duplicateShot,
-  moveShot,
   parseRetryAfter,
   planContinuousShots,
-  removeShot,
   type Shot,
-  type StyleBible,
   type VideoWorkflowProject,
   type WorkflowStage,
-  updateShot,
   validateShotList,
 } from '../lib/videoWorkflow';
-import { assembleVideo, exportSRT, planAssembly } from '../lib/videoAssembly';
+import { assembleVideo, exportSRT } from '../lib/videoAssembly';
 import { base64Blob, generateAudio, generateImage, generateVideo, mediaOutputs, publicServiceError, request, safeMediaURL, videoContent } from '../lib/api';
-import { OMNI_MAX_EXTEND_DURATION, OMNI_SEGMENT_DURATION, videoEngineForModel } from '../lib/video';
+import { OMNI_SEGMENT_DURATION, videoEngineForModel } from '../lib/video';
 import { getAll, put, remove } from '../lib/storage';
 
 interface VideoWorkflowWorkspaceProps {
@@ -53,7 +48,7 @@ const STAGE_LABELS: Record<WorkflowStage, string> = {
 const AI_VIDEO_IMAGE_INPUT = import.meta.env.AI_VIDEO_IMAGE_INPUT === 'true';
 const AI_VIDEO_OMNI_ASYNC = import.meta.env.AI_VIDEO_OMNI_ASYNC === 'true';
 const AI_VIDEO_EXTEND_MAX_SECONDS = parseInt(import.meta.env.AI_VIDEO_EXTEND_MAX_SECONDS || '30', 10);
-const MAX_CONCURRENCY = 2; // 限制并发数
+const MAX_CONCURRENCY = 2;
 
 export default function VideoWorkflowWorkspace({
   apiKey,
@@ -69,18 +64,39 @@ export default function VideoWorkflowWorkspace({
   const [currentProject, setCurrentProject] = useState<VideoWorkflowProject | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
-  const [editingShot, setEditingShot] = useState<string | null>(null);
+  const [newIdea, setNewIdea] = useState('');
+  const [newDuration, setNewDuration] = useState(30);
+  const [saveState, setSaveState] = useState<'saved' | 'saving' | 'failed'>('saved');
+  const saveVersion = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
   // 加载项目列表
   useEffect(() => {
-    getAll<VideoWorkflowProject>('workflows').then(setProjects).catch(console.error);
+    let active = true;
+    const mediaURLs: string[] = [];
+    const restoreURL = (blob: Blob | undefined, fallback: string | undefined) => {
+      if (!blob) return fallback;
+      const url = URL.createObjectURL(blob);
+      mediaURLs.push(url);
+      return url;
+    };
+    getAll<VideoWorkflowProject>('workflows').then(records => {
+      if (!active) return;
+      setProjects(records.map(project => ({
+        ...project,
+        shots: project.shots?.map(shot => ({ ...shot, keyframeUrl: restoreURL(shot.keyframeBlob, shot.keyframeUrl), videoUrl: restoreURL(shot.videoBlob, shot.videoUrl) })),
+        musicUrl: restoreURL(project.musicBlob, project.musicUrl),
+        finalVideoUrl: restoreURL(project.finalVideoBlob, project.finalVideoUrl),
+      })));
+    }).catch(() => { if (active) onError('短片项目读取失败，请刷新页面重试。'); });
+    return () => { active = false; mediaURLs.forEach(url => URL.revokeObjectURL(url)); };
   }, []);
 
   // 保存项目
   const saveProject = useCallback(async (project: VideoWorkflowProject) => {
     const updated = { ...project, updatedAt: Date.now() };
-    await put('workflows', updated);
+    const version = ++saveVersion.current;
+    setSaveState('saving');
     setCurrentProject(updated);
     setProjects(prev => {
       const index = prev.findIndex(p => p.id === updated.id);
@@ -91,13 +107,23 @@ export default function VideoWorkflowWorkspace({
       }
       return [...prev, updated];
     });
+    try {
+      await put('workflows', updated);
+      if (version === saveVersion.current) setSaveState('saved');
+    } catch (error) {
+      if (version === saveVersion.current) setSaveState('failed');
+      throw error;
+    }
   }, []);
+
+  const saveBoard = (project: VideoWorkflowProject) => {
+    void saveProject(project).catch(() => onError('项目保存失败，请点击重试保存。'));
+  };
 
   // 创建新项目
   const handleCreateProject = useCallback(async (idea: string, targetLength: number) => {
     const project = createWorkflowProject(idea, targetLength);
     await saveProject(project);
-    setCurrentProject(project);
   }, [saveProject]);
 
   // 删除项目
@@ -118,7 +144,7 @@ export default function VideoWorkflowWorkspace({
     abortRef.current = new AbortController();
     
     try {
-      const prompt = buildScriptPrompt(currentProject.idea, currentProject.targetLength || 30);
+      const prompt = buildScriptPrompt(currentProject.idea, currentProject.targetLength || 30, currentProject.elements);
       const response = await request('chat/completions', apiKey, {
         method: 'POST',
         signal: abortRef.current.signal,
@@ -179,7 +205,8 @@ export default function VideoWorkflowWorkspace({
       const prompt = buildShotListPrompt(
         currentProject.script,
         currentProject.styleBible,
-        currentProject.targetLength || 30
+        currentProject.targetLength || 30,
+        currentProject.elements
       );
       
       const response = await request('chat/completions', apiKey, {
@@ -208,7 +235,7 @@ export default function VideoWorkflowWorkspace({
         throw new Error('导演输出的 JSON 格式无效');
       }
       
-      const shots = validateShotList(shotsData);
+      const shots = validateShotList(shotsData, currentProject.elements);
       
       await saveProject({
         ...currentProject,
@@ -225,60 +252,6 @@ export default function VideoWorkflowWorkspace({
       abortRef.current = null;
     }
   }, [currentProject, apiKey, chatModel, saveProject, onError]);
-
-  // 镜头编辑操作
-  const handleUpdateShot = useCallback(async (shotId: string, updates: Partial<Shot>) => {
-    if (!currentProject?.shots) return;
-    
-    const updatedShots = currentProject.shots.map(s => 
-      s.id === shotId ? updateShot(s, updates) : s
-    );
-    
-    await saveProject({ ...currentProject, shots: updatedShots });
-  }, [currentProject, saveProject]);
-
-  const handleAddShot = useCallback(async (afterIndex: number) => {
-    if (!currentProject?.shots) return;
-    
-    const updatedShots = addShot(currentProject.shots, afterIndex);
-    await saveProject({ ...currentProject, shots: updatedShots });
-  }, [currentProject, saveProject]);
-
-  const handleDuplicateShot = useCallback(async (shotId: string) => {
-    if (!currentProject?.shots) return;
-    
-    const index = currentProject.shots.findIndex(s => s.id === shotId);
-    if (index === -1) return;
-    
-    const shot = currentProject.shots[index];
-    const newShot = duplicateShot(shot, index + 2);
-    const updatedShots = [
-      ...currentProject.shots.slice(0, index + 1),
-      newShot,
-      ...currentProject.shots.slice(index + 1),
-    ].map((s, i) => ({ ...s, number: i + 1 }));
-    
-    await saveProject({ ...currentProject, shots: updatedShots });
-  }, [currentProject, saveProject]);
-
-  const handleRemoveShot = useCallback(async (shotId: string) => {
-    if (!currentProject?.shots) return;
-    
-    const updatedShots = removeShot(currentProject.shots, shotId);
-    await saveProject({ ...currentProject, shots: updatedShots });
-  }, [currentProject, saveProject]);
-
-  const handleMoveShot = useCallback(async (shotId: string, direction: 'up' | 'down') => {
-    if (!currentProject?.shots) return;
-    
-    const index = currentProject.shots.findIndex(s => s.id === shotId);
-    if (index === -1) return;
-    
-    const toIndex = direction === 'up' ? index - 1 : index + 1;
-    const updatedShots = moveShot(currentProject.shots, index, toIndex);
-    
-    await saveProject({ ...currentProject, shots: updatedShots });
-  }, [currentProject, saveProject]);
 
   // 阶段 3: 生成关键帧
   const generateKeyframes = useCallback(async (regenerateShotId?: string) => {
@@ -315,7 +288,7 @@ export default function VideoWorkflowWorkspace({
         await saveProject({ ...currentProject, shots: updatedShots });
         
         try {
-          const prompt = buildKeyframePrompt(shot, currentProject.styleBible!);
+          const prompt = buildKeyframePrompt(shot, currentProject.styleBible!, currentProject.elements);
           const response = await generateImage({
             key: apiKey,
             model: imageModel,
@@ -438,7 +411,7 @@ export default function VideoWorkflowWorkspace({
             
             try {
               const hasKeyframe = !!shot.keyframeBlob && AI_VIDEO_IMAGE_INPUT && !extendFrom;
-              const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe);
+              const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe, currentProject.elements);
               
               const response = await generateVideo({
                 key: apiKey,
@@ -540,7 +513,7 @@ export default function VideoWorkflowWorkspace({
               
               try {
                 const hasKeyframe = !!shot.keyframeBlob && AI_VIDEO_IMAGE_INPUT;
-                const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe);
+                const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe, currentProject.elements);
                 
                 const response = await generateVideo({
                   key: apiKey,
@@ -551,7 +524,7 @@ export default function VideoWorkflowWorkspace({
                     seconds: Math.min(Math.max(shot.duration, 4), 8),
                     resolution: '720p',
                   },
-                  signal: abortRef.current.signal,
+                  signal: abortRef.current?.signal,
                   mode: videoMode,
                   inputImage: hasKeyframe ? shot.keyframeBlob : undefined,
                 });
@@ -779,7 +752,7 @@ export default function VideoWorkflowWorkspace({
         includeSubtitles,
         targetResolution: '720p',
         targetFPS: 30,
-        onProgress: (message, percent) => {
+        onProgress: (message) => {
           setLoadingMessage(message);
         },
       });
@@ -833,25 +806,23 @@ export default function VideoWorkflowWorkspace({
     return (
       <div className="workflow-container">
         <div className="workflow-header">
-          <h2>视频工作流 / 短片工坊</h2>
-          <p className="workflow-subtitle">从一句话创意到完整短片</p>
+          <h2>短片工坊</h2>
+          <p className="workflow-subtitle">把人物、场景和灵感，拖进你的故事</p>
         </div>
         
         <div className="workflow-projects">
-          <button
-            className="workflow-new-project"
-            onClick={() => {
-              const idea = prompt('输入你的创意（一句话）：');
-              if (idea) handleCreateProject(idea, 30);
-            }}
-          >
-            <Plus size={24} />
-            <span>创建新工作流</span>
-          </button>
+          <form className="wf-create-project" onSubmit={event => { event.preventDefault(); if (newIdea.trim()) void handleCreateProject(newIdea.trim(), newDuration).catch(() => onError('创建项目失败，请重试。')); }}>
+            <div className="wf-create-icon"><Film size={28} /></div>
+            <h3>开始一个新故事</h3>
+            <p>写下一句话创意，交给 AI 构思，或自己动手搭建分镜。</p>
+            <label htmlFor="workflow-idea">故事创意</label>
+            <textarea id="workflow-idea" value={newIdea} onChange={event => setNewIdea(event.target.value)} placeholder="例如：一个穿黄色雨衣的女孩，在雨后的老街找到一封来自未来的信…" rows={3} required />
+            <div className="wf-create-footer"><label>目标时长<select value={newDuration} onChange={event => setNewDuration(Number(event.target.value))}><option value={15}>15 秒</option><option value={30}>30 秒</option><option value={60}>60 秒</option><option value={90}>90 秒</option></select></label><button type="submit" className="workflow-action-primary" disabled={!newIdea.trim()}><Plus size={17} />创建短片</button></div>
+          </form>
           
           {projects.length > 0 && (
             <div className="workflow-project-list">
-              <h3>我的工作流项目</h3>
+              <h3>我的短片</h3>
               {projects.map(project => (
                 <div key={project.id} className="workflow-project-card">
                   <div className="workflow-project-info">
@@ -865,7 +836,7 @@ export default function VideoWorkflowWorkspace({
                     <button onClick={() => setCurrentProject(project)}>
                       继续
                     </button>
-                    <button onClick={() => handleDeleteProject(project.id)}>
+                    <button aria-label={`删除项目：${project.title}`} onClick={() => void handleDeleteProject(project.id).catch(() => onError('删除项目失败，请重试。'))}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -893,14 +864,14 @@ export default function VideoWorkflowWorkspace({
 
   // 渲染当前项目
   return (
-    <div className="workflow-container">
+    <div className="workflow-container workflow-editor-page">
       <div className="workflow-header">
-        <button onClick={() => setCurrentProject(null)} className="workflow-back">
+        <button disabled={loading} onClick={() => setCurrentProject(null)} className="workflow-back">
           <ChevronLeft size={20} />
           返回列表
         </button>
         <h2>{currentProject.title}</h2>
-        <p className="workflow-stage">{STAGE_LABELS[currentProject.stage]}</p>
+        <div className="wf-project-meta"><p className="workflow-stage">{STAGE_LABELS[currentProject.stage]}</p><span role="status">{saveState === 'saving' ? '保存中…' : saveState === 'failed' ? '保存失败' : '已自动保存'}</span>{saveState === 'failed' && <button className="wf-small-button" onClick={() => saveBoard(currentProject)}>重试保存</button>}</div>
       </div>
       
       {loading && (
@@ -915,6 +886,7 @@ export default function VideoWorkflowWorkspace({
       
       {!loading && (
         <div className="workflow-content">
+          <WorkflowBoard key={currentProject.id} project={currentProject} onChange={saveBoard} />
           {currentProject.stage === 'init' && (
             <div className="workflow-stage-init">
               <h3>创意</h3>
@@ -949,7 +921,7 @@ export default function VideoWorkflowWorkspace({
           
           {currentProject.stage === 'shotlist' && currentProject.shots && (
             <div className="workflow-stage-shotlist">
-              <h3>分镜列表 - 可编辑</h3>
+              <h3>准备生成画面</h3>
               <p>
                 共 {currentProject.shots.length} 个镜头，总时长 {calculateTotalDuration(currentProject.shots)} 秒
                 {isOmni && AI_VIDEO_OMNI_ASYNC && (
@@ -964,7 +936,7 @@ export default function VideoWorkflowWorkspace({
                   <input
                     type="checkbox"
                     checked={currentProject.useContinuousShot || false}
-                    onChange={(e) => saveProject({ ...currentProject, useContinuousShot: e.target.checked })}
+                    onChange={(e) => saveBoard({ ...currentProject, useContinuousShot: e.target.checked })}
                   />
                   <span>
                     连续长镜头模式（最多 {AI_VIDEO_EXTEND_MAX_SECONDS} 秒，使用 extend_from 保持连续性）
@@ -972,113 +944,12 @@ export default function VideoWorkflowWorkspace({
                 </label>
               )}
               
-              <div className="workflow-shots">
-                {currentProject.shots.map((shot, i) => (
-                  <div key={shot.id} className="workflow-shot-edit-card">
-                    <div className="workflow-shot-header">
-                      <h4>镜头 {shot.number}</h4>
-                      <div className="workflow-shot-actions">
-                        {i > 0 && (
-                          <button onClick={() => handleMoveShot(shot.id, 'up')} title="上移">
-                            <ArrowUp size={16} />
-                          </button>
-                        )}
-                        {i < currentProject.shots!.length - 1 && (
-                          <button onClick={() => handleMoveShot(shot.id, 'down')} title="下移">
-                            <ArrowDown size={16} />
-                          </button>
-                        )}
-                        <button onClick={() => handleDuplicateShot(shot.id)} title="复制">
-                          <Copy size={16} />
-                        </button>
-                        <button onClick={() => handleRemoveShot(shot.id)} title="删除">
-                          <Trash2 size={16} />
-                        </button>
-                        <button onClick={() => setEditingShot(editingShot === shot.id ? null : shot.id)} title="编辑">
-                          <Edit2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {editingShot === shot.id ? (
-                      <div className="workflow-shot-edit-form">
-                        <label>
-                          时长（秒）：
-                          <input
-                            type="number"
-                            min="3"
-                            max="30"
-                            step="0.5"
-                            value={shot.duration}
-                            onChange={(e) => handleUpdateShot(shot.id, { duration: parseFloat(e.target.value) })}
-                          />
-                        </label>
-                        <label>
-                          景别：
-                          <input
-                            type="text"
-                            value={shot.framing}
-                            onChange={(e) => handleUpdateShot(shot.id, { framing: e.target.value })}
-                          />
-                        </label>
-                        <label>
-                          镜头运动：
-                          <input
-                            type="text"
-                            value={shot.cameraMovement}
-                            onChange={(e) => handleUpdateShot(shot.id, { cameraMovement: e.target.value })}
-                          />
-                        </label>
-                        <label>
-                          场景描述：
-                          <textarea
-                            value={shot.sceneDescription}
-                            onChange={(e) => handleUpdateShot(shot.id, { sceneDescription: e.target.value })}
-                            rows={3}
-                          />
-                        </label>
-                        <label>
-                          对白/旁白：
-                          <input
-                            type="text"
-                            value={shot.dialogue || ''}
-                            onChange={(e) => handleUpdateShot(shot.id, { dialogue: e.target.value })}
-                          />
-                        </label>
-                        <label>
-                          音效备注：
-                          <input
-                            type="text"
-                            value={shot.soundNotes || ''}
-                            onChange={(e) => handleUpdateShot(shot.id, { soundNotes: e.target.value })}
-                          />
-                        </label>
-                        <button onClick={() => setEditingShot(null)} className="workflow-save-edit">
-                          保存
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="workflow-shot-view">
-                        <p><strong>时长：</strong>{shot.duration} 秒</p>
-                        <p><strong>景别：</strong>{shot.framing}</p>
-                        <p><strong>运动：</strong>{shot.cameraMovement}</p>
-                        <p><strong>场景：</strong>{shot.sceneDescription}</p>
-                        {shot.dialogue && <p><strong>对白：</strong>{shot.dialogue}</p>}
-                        {shot.soundNotes && <p><strong>音效：</strong>{shot.soundNotes}</p>}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              
               <div className="workflow-actions">
-                <button onClick={() => handleAddShot(currentProject.shots!.length - 1)}>
-                  添加镜头
-                </button>
-                <button onClick={generateKeyframes} className="workflow-action-primary">
+                <button disabled={!currentProject.shots.length || currentProject.shots.some(shot => !shot.sceneDescription.trim())} onClick={() => generateKeyframes()} className="workflow-action-primary">
                   下一步 - 生成关键帧（{pending.keyframes} 个）
                 </button>
               </div>
+              {(!currentProject.shots.length || currentProject.shots.some(shot => !shot.sceneDescription.trim())) && <p className="wf-hint">添加镜头并填写每个镜头的画面描述后，即可生成关键帧。</p>}
             </div>
           )}
           
@@ -1136,7 +1007,7 @@ export default function VideoWorkflowWorkspace({
               <h3>镜头视频</h3>
               
               <div className="workflow-videos">
-                {currentProject.shots.map((shot, i) => (
+                {currentProject.shots.map((shot) => (
                   <div key={shot.id} className="workflow-video-card">
                     <h4>镜头 {shot.number} ({shot.duration}秒)</h4>
                     {shot.videoUrl && shot.videoStatus === 'completed' && (

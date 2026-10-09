@@ -312,7 +312,7 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
   
   onProgress?.('合成完成！', 100);
   
-  return new Blob([data], { type: 'video/mp4' });
+  return new Blob([typeof data === 'string' ? data : new Uint8Array(data)], { type: 'video/mp4' });
 }
 
 /**

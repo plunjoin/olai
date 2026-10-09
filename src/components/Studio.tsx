@@ -673,7 +673,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
         </button>
       </div>
     </aside>
-    <main className={`main-shell ${view !== 'library' ? 'chat-main' : ''}`}>
+    <main className={`main-shell ${view !== 'library' && view !== 'workflow' ? 'chat-main' : ''}`}>
       <header className="topbar">
         <div className="breadcrumbs">
           <button
@@ -722,7 +722,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
             <span>{syncing ? '正在后台同步游客记录，可继续创作。' : `${syncFailures.length} 条游客记录同步未完成，内容仍保留在本地，可继续创作。`}</span>
             {syncFailures.length > 0 && <button className="secondary-button" disabled={syncing} onClick={() => void runGuestSync(account.user!.id)}>重试同步</button>}
           </div>}
-          {view !== 'library' && (
+          {view !== 'library' && view !== 'workflow' && (
             <ChatWorkspace
               cloudStorage={!!account.user}
               conversation={active}
@@ -781,8 +781,9 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
               generationLimit={account.generationLimit}
               onRequestQuota={async (kind, count) => {
                 const confirmed = await confirm(
+                  '确认生成',
                   `生成 ${count} 个${kind === 'image' ? '关键帧' : kind === 'video' ? '视频' : '配乐'}将消耗 ${count} 次${kind === 'image' ? '图片' : kind === 'video' ? '视频' : '音乐'}额度。今日剩余：${account.generationLimit} 次。\n\n是否继续？`,
-                  '确认生成'
+                  '开始生成'
                 );
                 return confirmed;
               }}

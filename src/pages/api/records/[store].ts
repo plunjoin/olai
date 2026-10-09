@@ -28,6 +28,19 @@ function recordError(value: any, store: string): string | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return '记录需要是 JSON 对象。';
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value.id)) return '记录编号无效。';
   if (!Number.isFinite(value.createdAt)) return '记录缺少有效的创建时间。';
+  if (store === 'workflows') {
+    if (typeof value.title !== 'string' || value.title.length > 100) return '短片标题无效或超过 100 个字符。';
+    if (!Number.isFinite(value.updatedAt) || typeof value.idea !== 'string') return '短片创意或更新时间无效。';
+    if (!['init', 'script', 'shotlist', 'keyframes', 'videos', 'music', 'assembly', 'complete'].includes(value.stage)) return '短片阶段无效。';
+    if (value.elements !== undefined && (!Array.isArray(value.elements) || value.elements.some((element: any) =>
+      !element || typeof element.id !== 'string' || !['character', 'scene', 'prop'].includes(element.kind) || typeof element.name !== 'string' || typeof element.description !== 'string'
+    ))) return '短片元素格式无效。';
+    if (value.shots !== undefined && (!Array.isArray(value.shots) || value.shots.some((shot: any) =>
+      !shot || typeof shot.id !== 'string' || !Number.isFinite(shot.duration) || shot.duration <= 0 || shot.duration > 30 || typeof shot.sceneDescription !== 'string' ||
+      (shot.elementIds !== undefined && (!Array.isArray(shot.elementIds) || shot.elementIds.some((id: any) => typeof id !== 'string')))
+    ))) return '短片镜头格式无效。';
+    return null;
+  }
   if (store === 'conversations') {
     if (typeof value.title !== 'string' || value.title.length > 100) return '会话标题无效或超过 100 个字符。';
     if (!Number.isFinite(value.updatedAt)) return '会话缺少有效的更新时间。';
@@ -45,7 +58,7 @@ function recordError(value: any, store: string): string | null {
 export const ALL: APIRoute = async context => {
   const { request, params, url } = context;
   const store = params.store;
-  if (!['conversations', 'assets'].includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
+  if (!['conversations', 'assets', 'workflows'].includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
   if (request.method !== 'GET' && !sameOrigin(request)) return fail('不允许跨站调用。', 403);
   try {
     const user = await currentUser(context);

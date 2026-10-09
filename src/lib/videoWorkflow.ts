@@ -27,6 +27,26 @@ export interface StyleBible {
   palette: string;         // 色调
 }
 
+export type WorkflowElementKind = 'character' | 'scene' | 'prop';
+
+export interface WorkflowElement {
+  id: string;
+  kind: WorkflowElementKind;
+  name: string;
+  description: string;
+}
+
+export const ELEMENT_LABELS: Record<WorkflowElementKind, string> = {
+  character: '人物', scene: '场景', prop: '道具',
+};
+
+export function buildElementPrompt(elements: WorkflowElement[] = []): string {
+  if (!elements.length) return '';
+  return '\n\n创作元素（保持名称与设定一致）：\n' + elements.map(element =>
+    `- ${ELEMENT_LABELS[element.kind]} [${element.id}] ${element.name}：${element.description}`
+  ).join('\n');
+}
+
 export interface Shot {
   id: string;
   number: number;
@@ -36,6 +56,7 @@ export interface Shot {
   sceneDescription: string;   // 场景描述
   dialogue?: string;          // 对白/旁白
   soundNotes?: string;        // 音效备注
+  elementIds?: string[];      // 引用项目元素，跨镜头复用同一设定
   
   // 关键帧
   keyframeUrl?: string;
@@ -66,6 +87,7 @@ export interface VideoWorkflowProject {
   // 阶段 2: 分镜
   targetLength?: number;          // 目标时长（秒），默认 30
   shots?: Shot[];
+  elements?: WorkflowElement[];
   useContinuousShot?: boolean;    // 是否使用连续长镜头模式（extend_from）
   
   // 阶段 5: 配乐
@@ -87,7 +109,7 @@ export interface VideoWorkflowProject {
 /**
  * 验证镜头列表 JSON 的 schema
  */
-export function validateShotList(data: any): Shot[] {
+export function validateShotList(data: any, elements: WorkflowElement[] = []): Shot[] {
   if (!Array.isArray(data)) {
     throw new Error('镜头列表必须是数组');
   }
@@ -120,6 +142,9 @@ export function validateShotList(data: any): Shot[] {
       sceneDescription: shot.sceneDescription,
       dialogue: shot.dialogue || '',
       soundNotes: shot.soundNotes || '',
+      elementIds: Array.isArray(shot.elementIds)
+        ? [...new Set<string>(shot.elementIds.filter((id: unknown) => elements.some(element => element.id === id)))]
+        : [],
     });
   }
   
@@ -129,10 +154,11 @@ export function validateShotList(data: any): Shot[] {
 /**
  * 构建编剧提示词
  */
-export function buildScriptPrompt(idea: string, targetLength: number): string {
+export function buildScriptPrompt(idea: string, targetLength: number, elements: WorkflowElement[] = []): string {
   return `你是一位专业的短视频编剧。根据以下创意，创作一个时长 ${targetLength} 秒的短片脚本。
 
 创意：${idea}
+${buildElementPrompt(elements)}
 
 请输出以下内容的 JSON：
 {
@@ -156,11 +182,12 @@ export function buildScriptPrompt(idea: string, targetLength: number): string {
 /**
  * 构建分镜提示词
  */
-export function buildShotListPrompt(script: string, styleBible: StyleBible, targetLength: number): string {
+export function buildShotListPrompt(script: string, styleBible: StyleBible, targetLength: number, elements: WorkflowElement[] = []): string {
   return `你是一位专业的短片导演。根据以下脚本和风格圣经，创作分镜头脚本。
 
 脚本：
 ${script}
+${buildElementPrompt(elements)}
 
 风格圣经：
 - 角色外观：${styleBible.appearance}
@@ -178,7 +205,8 @@ ${script}
     "cameraMovement": "镜头运动（例如：固定、推进、拉远、横移、跟随等）",
     "sceneDescription": "详细的场景描述，包含人物动作、环境细节、光线氛围等",
     "dialogue": "对白或旁白（如无则为空字符串）",
-    "soundNotes": "音效备注（如无则为空字符串）"
+    "soundNotes": "音效备注（如无则为空字符串）",
+    "elementIds": ["本镜头使用的创作元素 ID，仅选上面提供的 ID，无则为空数组"]
   }
 ]
 
@@ -193,20 +221,20 @@ ${script}
 /**
  * 构建关键帧生成提示词
  */
-export function buildKeyframePrompt(shot: Shot, styleBible: StyleBible): string {
+export function buildKeyframePrompt(shot: Shot, styleBible: StyleBible, elements: WorkflowElement[] = []): string {
   const styleDesc = `美术风格：${styleBible.artStyle}。色调：${styleBible.palette}。角色外观：${styleBible.appearance}。服装：${styleBible.wardrobe}。`;
   
   return `${shot.sceneDescription}
 
 ${styleDesc}
 
-景别：${shot.framing}。画面构图专业，电影质感。`;
+景别：${shot.framing}。画面构图专业，电影质感。${buildElementPrompt(elements.filter(element => shot.elementIds?.includes(element.id)))}`;
 }
 
 /**
  * 构建视频生成提示词（从关键帧或纯文本）
  */
-export function buildVideoPrompt(shot: Shot, styleBible: StyleBible, hasKeyframe: boolean): string {
+export function buildVideoPrompt(shot: Shot, styleBible: StyleBible, hasKeyframe: boolean, elements: WorkflowElement[] = []): string {
   const styleDesc = `美术风格：${styleBible.artStyle}。色调：${styleBible.palette}。`;
   const movementDesc = shot.cameraMovement !== '固定' ? `镜头${shot.cameraMovement}。` : '';
   
@@ -214,10 +242,10 @@ export function buildVideoPrompt(shot: Shot, styleBible: StyleBible, hasKeyframe
     // 有关键帧时的描述应该更简洁，主要描述运动
     return `${shot.sceneDescription}
 
-${movementDesc}${styleDesc}景别：${shot.framing}。电影质感。`;
+${movementDesc}${styleDesc}景别：${shot.framing}。电影质感。${buildElementPrompt(elements.filter(element => shot.elementIds?.includes(element.id)))}`;
   } else {
     // 无关键帧时需要完整描述
-    return buildKeyframePrompt(shot, styleBible) + (movementDesc ? `\n\n${movementDesc}` : '');
+    return buildKeyframePrompt(shot, styleBible, elements) + (movementDesc ? `\n\n${movementDesc}` : '');
   }
 }
 
@@ -258,6 +286,7 @@ export function createWorkflowProject(idea: string, targetLength: number = 30): 
     stage: 'init',
     idea,
     targetLength,
+    elements: [],
   };
 }
 

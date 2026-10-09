@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateSRT, planAssembly, type Shot } from '../videoAssembly';
+import { generateSRT, planAssembly } from '../videoAssembly';
+import type { Shot } from '../videoWorkflow';
 
 describe('videoAssembly', () => {
   const createShot = (id: number, duration: number, dialogue?: string): Shot => ({
