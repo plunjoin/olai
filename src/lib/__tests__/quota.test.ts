@@ -85,4 +85,22 @@ describe('quota refund', () => {
     expect(await reserveGeneration(owner1, kind, 2)).toBe(true);
     expect(await reserveGeneration(owner2, kind, 2)).toBe(true);
   });
+
+  it('refunds on upstream JSON errors including 429', async () => {
+    const owner = 'ip:test-json-error';
+    const kind = 'image';
+    const limit = 1;
+    
+    // 预留额度
+    expect(await reserveGeneration(owner, kind, limit)).toBe(true);
+    
+    // 验证额度已用完
+    expect(await reserveGeneration(owner, kind, limit)).toBe(false);
+    
+    // 模拟 JSON 错误（如 429）后退款
+    await refundGeneration(owner, kind);
+    
+    // 额度已退还，可以再次使用
+    expect(await reserveGeneration(owner, kind, limit)).toBe(true);
+  });
 });

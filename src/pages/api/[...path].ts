@@ -123,11 +123,11 @@ export const ALL: APIRoute = async context => {
       body,
       signal: AbortSignal.any([request.signal, timeout]),
     });
-    const upstreamError = await upstreamErrorResponse(upstream, useBetaInteractions ? 'videos' : path);
-    if (upstreamError) {
-      if (reservedKind && reservedOwner) await refundGeneration(reservedOwner, reservedKind);
-      return upstreamError;
+    if (!upstream.ok && reservedKind && reservedOwner) {
+      await refundGeneration(reservedOwner, reservedKind);
     }
+    const upstreamError = await upstreamErrorResponse(upstream, useBetaInteractions ? 'videos' : path);
+    if (upstreamError) return upstreamError;
 
     const headers = new Headers({
       'Content-Type': upstream.headers.get('content-type') || 'application/octet-stream',
