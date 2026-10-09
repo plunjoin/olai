@@ -218,7 +218,14 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
     void (async () => {
       try {
         const saved = loadSettings(); settingsRef.current = saved; setSettings(saved);
-        const accountState = await initializeStorage(); setAccount(accountState);
+        let accountState: AccountState = { user: null, generationLimit: 1 };
+        try {
+          accountState = await initializeStorage();
+        } catch (accountError) {
+          console.warn('账号状态初始化失败，切换为本地模式:', accountError);
+          notify(`账号服务未就绪，已切换为本地离线模式（${errorText(accountError)}）`);
+        }
+        setAccount(accountState);
         const [chats, works] = await Promise.all([getAll<Conversation>('conversations'), getAll<Asset>('assets')]);
         const restored = (chats || []).map(c => ({
           ...c,
@@ -716,7 +723,12 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
           <Companion size={100} animated />
           <span className="loading-track"><i /></span>
           <p>{loadError || '正在准备你的创作空间…'}</p>
-          {loadError && <button className="secondary-button" onClick={() => window.location.reload()}>重新加载</button>}
+          {loadError && (
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <button className="secondary-button" onClick={() => window.location.reload()}>重新加载</button>
+              <button className="secondary-button" onClick={() => { setReady(true); setLoadError(''); }}>以游客模式进入</button>
+            </div>
+          )}
         </div>
       ) : (
         <>
