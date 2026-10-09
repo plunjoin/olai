@@ -21,8 +21,41 @@ export async function request(path: string, key: string, init: RequestInit = {})
   if (!response.ok) {
     let message = `请求失败（${response.status}）`;
     try { const body = await response.json(); message = body.error?.message || body.message || message; } catch { /* Keep HTTP error. */ }
-    const err = new Error(publicServiceError(message, response.status)) as Error & { status?: number };
+    
+    // Extract Retry-After from headers or message
+    let retryAfter: number | undefined;
+    const retryAfterHeader = response.headers.get('Retry-After');
+    if (retryAfterHeader) {
+      const seconds = parseInt(retryAfterHeader, 10);
+      if (!isNaN(seconds)) {
+        retryAfter = seconds;
+      } else {
+        try {
+          const date = new Date(retryAfterHeader);
+          retryAfter = Math.max(0, Math.floor((date.getTime() - Date.now()) / 1000));
+        } catch {
+          // ignore invalid date
+        }
+      }
+    }
+    
+    // Also parse from message: "最早恢复时间 2026-10-10T03:00:00-04:00"
+    if (!retryAfter) {
+      const match = message.match(/最早恢复时间\s+([^\s]+)/);
+      if (match) {
+        try {
+          const date = new Date(match[1]);
+          retryAfter = Math.max(0, Math.floor((date.getTime() - Date.now()) / 1000));
+        } catch {
+          // ignore invalid date
+        }
+      }
+    }
+    
+    const err = new Error(publicServiceError(message, response.status)) as Error & { status?: number; retryAfter?: number; headers?: Headers };
     err.status = response.status;
+    err.retryAfter = retryAfter;
+    err.headers = response.headers;
     throw err;
   }
   return response;

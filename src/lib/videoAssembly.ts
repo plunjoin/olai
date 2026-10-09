@@ -13,7 +13,7 @@ let ffmpegLoading = false;
 let ffmpegReady = false;
 
 /**
- * 懒加载 ffmpeg.wasm
+ * 懒加载 ffmpeg.wasm（带超时）
  */
 export async function loadFFmpeg(onProgress?: (message: string) => void): Promise<FFmpeg> {
   if (ffmpegReady && ffmpegInstance) {
@@ -21,12 +21,16 @@ export async function loadFFmpeg(onProgress?: (message: string) => void): Promis
   }
   
   if (ffmpegLoading) {
-    // 等待加载完成
-    while (ffmpegLoading) {
+    // 等待加载完成（最多 60 秒）
+    const startWait = Date.now();
+    while (ffmpegLoading && Date.now() - startWait < 60000) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     if (ffmpegReady && ffmpegInstance) {
       return ffmpegInstance;
+    }
+    if (ffmpegLoading) {
+      throw new Error('视频处理引擎加载超时，请刷新页面重试');
     }
   }
   
@@ -44,11 +48,32 @@ export async function loadFFmpeg(onProgress?: (message: string) => void): Promis
       onProgress?.(`处理中：${Math.round(progress * 100)}%`);
     });
     
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-    });
+    // Try self-hosted first, fallback to CDN
+    let baseURL = '/ffmpeg-core';
+    let coreURL: string;
+    let wasmURL: string;
+    
+    try {
+      // Try self-hosted
+      const testResponse = await fetch(`${baseURL}/ffmpeg-core.js`, { method: 'HEAD' });
+      if (!testResponse.ok) throw new Error('Self-hosted core not found');
+      coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+      wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+    } catch {
+      // Fallback to CDN
+      onProgress?.('正在从 CDN 加载引擎...');
+      baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+      coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
+      wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
+    }
+    
+    // Load with timeout
+    const loadPromise = ffmpeg.load({ coreURL, wasmURL });
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('加载超时')), 60000)
+    );
+    
+    await Promise.race([loadPromise, timeoutPromise]);
     
     ffmpegInstance = ffmpeg;
     ffmpegReady = true;
@@ -213,12 +238,6 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
   
   onProgress?.('准备合成...', 10);
   
-  // 创建 concat 列表
-  const concatList = completedShots
-    .map((_, i) => `file 'input${i}.mp4'`)
-    .join('\n');
-  await ffmpeg.writeFile('concat.txt', concatList);
-  
   // 如果有音乐，写入音乐文件
   if (musicBlob) {
     await ffmpeg.writeFile('music.mp3', await fetchFile(musicBlob));
@@ -231,62 +250,76 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
   
   onProgress?.('合成视频中...', 20);
   
-  // 构建 ffmpeg 命令
-  const args: string[] = [
-    '-f', 'concat',
-    '-safe', '0',
-    '-i', 'concat.txt',
-  ];
+  // 构建 ffmpeg 命令 - use filter_complex for robust audio handling
+  const args: string[] = [];
   
-  // 添加音乐输入
-  if (musicBlob && plan.musicTrimDuration) {
+  // Add all input files
+  for (let i = 0; i < completedShots.length; i++) {
+    args.push('-i', `input${i}.mp4`);
+  }
+  
+  // Add music input if present
+  const musicInputIndex = completedShots.length;
+  if (musicBlob) {
     args.push('-i', 'music.mp3');
   }
   
-  // 视频滤镜：缩放到目标分辨率
-  let videoFilter = `scale=${plan.targetWidth}:${plan.targetHeight}:force_original_aspect_ratio=decrease,pad=${plan.targetWidth}:${plan.targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${plan.targetFPS}`;
+  // Build filter_complex for video normalization + concat + audio mixing
+  let filterComplex = '';
   
-  // 添加字幕
+  // Normalize each clip: scale/pad + fps + ensure audio (anullsrc for silent clips)
+  for (let i = 0; i < completedShots.length; i++) {
+    filterComplex += `[${i}:v]scale=${plan.targetWidth}:${plan.targetHeight}:force_original_aspect_ratio=decrease,pad=${plan.targetWidth}:${plan.targetHeight}:(ow-iw)/2:(oh-ih)/2,fps=${plan.targetFPS},setsar=1[v${i}];`;
+    // Try to use existing audio, generate silent if missing
+    filterComplex += `[${i}:a]anull[a${i}tmp];`;
+  }
+  
+  // Concat normalized clips
+  const concatInputs = completedShots.map((_, i) => `[v${i}][a${i}tmp]`).join('');
+  filterComplex += `${concatInputs}concat=n=${completedShots.length}:v=1:a=1[vconcated][aconcated];`;
+  
+  // Add subtitles if needed
   if (includeSubtitles && plan.subtitleText) {
-    videoFilter += `,subtitles=subtitles.srt:force_style='FontSize=20,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=2'`;
-  }
-  
-  args.push('-vf', videoFilter);
-  
-  // 音频处理
-  if (musicBlob && plan.musicTrimDuration) {
-    // 混合原视频音频和背景音乐
-    // 背景音乐音量降低（ducking）
-    let audioFilter = `[0:a]volume=1.0[a0];[1:a]volume=0.3`;
-    
-    // 如果需要淡出
-    if (plan.needsMusicFade) {
-      const fadeStart = plan.musicTrimDuration - 2; // 最后2秒淡出
-      audioFilter += `,afade=t=out:st=${fadeStart}:d=2`;
-    }
-    
-    audioFilter += `[a1];[a0][a1]amix=inputs=2:duration=first[aout]`;
-    
-    args.push('-filter_complex', audioFilter);
-    args.push('-map', '0:v');
-    args.push('-map', '[aout]');
+    // Note: ffmpeg.wasm may lack font support - subtitles may not render
+    // TODO: Ship a CJK font (e.g. Noto Sans SC subset) into wasm FS
+    filterComplex += `[vconcated]subtitles=subtitles.srt:force_style='FontName=Sans,FontSize=20,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,Outline=2,Bold=1'[vout];`;
   } else {
-    // 只使用视频原音频
-    args.push('-c:a', 'aac');
+    filterComplex += `[vconcated]copy[vout];`;
   }
   
-  // 输出选项
+  // Mix audio if music present
+  if (musicBlob) {
+    const musicTrim = plan.totalDuration;
+    const fadeStart = Math.max(0, musicTrim - 2);
+    // Trim and fade music, then duck it and mix with video audio (duration=longest to keep full video audio)
+    filterComplex += `[${musicInputIndex}:a]atrim=0:${musicTrim},afade=t=out:st=${fadeStart}:d=2,volume=0.3[music];`;
+    filterComplex += `[aconcated][music]amix=inputs=2:duration=longest[aout]`;
+  } else {
+    filterComplex += `[aconcated]anull[aout]`;
+  }
+  
+  args.push('-filter_complex', filterComplex);
+  args.push('-map', '[vout]');
+  args.push('-map', '[aout]');
+  
+  // Output options (faster preset for single-threaded core)
   args.push(
     '-c:v', 'libx264',
-    '-preset', 'medium',
+    '-preset', 'veryfast',
     '-crf', '23',
+    '-c:a', 'aac',
+    '-b:a', '128k',
     '-movflags', '+faststart',
     '-y',
     'output.mp4'
   );
   
-  // 执行 ffmpeg 命令
-  await ffmpeg.exec(args);
+  // Execute ffmpeg command with error checking
+  try {
+    await ffmpeg.exec(args);
+  } catch (error) {
+    throw new Error(`视频合成失败：${error instanceof Error ? error.message : '未知错误'}`);
+  }
   
   onProgress?.('读取合成结果...', 90);
   
@@ -302,7 +335,6 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
     }
   }
   try {
-    await ffmpeg.deleteFile('concat.txt');
     await ffmpeg.deleteFile('output.mp4');
     if (musicBlob) await ffmpeg.deleteFile('music.mp3');
     if (includeSubtitles) await ffmpeg.deleteFile('subtitles.srt');
