@@ -34,7 +34,7 @@ export const ALL: APIRoute = async context => {
   const apiKey = process.env.AI_API_KEY || (import.meta.env.AI_API_KEY as string | undefined);
   const key = request.headers.get('authorization') || (apiKey ? `Bearer ${apiKey}` : '');
   if (!key) return Response.json({ error: { message: '请先在设置中填写 API Key，或由部署者配置服务端密钥。' } }, { status: 401 });
-  const base = (process.env.AI_API_BASE_URL || import.meta.env.AI_API_BASE_URL || 'https://ai.bllii.com/v1').replace(/\/$/, '');
+  const base = (process.env.AI_API_BASE_URL || import.meta.env.AI_API_BASE_URL).replace(/\/$/, '');
   const timeout = AbortSignal.timeout(180_000);
   let upstreamStarted = false;
   let useBetaInteractions = false;

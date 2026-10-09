@@ -61,7 +61,7 @@ npm install
 将 [`.env.example`](.env.example) 复制为 `.env`，填写上游服务地址与可选的服务端密钥。也可以在界面中填写 API Key。
 
 ```dotenv
-AI_API_BASE_URL=https://ai.bllii.com/v1
+AI_API_BASE_URL=https://example.com/v1
 AI_API_KEY=你的上游服务密钥
 ```
 
@@ -164,7 +164,7 @@ npm run dev
 
 | 环境变量 | 默认值 / 行为 | 用途 |
 | --- | --- | --- |
-| `AI_API_BASE_URL` | `https://ai.bllii.com/v1` | 上游 OpenAI 兼容接口地址；默认配置为 web2api 在线版本 |
+| `AI_API_BASE_URL` | `https://example.com/v1` | 上游 OpenAI 兼容接口地址；默认配置为 web2api 在线版本 |
 | `AI_API_KEY` | 可选 | 服务端 API Key，也可在界面中填写密钥 |
 | `AI_CHAT_MODEL` | `gemini-3.5-flash` | 对话引擎在网关中的实际别名 |
 | `AI_IMAGE_MODEL` | `gemini-3.1-flash-image` | 图片引擎在网关中的实际别名 |
@@ -255,7 +255,7 @@ npm install --omit=dev --include=optional
 
 ## 上游接口与模型
 
-接入依据：[web2api 文档](https://ai.bllii.com/v1/docs)，适配版本 v0.3.0。默认服务地址为 `https://ai.bllii.com/v1`，使用 Bearer API Key；连接时读取实际模型目录，目录可用不代表账户有生成额度。
+接入依据：[web2api 文档](https://example.com/v1/docs)，适配版本 v0.3.0。默认服务地址为 `https://example.com/v1`，使用 Bearer API Key；连接时读取实际模型目录，目录可用不代表账户有生成额度。
 
 **当前配置说明：**
 - **对话**：`gemini-3.5-flash` 或 `gemini-flash-latest` 通过 /v1/chat/completions
