@@ -636,6 +636,91 @@ input[type="range"] { accent-color: #6379db; }
   .model-picker-dropdown { position: fixed; left: 16px; right: 16px; top: 100px; width: auto; max-height: calc(100dvh - 140px); }
 }
 @media (max-width: 360px) { .hero-content h2 { font-size: 30px; } .section-heading h2 span { display: none; } .hero-buttons { gap: 13px; } }
+/* Video workflow styles */
+.workflow-container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }
+.workflow-header { margin-bottom: 40px; }
+.workflow-header h2 { font-size: 32px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+.workflow-subtitle { font-size: 16px; color: var(--text-secondary); }
+.workflow-stage { font-size: 14px; color: var(--accent-lime); font-weight: 500; margin-top: 8px; }
+.workflow-back { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; color: var(--text-secondary); padding: 8px 12px; border-radius: var(--radius-sm); cursor: pointer; margin-bottom: 16px; }
+.workflow-back:hover { background: var(--bg-hover); color: var(--text-primary); }
+.workflow-projects { display: grid; gap: 24px; }
+.workflow-new-project { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 60px 40px; background: var(--bg-surface); border: 2px dashed var(--border-medium); border-radius: var(--radius-lg); cursor: pointer; transition: all .18s; }
+.workflow-new-project:hover { background: var(--bg-elevated); border-color: var(--accent-lime); }
+.workflow-new-project span { font-size: 18px; font-weight: 500; color: var(--text-primary); }
+.workflow-project-list { margin-top: 40px; }
+.workflow-project-list h3 { font-size: 20px; font-weight: 600; color: var(--text-primary); margin-bottom: 20px; }
+.workflow-project-card { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); transition: all .18s; }
+.workflow-project-card:hover { border-color: var(--border-hover); box-shadow: 0 2px 8px rgba(86, 101, 232, .08); }
+.workflow-project-info h4 { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.workflow-project-info p { font-size: 14px; color: var(--text-secondary); margin-bottom: 8px; }
+.workflow-project-time { font-size: 12px; color: var(--text-muted); }
+.workflow-project-actions { display: flex; gap: 12px; }
+.workflow-project-actions button { padding: 10px 20px; border-radius: var(--radius-sm); border: 1px solid var(--border-medium); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; transition: all .18s; }
+.workflow-project-actions button:hover { background: var(--accent-lime-subtle); border-color: var(--accent-lime); }
+.workflow-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 80px 20px; }
+.workflow-loading-spinner { width: 48px; height: 48px; border: 4px solid var(--border-subtle); border-top-color: var(--accent-lime); border-radius: 50%; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.workflow-loading p { font-size: 16px; color: var(--text-secondary); }
+.workflow-cancel { padding: 10px 24px; border-radius: var(--radius-sm); border: 1px solid var(--border-medium); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; }
+.workflow-cancel:hover { background: var(--bg-hover); }
+.workflow-content { display: grid; gap: 32px; }
+.workflow-stage-init, .workflow-stage-script, .workflow-stage-shotlist, .workflow-stage-keyframes, .workflow-stage-videos, .workflow-stage-complete { padding: 32px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); }
+.workflow-stage-init h3, .workflow-stage-script h3, .workflow-stage-shotlist h3, .workflow-stage-keyframes h3, .workflow-stage-videos h3, .workflow-stage-complete h3 { font-size: 24px; font-weight: 600; color: var(--text-primary); margin-bottom: 16px; }
+.workflow-stage-init p, .workflow-stage-script p, .workflow-stage-shotlist p { font-size: 16px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 12px; }
+.workflow-script-content { padding: 20px; background: var(--bg-elevated); border-radius: var(--radius-md); margin-bottom: 24px; }
+.workflow-style-bible { display: grid; gap: 12px; padding: 20px; background: var(--bg-elevated); border-radius: var(--radius-md); margin-bottom: 24px; }
+.workflow-style-bible div { font-size: 15px; color: var(--text-primary); line-height: 1.6; }
+.workflow-style-bible strong { color: var(--accent-lime); margin-right: 8px; }
+.workflow-action-primary { padding: 14px 32px; background: var(--accent-lime); color: white; border: none; border-radius: var(--radius-sm); font-size: 16px; font-weight: 500; cursor: pointer; transition: all .18s; }
+.workflow-action-primary:hover { background: var(--accent-lime-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(86, 101, 232, .2); }
+.workflow-shots { display: grid; gap: 16px; margin-bottom: 24px; }
+.workflow-shot-card { padding: 20px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.workflow-shot-card h4 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+.workflow-shot-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
+.workflow-keyframes, .workflow-videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; margin-bottom: 24px; }
+.workflow-keyframe-card, .workflow-video-card { padding: 16px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.workflow-keyframe-card h4, .workflow-video-card h4 { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+.workflow-keyframe-card img { width: 100%; border-radius: var(--radius-sm); margin-bottom: 12px; }
+.workflow-video-card video { width: 100%; border-radius: var(--radius-sm); margin-bottom: 12px; }
+.workflow-shot-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.4; }
+.workflow-error { display: flex; align-items: flex-start; gap: 8px; padding: 12px; background: rgba(207, 70, 97, .1); border-radius: var(--radius-sm); color: var(--color-danger); }
+.workflow-error p { font-size: 13px; line-height: 1.4; }
+.workflow-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+.workflow-actions button { padding: 12px 24px; border-radius: var(--radius-sm); border: 1px solid var(--border-medium); background: var(--bg-surface); color: var(--text-primary); cursor: pointer; transition: all .18s; }
+.workflow-actions button:hover { background: var(--bg-hover); border-color: var(--accent-lime); }
+.workflow-music { margin-bottom: 24px; padding: 20px; background: var(--bg-elevated); border-radius: var(--radius-md); }
+.workflow-music h4 { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 12px; }
+.workflow-music audio { width: 100%; }
+.workflow-final-shots { display: grid; gap: 16px; margin-bottom: 24px; }
+.workflow-final-shot { display: flex; align-items: center; gap: 16px; padding: 16px; background: var(--bg-elevated); border-radius: var(--radius-md); }
+.workflow-final-shot span { font-size: 15px; font-weight: 600; color: var(--text-primary); min-width: 80px; }
+.workflow-final-shot video { flex: 1; max-width: 400px; border-radius: var(--radius-sm); }
+.workflow-note { padding: 16px; background: var(--accent-lime-subtle); border-left: 3px solid var(--accent-lime); border-radius: var(--radius-sm); color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+.workflow-note-inline { font-size: 13px; color: var(--text-muted); margin-left: 8px; }
+.workflow-checkbox { display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius-sm); margin-bottom: 16px; cursor: pointer; }
+.workflow-checkbox input { cursor: pointer; }
+.workflow-checkbox span { font-size: 14px; color: var(--text-primary); }
+.workflow-warning { padding: 12px 16px; background: rgba(255, 193, 7, 0.1); border-left: 3px solid #ffc107; border-radius: var(--radius-sm); color: var(--text-primary); font-size: 14px; margin-top: 16px; }
+.workflow-shot-edit-card { padding: 16px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); }
+.workflow-shot-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.workflow-shot-header h4 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+.workflow-shot-actions { display: flex; gap: 8px; }
+.workflow-shot-actions button { padding: 6px; border: 1px solid var(--border-medium); background: var(--bg-surface); border-radius: var(--radius-sm); cursor: pointer; transition: all .18s; }
+.workflow-shot-actions button:hover { background: var(--bg-hover); border-color: var(--accent-lime); }
+.workflow-shot-edit-form { display: grid; gap: 12px; }
+.workflow-shot-edit-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.workflow-shot-edit-form input,
+.workflow-shot-edit-form textarea { padding: 8px 12px; border: 1px solid var(--border-medium); border-radius: var(--radius-sm); background: var(--bg-surface); color: var(--text-primary); font-size: 14px; }
+.workflow-shot-edit-form input:focus,
+.workflow-shot-edit-form textarea:focus { border-color: var(--accent-lime); outline: none; }
+.workflow-save-edit { padding: 10px 20px; background: var(--accent-lime); color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 500; cursor: pointer; }
+.workflow-shot-view p { font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
+.workflow-final-video { margin-bottom: 24px; }
+.workflow-final-video video { width: 100%; max-width: 800px; border-radius: var(--radius-md); margin-bottom: 16px; }
+.workflow-download { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; background: var(--accent-lime); color: white; border: none; border-radius: var(--radius-sm); font-size: 15px; font-weight: 500; cursor: pointer; }
+.workflow-download:hover { background: var(--accent-lime-hover); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
   .creation-sidebar, .parameters-sidebar-backdrop { transition-delay: 0s; }

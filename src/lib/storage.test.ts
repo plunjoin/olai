@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-const local = vi.hoisted(() => ({ conversations: [] as any[], assets: [] as any[] }));
+const local = vi.hoisted(() => ({ conversations: [] as any[], assets: [] as any[], workflows: [] as any[] }));
 vi.mock('idb', () => ({ openDB: vi.fn(async () => ({
-  getAll: async (store: 'conversations' | 'assets') => local[store],
-  transaction: (store: 'conversations' | 'assets') => ({
+  getAll: async (store: 'conversations' | 'assets' | 'workflows') => local[store],
+  transaction: (store: 'conversations' | 'assets' | 'workflows') => ({
     store: {
       get: async (id: string) => local[store].find(row => row.id === id),
       put: async (row: any) => { local[store] = local[store].map(current => current.id === row.id ? row : current); },
@@ -12,7 +12,7 @@ vi.mock('idb', () => ({ openDB: vi.fn(async () => ({
 })) }));
 
 beforeEach(() => {
-  vi.resetModules(); local.conversations = []; local.assets = [];
+  vi.resetModules(); local.conversations = []; local.assets = []; local.workflows = [];
   vi.stubGlobal('window', {}); vi.stubGlobal('indexedDB', {}); vi.stubGlobal('navigator', {});
 });
 afterEach(() => vi.unstubAllGlobals());

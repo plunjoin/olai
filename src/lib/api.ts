@@ -499,8 +499,15 @@ export async function generateAudio({
   return callNative();
 }
 
-export async function generateVideo({ key, model, prompt, options, signal, mode = videoEngineForModel(model) }: {
-  key: string; model: string; prompt: string; options: Record<string, string | number>; signal?: AbortSignal; mode?: VideoEngineMode;
+export async function generateVideo({ key, model, prompt, options, signal, mode = videoEngineForModel(model), inputImage, extendFrom }: {
+  key: string; 
+  model: string; 
+  prompt: string; 
+  options: Record<string, string | number>; 
+  signal?: AbortSignal; 
+  mode?: VideoEngineMode;
+  inputImage?: Blob; // 关键帧图片（图生视频）
+  extendFrom?: string; // 延续视频 ID（连续长镜头）
 }): Promise<Response> {
   if (mode === 'chat') {
     const seconds = Number(options.seconds ?? 4);
@@ -512,30 +519,64 @@ export async function generateVideo({ key, model, prompt, options, signal, mode 
       resolution: String(options.resolution || '720p').toLowerCase(),
     }) });
   }
-  let seconds = Number(options.seconds ?? 4);
+  
+  // Task 模式（Veo 或 Omni async）
   const resolution = String(options.resolution || '720p').toLowerCase();
-  if (resolution === '4k' && seconds < 8) {
-    seconds = 8;
-  }
-  if (!Number.isInteger(seconds) || seconds < 4 || seconds > 8) {
-    throw new Error('Veo 视频生成支持 4–8 秒，4K 需要 8 秒，请调整时长后重试。');
-  }
   const aspectRatio = String(options.aspect_ratio || '16:9');
   const isPortrait = aspectRatio === '9:16';
+  
+  // 确定尺寸
   let size: string;
   if (resolution === '4k') {
     size = isPortrait ? '2160x3840' : '3840x2160';
   } else if (resolution === '1080p') {
     size = isPortrait ? '1080x1920' : '1920x1080';
+  } else if (resolution === '360p') {
+    size = isPortrait ? '360x640' : '640x360';
   } else {
     size = isPortrait ? '720x1280' : '1280x720';
   }
-  return request('videos', key, { method: 'POST', signal, body: JSON.stringify({
+  
+  const body: any = {
     model,
-    prompt: `${prompt}${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}`,
+    prompt: extendFrom ? `Extend this video. ${prompt}` : `${prompt}${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}`,
     size,
-    seconds,
-  }) });
+  };
+  
+  // Veo 需要 seconds 参数
+  if (/^veo[-.]/i.test(model)) {
+    let seconds = Number(options.seconds ?? 4);
+    if (resolution === '4k' && seconds < 8) {
+      seconds = 8;
+    }
+    if (!Number.isInteger(seconds) || seconds < 4 || seconds > 8) {
+      throw new Error('Veo 视频生成支持 4–8 秒，4K 需要 8 秒，请调整时长后重试。');
+    }
+    body.seconds = seconds;
+  }
+  // Omni async 模式不需要 seconds（固定 ~10 秒/段）
+  
+  // 图生视频：首帧参考
+  if (inputImage) {
+    const reader = new FileReader();
+    const base64Promise = new Promise<string>((resolve, reject) => {
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(inputImage);
+    });
+    body.input_reference = await base64Promise;
+  }
+  
+  // 延续视频
+  if (extendFrom) {
+    body.extend_from = extendFrom;
+  }
+  
+  return request('videos', key, { method: 'POST', signal, body: JSON.stringify(body) });
 }
 
 export async function videoContent(id: string, key: string, signal?: AbortSignal): Promise<Blob> {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, CircleAlert, Command, Menu, MessageSquare, PanelLeftClose, Pencil, Plus, Search, Settings as SettingsIcon, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ChevronDown, CircleAlert, Command, Film, Menu, MessageSquare, PanelLeftClose, Pencil, Plus, Search, Settings as SettingsIcon, ShieldCheck, Trash2, X } from 'lucide-react';
 import GithubSvg from './svg/GithubSvg';
 import { base64Blob, chat, generateAudio, generateImage, generateVideo, mediaOutputs, publicServiceError, request, safeMediaURL, videoContent } from '../lib/api';
 import { downloadLrcBlob, generateLrcFromPrompt } from '../lib/lrc';
@@ -24,12 +24,14 @@ import Library from './Library';
 import SettingsDialog from './SettingsDialog';
 import GlobalMediaPlayer from './GlobalMediaPlayer';
 import Companion from './Companion';
+import VideoWorkflowWorkspace from './VideoWorkflowWorkspace';
 import useDialogs from './ui/useDialogs';
 import MoreMenu from './ui/MoreMenu';
 import { PlayerProvider, revokeAssetMediaURL, usePlayer } from '../lib/playerContext';
 
 const navigation = [
   { view: 'chat' as const, label: 'AI 对话', icon: ChatAgentSvg },
+  { view: 'workflow' as const, label: '短片工坊', icon: Film },
 ];
 const modelKey = { image: 'imageModel', video: 'videoModel', music: 'musicModel' } as const;
 const errorText = (error: unknown) => publicServiceError(error instanceof Error ? error.message : '发生未知错误，请重试。');
@@ -52,7 +54,7 @@ function delay(ms: number, signal: AbortSignal) {
   });
 }
 
-const VALID_VIEWS: readonly View[] = ['home', 'chat', 'image', 'video', 'music', 'library'] as const;
+const VALID_VIEWS: readonly View[] = ['home', 'chat', 'image', 'video', 'music', 'library', 'workflow'] as const;
 
 function parseLocation(): { view: View; conversationId?: string } {
   if (typeof window === 'undefined') return { view: 'chat' };
@@ -609,7 +611,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
       setAligningIds(ids => ids.filter(id => id !== asset.id));
     }
   };
-  const label = view === 'library' ? '我的作品' : 'AI 对话';
+  const label = view === 'library' ? '我的作品' : view === 'workflow' ? '短片工坊' : 'AI 对话';
   const mediaKind = view === 'image' || view === 'video' || view === 'music' ? view : null;
   const recent = conversations.filter(c => c.title.toLowerCase().includes(sessionSearch.toLowerCase()));
 
@@ -627,12 +629,12 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
         {navigation.map(({ view: target, label, icon: IconComponent }) => (
           <button
             key={target}
-            className={`nav-item ${view !== 'library' ? 'active' : ''}`}
+            className={`nav-item ${view === target ? 'active' : ''}`}
             onClick={() => navigate(target)}
-            aria-current={view !== 'library' ? 'page' : undefined}
+            aria-current={view === target ? 'page' : undefined}
           >
             <span className="nav-icon-box">
-              <IconComponent size={19} active={view !== 'library'} />
+              <IconComponent size={19} active={view === target} />
             </span>
             {label}
             {view !== 'library' && <span className="nav-active-dot" />}
@@ -767,6 +769,24 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
               onDownloadCover={asset => void downloadCover(asset)}
               onRetryCover={retryCover}
               onDownload={asset => void downloadAsset(asset)}
+            />
+          )}
+          {view === 'workflow' && (
+            <VideoWorkflowWorkspace
+              apiKey={settings.key}
+              chatModel={settings.chatModel}
+              imageModel={settings.imageModel}
+              videoModel={settings.videoModel}
+              musicModel={settings.musicModel}
+              generationLimit={account.generationLimit}
+              onRequestQuota={async (kind, count) => {
+                const confirmed = await confirm(
+                  `生成 ${count} 个${kind === 'image' ? '关键帧' : kind === 'video' ? '视频' : '配乐'}将消耗 ${count} 次${kind === 'image' ? '图片' : kind === 'video' ? '视频' : '音乐'}额度。今日剩余：${account.generationLimit} 次。\n\n是否继续？`,
+                  '确认生成'
+                );
+                return confirmed;
+              }}
+              onError={notify}
             />
           )}
         </>
