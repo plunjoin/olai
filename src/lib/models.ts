@@ -188,28 +188,28 @@ export function pickBestAvailableModel(
   // 优先级排行榜
   const priorityLists: Record<'chat' | 'image' | 'video' | 'music', string[]> = {
     chat: [
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
       'gemini-3.8-flash',
       'gemini-3.7-flash',
       'gemini-3.6-flash',
-      'gemini-3.5-flash',
       'gemini-3.1-pro-preview',
       'gemini-pro-latest',
-      'gemini-flash-latest',
       'gemma-4-31b-it',
       'antigravity-preview-09-2026',
     ],
     image: [
-      'gemini-nano-banana-2.1',
       'gemini-3.1-flash-image',
+      'gemini-nano-banana-2.1',
       'gemini-3-pro-image',
       'gemini-2.5-flash-image',
       'gemini-3.1-flash-lite-image',
     ],
     video: [
-      'gemini-omni-1.1-flash',
+      'veo-3.1-lite-generate-preview',
       'veo-3.1-fast-generate-preview',
       'veo-3.1-generate-preview',
-      'veo-3.1-lite-generate-preview',
+      'gemini-omni-1.1-flash',
     ],
     music: [
       'lyria-3.5',

@@ -9,6 +9,6 @@ describe('Olai Configuration & Brand', () => {
   });
 
   it('default chat model is set', () => {
-    expect(DEFAULT_SETTINGS.chatModel).toBe('gemini-3.8-flash');
+    expect(DEFAULT_SETTINGS.chatModel).toBe('gemini-3.5-flash');
   });
 });

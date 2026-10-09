@@ -17,25 +17,38 @@ describe('creation configuration and request contracts', () => {
     await generateVideo({ key: 'test-key', model: 'veo-3.1-fast-generate-preview', prompt: 'flowers', options: { aspect_ratio: '9:16', seconds: 8, resolution: '4K', reasoning_effort: 'high', size: 'fake-size' } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/videos');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ model: 'veo-3.1-fast-generate-preview', prompt: 'flowers\n创意丰富程度：high。', seconds: 8, aspect_ratio: '9:16', resolution: '4k' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ model: 'veo-3.1-fast-generate-preview', prompt: 'flowers\n创意丰富程度：high。', size: '2160x3840', seconds: 8 });
+  });
+  it('calculates Veo size from resolution and aspect ratio', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"id":"task-1"}', { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await generateVideo({ key: '', model: 'veo-3.1-lite-generate-preview', prompt: 'test', options: { aspect_ratio: '16:9', resolution: '720p', seconds: 5 } });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).size).toBe('1280x720');
+    await generateVideo({ key: '', model: 'veo-3.1-lite-generate-preview', prompt: 'test', options: { aspect_ratio: '9:16', resolution: '1080p', seconds: 6 } });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).size).toBe('1080x1920');
+    await generateVideo({ key: '', model: 'veo-3.1-lite-generate-preview', prompt: 'test', options: { aspect_ratio: '16:9', resolution: '4K', seconds: 4 } });
+    const body4k = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(body4k.size).toBe('3840x2160');
+    expect(body4k.seconds).toBe(8);
   });
   it('routes Omni through chat completions with video preferences in the prompt', async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ choices: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    await generateVideo({ key: 'test-key', model: DEFAULT_SETTINGS.videoModel, prompt: 'flowers', options: { aspect_ratio: '9:16', seconds: 10, resolution: '4K', reasoning_effort: 'high' } });
+    await generateVideo({ key: 'test-key', model: 'gemini-omni-1.1-flash', prompt: 'flowers', options: { aspect_ratio: '9:16', seconds: 10, resolution: '4K', reasoning_effort: 'high' }, mode: 'chat' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/chat/completions');
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'stream']);
-    expect(body.model).toBe(DEFAULT_SETTINGS.videoModel);
+    expect(Object.keys(body).sort()).toEqual(['messages', 'model', 'resolution', 'stream']);
+    expect(body.model).toBe('gemini-omni-1.1-flash');
     expect(body.stream).toBe(false);
+    expect(body.resolution).toBe('4k');
     expect(body.messages).toHaveLength(1);
     expect(body.messages[0].role).toBe('user');
     for (const preference of ['生成视频', 'flowers', '10 秒', '9:16', '4K', 'high']) expect(body.messages[0].content).toContain(preference);
   });
   it('rejects Omni durations outside its supported range before making a request', async () => {
     const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
-    await expect(generateVideo({ key: '', model: DEFAULT_SETTINGS.videoModel, prompt: 'flowers', options: { seconds: 15 } })).rejects.toThrow('3–10 秒');
+    await expect(generateVideo({ key: '', model: 'gemini-omni-1.1-flash', prompt: 'flowers', options: { seconds: 15 }, mode: 'chat' })).rejects.toThrow('3–10 秒');
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it('reads only generated Omni video content from Interactions steps', () => {
@@ -50,7 +63,7 @@ describe('creation configuration and request contracts', () => {
     expect(publicServiceError('每日额度不足')).toBe('每日额度不足');
   });
   it('uses the requested creative engines', () => {
-    expect([DEFAULT_SETTINGS.chatModel, DEFAULT_SETTINGS.musicModel, DEFAULT_SETTINGS.imageModel, DEFAULT_SETTINGS.videoModel]).toEqual(['gemini-3.8-flash', 'lyria-3.5', 'gemini-nano-banana-2.1', 'gemini-omni-1.1-flash']);
+    expect([DEFAULT_SETTINGS.chatModel, DEFAULT_SETTINGS.musicModel, DEFAULT_SETTINGS.imageModel, DEFAULT_SETTINGS.videoModel]).toEqual(['gemini-3.5-flash', 'lyria-3.5', 'gemini-3.1-flash-image', 'veo-3.1-lite-generate-preview']);
   });
   it('preserves auto composition and accepts positive custom ratios', () => {
     expect(imageDimensions('auto', '4K')).toBeUndefined();
@@ -65,11 +78,13 @@ describe('creation configuration and request contracts', () => {
     vi.stubGlobal('fetch', fetchMock);
     await generateImage({ key: '', model: DEFAULT_SETTINGS.imageModel, prompt: 'Flowers', aspectRatio: '2.35:1', imageSize: '4K', reasoningEffort: 'minimal', size: imageDimensions('2.35:1', '4K') });
     const native = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(Object.keys(native).sort()).toEqual(['messages', 'model', 'stream']);
+    expect(Object.keys(native).sort()).toEqual(['image_size', 'max_tokens', 'messages', 'model', 'stream']);
     expect(native.messages[0].content).toContain('只生成图片');
     expect(native.messages[0].content).toContain('2.35:1');
-    expect(native.messages[0].content).toContain('4K');
+    expect(native.messages[0].content).not.toContain('4K');
     expect(native.messages[0].content).toContain('minimal');
+    expect(native.image_size).toBe('4K');
+    expect(native.max_tokens).toBe(8192);
     const fallback = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(fallback.size).toBe('4096x1743');
     expect(fallback.n).toBe(1);
@@ -174,7 +189,7 @@ describe('shared composer format', () => {
     vi.stubGlobal('fetch', fetchMock);
     expect((await composeSong('', DEFAULT_SETTINGS.chatModel, '夏天的故事', '流行', false)).sections[1].lyrics).toBe('夏天的风');
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.model).toBe('gemini-3.8-flash');
+    expect(body.model).toBe('gemini-3.5-flash');
     expect(body.response_format).toBeUndefined();
     expect(body.messages[0].content).toContain('只返回 JSON');
   });
