@@ -1,4 +1,4 @@
-export type View = 'home' | 'chat' | 'image' | 'video' | 'music' | 'library';
+export type View = 'home' | 'chat' | 'image' | 'video' | 'music' | 'library' | 'workflow';
 export type MediaKind = 'image' | 'video' | 'music';
 export interface Message { id: string; role: 'user' | 'assistant'; content: string; error?: string; interrupted?: boolean }
 export interface Conversation { id: string; title: string; messages: Message[]; createdAt: number; updatedAt: number; model: string }

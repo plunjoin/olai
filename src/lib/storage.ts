@@ -1,6 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import { DEFAULT_SETTINGS, type Asset, type Conversation, type Settings } from './types';
 import { accountRequest, type AccountState } from './account';
+import type { VideoWorkflowProject } from './videoWorkflow';
 
 let database: Promise<IDBPDatabase> | undefined;
 export let storageMode: 'indexeddb' | 'localstorage' | 'cloud' = 'indexeddb';
@@ -43,10 +44,13 @@ async function db() {
     if (!accountId) storageMode = 'localstorage';
     return null;
   }
-  database ??= openWithTimeout('olai', 1, {
-    upgrade(db) {
+  database ??= openWithTimeout('olai', 2, {
+    upgrade(db, oldVersion) {
       if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('assets')) db.createObjectStore('assets', { keyPath: 'id' });
+      if (oldVersion < 2 && !db.objectStoreNames.contains('workflows')) {
+        db.createObjectStore('workflows', { keyPath: 'id' });
+      }
     }
   });
   try {
@@ -80,13 +84,13 @@ async function encodeBlob(blob: Blob): Promise<string> {
     reader.onerror = reject; reader.readAsDataURL(blob);
   });
 }
-type LocalRecord = (Conversation | Asset) & { linkedAccountId?: string; blobData?: string };
-async function localRecords(store: 'conversations' | 'assets'): Promise<LocalRecord[]> {
+type LocalRecord = (Conversation | Asset | VideoWorkflowProject) & { linkedAccountId?: string; blobData?: string };
+async function localRecords(store: 'conversations' | 'assets' | 'workflows'): Promise<LocalRecord[]> {
   const database = await db();
   if (database) return database.getAll(store);
   return JSON.parse(localStorage.getItem(`olai.${store}`) || localStorage.getItem(`studio.${store}`) || '[]');
 }
-async function linkLocalRecord(store: 'conversations' | 'assets', value: LocalRecord, userId: string) {
+async function linkLocalRecord(store: 'conversations' | 'assets' | 'workflows', value: LocalRecord, userId: string) {
   const database = await db();
   if (database) {
     // Keep the original local snapshot as a backup, and claim only this revision.
@@ -106,27 +110,56 @@ async function linkLocalRecord(store: 'conversations' | 'assets', value: LocalRe
   }
 }
 const MAX_RECORD_BYTES = 64 * 1024 * 1024;
-async function recordBody(value: Conversation | Asset | LocalRecord) {
+async function recordBody(value: Conversation | Asset | VideoWorkflowProject | LocalRecord) {
   if ('blob' in value && value.blob && Math.ceil(value.blob.size / 3) * 4 > MAX_RECORD_BYTES) {
     throw new Error('文件编码后超过单条记录 64 MB 的上限，请先下载备份。');
   }
   const item: Record<string, unknown> = { ...value };
   delete item.linkedAccountId;
   if ('blob' in value && value.blob) { item.blobData = await encodeBlob(value.blob); delete item.blob; }
+  
+  // Handle workflow project blobs
+  if ('shots' in value && Array.isArray(value.shots)) {
+    item.shots = await Promise.all(value.shots.map(async (shot: any) => {
+      const shotCopy = { ...shot };
+      if (shot.keyframeBlob) {
+        shotCopy.keyframeBlobData = await encodeBlob(shot.keyframeBlob);
+        delete shotCopy.keyframeBlob;
+      }
+      if (shot.videoBlob) {
+        shotCopy.videoBlobData = await encodeBlob(shot.videoBlob);
+        delete shotCopy.videoBlob;
+      }
+      if (typeof shotCopy.keyframeUrl === 'string' && shotCopy.keyframeUrl.startsWith('blob:')) delete shotCopy.keyframeUrl;
+      if (typeof shotCopy.videoUrl === 'string' && shotCopy.videoUrl.startsWith('blob:')) delete shotCopy.videoUrl;
+      return shotCopy;
+    }));
+  }
+  if ('musicBlob' in value && value.musicBlob) {
+    item.musicBlobData = await encodeBlob(value.musicBlob);
+    delete item.musicBlob;
+  }
+  if ('finalVideoBlob' in value && value.finalVideoBlob) {
+    item.finalVideoBlobData = await encodeBlob(value.finalVideoBlob);
+    delete item.finalVideoBlob;
+  }
   if (typeof item.url === 'string' && item.url.startsWith('blob:')) delete item.url;
+  if (typeof item.musicUrl === 'string' && item.musicUrl.startsWith('blob:')) delete item.musicUrl;
+  if (typeof item.finalVideoUrl === 'string' && item.finalVideoUrl.startsWith('blob:')) delete item.finalVideoUrl;
+  
   const body = JSON.stringify(item);
   if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error('记录包含媒体编码后超过 64 MB 的上限，请先下载备份。');
   return body;
 }
-export type GuestSyncReport = { synced: { conversations: string[]; assets: string[] }; failures: string[] };
+export type GuestSyncReport = { synced: { conversations: string[]; assets: string[]; workflows: string[] }; failures: string[] };
 let guestSync: Promise<GuestSyncReport> | undefined;
 export function syncGuestRecords(userId: string): Promise<GuestSyncReport> {
   // Serialize imports within a page. Server-side insert-if-absent also makes
   // retries and concurrent tabs safe without overwriting existing cloud edits.
   const importRecords = async () => {
-    const report: GuestSyncReport = { synced: { conversations: [], assets: [] }, failures: [] };
+    const report: GuestSyncReport = { synced: { conversations: [], assets: [], workflows: [] }, failures: [] };
     await flushStorage();
-    for (const store of ['conversations', 'assets'] as const) {
+    for (const store of ['conversations', 'assets', 'workflows'] as const) {
       const records = await localRecords(store);
       for (const value of records) {
         if (value.linkedAccountId) continue;
@@ -151,11 +184,34 @@ export function syncGuestRecords(userId: string): Promise<GuestSyncReport> {
   void sync.finally(() => { if (guestSync === sync) guestSync = undefined; }).catch(() => {});
   return sync;
 }
-export async function getAll<T>(store: 'conversations' | 'assets'): Promise<T[]> {
+export async function getAll<T>(store: 'conversations' | 'assets' | 'workflows'): Promise<T[]> {
   if (accountId) {
     const { records } = await cloudRequest(store);
     if (store === 'assets') for (const row of records) if (row.blobData) {
       row.blob = await (await fetch(row.blobData)).blob(); delete row.blobData;
+    }
+    if (store === 'workflows') for (const row of records) {
+      // Restore blobs from blobData for workflow shots and media
+      if (row.shots) {
+        for (const shot of row.shots) {
+          if (shot.keyframeBlobData) {
+            shot.keyframeBlob = await (await fetch(shot.keyframeBlobData)).blob();
+            delete shot.keyframeBlobData;
+          }
+          if (shot.videoBlobData) {
+            shot.videoBlob = await (await fetch(shot.videoBlobData)).blob();
+            delete shot.videoBlobData;
+          }
+        }
+      }
+      if (row.musicBlobData) {
+        row.musicBlob = await (await fetch(row.musicBlobData)).blob();
+        delete row.musicBlobData;
+      }
+      if (row.finalVideoBlobData) {
+        row.finalVideoBlob = await (await fetch(row.finalVideoBlobData)).blob();
+        delete row.finalVideoBlobData;
+      }
     }
     return records;
   }
@@ -163,13 +219,35 @@ export async function getAll<T>(store: 'conversations' | 'assets'): Promise<T[]>
   if (store === 'assets') for (const row of rows) if ('kind' in row && row.blobData) {
     row.blob = await (await fetch(row.blobData)).blob(); delete row.blobData;
   }
+  if (store === 'workflows') for (const row of rows as any[]) {
+    if (row.shots) {
+      for (const shot of row.shots) {
+        if (shot.keyframeBlobData) {
+          shot.keyframeBlob = await (await fetch(shot.keyframeBlobData)).blob();
+          delete shot.keyframeBlobData;
+        }
+        if (shot.videoBlobData) {
+          shot.videoBlob = await (await fetch(shot.videoBlobData)).blob();
+          delete shot.videoBlobData;
+        }
+      }
+    }
+    if (row.musicBlobData) {
+      row.musicBlob = await (await fetch(row.musicBlobData)).blob();
+      delete row.musicBlobData;
+    }
+    if (row.finalVideoBlobData) {
+      row.finalVideoBlob = await (await fetch(row.finalVideoBlobData)).blob();
+      delete row.finalVideoBlobData;
+    }
+  }
   return rows as unknown as T[];
 }
-export function put(store: 'conversations' | 'assets', value: Conversation | Asset) {
+export function put(store: 'conversations' | 'assets' | 'workflows', value: Conversation | Asset | VideoWorkflowProject) {
   const snapshot = { ...value };
   return enqueue(accountId ? `${store}:${value.id}` : `local:${store}`, () => writeRecord(store, snapshot));
 }
-async function writeRecord(store: 'conversations' | 'assets', value: Conversation | Asset) {
+async function writeRecord(store: 'conversations' | 'assets' | 'workflows', value: Conversation | Asset | VideoWorkflowProject) {
   if (accountId) {
     // Capture each snapshot now and encode inside its queue so older, slower
     // media writes cannot overwrite newer metadata or race deletion.
@@ -181,14 +259,37 @@ async function writeRecord(store: 'conversations' | 'assets', value: Conversatio
   const rows = JSON.parse(localStorage.getItem(`olai.${store}`) || localStorage.getItem(`studio.${store}`) || '[]');
   const item: Record<string, unknown> = { ...value };
   if ('blob' in value && value.blob) { item.blobData = await encodeBlob(value.blob); delete item.blob; }
+  // Handle workflow blobs in localStorage
+  if ('shots' in value && Array.isArray(value.shots)) {
+    item.shots = await Promise.all(value.shots.map(async (shot: any) => {
+      const shotCopy = { ...shot };
+      if (shot.keyframeBlob) {
+        shotCopy.keyframeBlobData = await encodeBlob(shot.keyframeBlob);
+        delete shotCopy.keyframeBlob;
+      }
+      if (shot.videoBlob) {
+        shotCopy.videoBlobData = await encodeBlob(shot.videoBlob);
+        delete shotCopy.videoBlob;
+      }
+      return shotCopy;
+    }));
+  }
+  if ('musicBlob' in value && value.musicBlob) {
+    item.musicBlobData = await encodeBlob(value.musicBlob);
+    delete item.musicBlob;
+  }
+  if ('finalVideoBlob' in value && value.finalVideoBlob) {
+    item.finalVideoBlobData = await encodeBlob(value.finalVideoBlob);
+    delete item.finalVideoBlob;
+  }
   const index = rows.findIndex((row: { id: string }) => row.id === value.id);
   if (index < 0) rows.push(item); else rows[index] = item;
   localStorage.setItem(`olai.${store}`, JSON.stringify(rows));
 }
-export function remove(store: 'conversations' | 'assets', id: string) {
+export function remove(store: 'conversations' | 'assets' | 'workflows', id: string) {
   return enqueue(accountId ? `${store}:${id}` : `local:${store}`, () => deleteRecord(store, id));
 }
-async function deleteRecord(store: 'conversations' | 'assets', id: string) {
+async function deleteRecord(store: 'conversations' | 'assets' | 'workflows', id: string) {
   if (accountId) { await cloudRequest(store, { method: 'DELETE' }, id); return; }
   const database = await db();
   if (database) { await database.delete(store, id); return; }
