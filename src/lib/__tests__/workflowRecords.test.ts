@@ -25,8 +25,14 @@ async function call(method: string, value?: unknown, userId = 'owner') {
   }) } as unknown as APIContext);
 }
 
-beforeEach(() => { state.records = []; state.user = { id: 'owner' }; });
+// 短片工坊默认关闭，这里先打开内测开关，验证短片记录接口本身的行为。
+beforeEach(() => { state.records = []; state.user = { id: 'owner' }; process.env.AI_SHORT_FILM = 'true'; });
 describe('workflow cloud records', () => {
+  it('closes the workflow store when the closed beta flag is off', async () => {
+    process.env.AI_SHORT_FILM = 'false';
+    expect((await call('GET')).status).toBe(404);
+    expect((await call('PUT', createWorkflowProject('未开放'))).status).toBe(404);
+  });
   it('saves and reads a storyboard with reusable elements', async () => {
     const project = { ...createWorkflowProject('云端故事'), elements: [{ id: 'girl', kind: 'character', name: '小雨', description: '黄色雨衣' }], shots: [{ ...createEmptyShot(1), elementIds: ['girl'] }] };
     expect((await call('PUT', project)).status).toBe(200);
