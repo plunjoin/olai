@@ -8,6 +8,8 @@ import '../styles/brand.css';
 const configuredImageMode = process.env.AI_IMAGE_API_MODE || import.meta.env.AI_IMAGE_API_MODE;
 const imageEngineMode: ImageEngineMode | undefined = ['auto', 'native', 'upstream', 'interactions'].includes(configuredImageMode) ? configuredImageMode as ImageEngineMode : undefined;
 const videoEngineMode = videoEngineForModel(process.env.AI_VIDEO_MODEL || import.meta.env.AI_VIDEO_MODEL || DEFAULT_SETTINGS.videoModel);
+// 短片工坊为封闭内测，默认关闭；只有显式配置 AI_SHORT_FILM=true 的部署才开放入口。
+const shortFilm = (process.env.AI_SHORT_FILM || import.meta.env.AI_SHORT_FILM) === 'true';
 ---
 <!doctype html>
 <html lang="zh-CN">
@@ -19,5 +21,5 @@ const videoEngineMode = videoEngineForModel(process.env.AI_VIDEO_MODEL || import
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Olai · Online AI Companion</title>
   </head>
-  <body><Studio client:only="react" serverKey={Boolean(import.meta.env.AI_API_KEY || process.env.AI_API_KEY)} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} /><noscript>请启用 JavaScript 以使用 Olai。</noscript></body>
+  <body><Studio client:only="react" serverKey={Boolean(import.meta.env.AI_API_KEY || process.env.AI_API_KEY)} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} shortFilm={shortFilm} /><noscript>请启用 JavaScript 以使用 Olai。</noscript></body>
 </html>

@@ -56,11 +56,16 @@ function delay(ms: number, signal: AbortSignal) {
 
 const VALID_VIEWS: readonly View[] = ['home', 'chat', 'image', 'video', 'music', 'library', 'workflow'] as const;
 
-function parseLocation(): { view: View; conversationId?: string } {
+// 短片工坊（视频工作流）为封闭内测，默认关闭；关闭时任何入口都回落到 AI 对话。
+function gateView(view: View, shortFilm: boolean): View {
+  return view === 'workflow' && !shortFilm ? 'chat' : view;
+}
+
+function parseLocation(shortFilm = true): { view: View; conversationId?: string } {
   if (typeof window === 'undefined') return { view: 'chat' };
   const hash = window.location.hash.replace(/^#\/?/, '').trim();
   if (VALID_VIEWS.includes(hash as View)) {
-    return { view: hash === 'home' ? 'chat' : hash as View };
+    return { view: gateView(hash === 'home' ? 'chat' : hash as View, shortFilm) };
   }
   const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
   if (parts.length === 0 || parts[0] === 'home') {
@@ -71,7 +76,7 @@ function parseLocation(): { view: View; conversationId?: string } {
     return { view: 'chat', conversationId: second ? decodeURIComponent(second) : undefined };
   }
   if (VALID_VIEWS.includes(first as View)) {
-    return { view: first as View };
+    return { view: gateView(first as View, shortFilm) };
   }
   return { view: 'chat' };
 }
@@ -83,11 +88,11 @@ function buildUrl(targetView: View, conversationId?: string): string {
   return `/${targetView}`;
 }
 
-function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode }) {
+function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shortFilm = false }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; shortFilm?: boolean }) {
   const { confirm, prompt, dialog } = useDialogs();
   const { activeMedia, close: closePlayer, updateLyrics, updateCover } = usePlayer();
   const [view, setView] = useState<View>(() => {
-    if (typeof window !== 'undefined') return parseLocation().view;
+    if (typeof window !== 'undefined') return parseLocation(shortFilm).view;
     return 'chat';
   });
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -118,7 +123,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
   const [aligningIds, setAligningIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
-      const loc = parseLocation();
+      const loc = parseLocation(shortFilm);
       if (loc.conversationId) return loc.conversationId;
       return localStorage.getItem('olai.active') || localStorage.getItem('studio.active') || '';
     }
@@ -177,6 +182,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
   };
   const navigate = useCallback((next: View, convoId?: string, replace = false) => {
     if (next === 'home') next = 'chat';
+    next = gateView(next, shortFilm);
     setView(next);
     if (next === 'chat' && convoId !== undefined) {
       setActiveId(convoId);
@@ -195,13 +201,19 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
         setSidebarOpen(false);
       }
     }
-  }, [activeId]);
+  }, [activeId, shortFilm]);
   useEffect(() => {
     const onLocationChange = () => {
-      const loc = parseLocation();
+      const loc = parseLocation(shortFilm);
       setView(loc.view);
       if (loc.view === 'chat' && loc.conversationId) {
         setActiveId(loc.conversationId);
+      }
+      // 封闭内测关闭时，把遗留的 /workflow 地址归一化回首页，避免地址栏停在未开放的路由上。
+      if (!shortFilm) {
+        const first = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/')[0];
+        const hash = window.location.hash.replace(/^#\/?/, '').trim();
+        if (first === 'workflow' || hash === 'workflow') window.history.replaceState(null, '', buildUrl('chat'));
       }
     };
     onLocationChange();
@@ -211,7 +223,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
     if (typeof window !== 'undefined' && window.location.hash) {
       const hash = window.location.hash.replace(/^#\/?/, '').trim();
       if (VALID_VIEWS.includes(hash as View)) {
-        window.history.replaceState(null, '', buildUrl(hash as View));
+        window.history.replaceState(null, '', buildUrl(gateView(hash as View, shortFilm)));
       }
     }
 
@@ -232,7 +244,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
           messages: Array.isArray(c?.messages) ? c.messages.map(m => m.role === 'assistant' && !m.content && !m.error ? { ...m, interrupted: true } : m) : []
         })).sort((a, b) => b.updatedAt - a.updatedAt);
         conversationsRef.current = restored; setConversations(restored);
-        const currentLoc = parseLocation();
+        const currentLoc = parseLocation(shortFilm);
         const routeConvoId = currentLoc.conversationId;
         const savedActive = localStorage.getItem('olai.active') || localStorage.getItem('studio.active') || '';
         const targetId = (routeConvoId && restored.some(c => c.id === routeConvoId))
@@ -634,7 +646,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
       </div>
       <span className="nav-caption">陪伴与灵感</span>
       <nav aria-label="工作室导航">
-        {navigation.map(({ view: target, label, icon: IconComponent, badge }) => (
+        {(shortFilm ? navigation : navigation.filter(item => item.view !== 'workflow')).map(({ view: target, label, icon: IconComponent, badge }) => (
           <button
             key={target}
             className={`nav-item ${view === target ? 'active' : ''}`}
@@ -785,7 +797,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
               onDownload={asset => void downloadAsset(asset)}
             />
           )}
-          {view === 'workflow' && (
+          {view === 'workflow' && shortFilm && (
             <VideoWorkflowWorkspace
               apiKey={settings.key}
               chatModel={settings.chatModel}
@@ -832,10 +844,10 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode }: { 
   </div>;
 }
 
-export default function Studio({ serverKey = false, imageEngineMode, videoEngineMode }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode }) {
+export default function Studio({ serverKey = false, imageEngineMode, videoEngineMode, shortFilm = false }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; shortFilm?: boolean }) {
   return (
     <PlayerProvider>
-      <StudioInner serverKey={serverKey} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} />
+      <StudioInner serverKey={serverKey} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} shortFilm={shortFilm} />
     </PlayerProvider>
   );
 }

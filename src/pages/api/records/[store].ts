@@ -6,6 +6,10 @@ import { clientIP, hash, sameOrigin } from '../../../lib/server/policy';
 export const prerender = false;
 const MAX_BYTES = 64 * 1024 * 1024;
 const CHUNK_SIZE = 128 * 1024;
+// 短片工坊为封闭内测：关闭时连记录接口一起关闭，避免绕过界面直接读写短片数据。
+// 按请求读取，便于部署时切换开关，也方便测试覆盖两种状态。
+const shortFilmEnabled = () => (process.env.AI_SHORT_FILM || import.meta.env.AI_SHORT_FILM) === 'true';
+const allowedStores = () => shortFilmEnabled() ? ['conversations', 'assets', 'workflows'] : ['conversations', 'assets'];
 const fail = (message: string, status: number) => Response.json({ error: { message } }, { status });
 async function readBody(request: Request) {
   if (!request.body) return '';
@@ -58,7 +62,7 @@ function recordError(value: any, store: string): string | null {
 export const ALL: APIRoute = async context => {
   const { request, params, url } = context;
   const store = params.store;
-  if (!['conversations', 'assets', 'workflows'].includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
+  if (!allowedStores().includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
   if (request.method !== 'GET' && !sameOrigin(request)) return fail('不允许跨站调用。', 403);
   try {
     const user = await currentUser(context);
