@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { Asset, SongDraft } from './types';
 import { safeMediaURL } from './api';
 import { parseAudioDataUri } from './audio';
@@ -18,6 +18,17 @@ export interface PlayableMedia {
   song?: SongDraft;
 }
 
+export interface VideoPreview {
+  media: PlayableMedia;
+  host: HTMLElement;
+}
+
+/** A page-owned element that plays the active video in place (e.g. gallery detail). */
+export interface VideoInlineHost {
+  mediaId: string;
+  host: HTMLElement;
+}
+
 export interface PlayerContextValue {
   activeMedia: PlayableMedia | null;
   isPlaying: boolean;
@@ -26,6 +37,11 @@ export interface PlayerContextValue {
   isMuted: boolean;
   playbackRate: number;
   isExpanded: boolean;
+  isVideoExpanded: boolean;
+  videoPreview: VideoPreview | null;
+  /** Hover-preview audio starts muted; the card's sound button flips this. */
+  videoPreviewMuted: boolean;
+  videoInlineHost: VideoInlineHost | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   play: (media: PlayableMedia) => void;
@@ -37,6 +53,11 @@ export interface PlayerContextValue {
   toggleMute: () => void;
   setPlaybackRate: (rate: number) => void;
   setIsExpanded: (expanded: boolean) => void;
+  setIsVideoExpanded: (expanded: boolean) => void;
+  previewVideo: (media: PlayableMedia, host: HTMLElement) => void;
+  stopVideoPreview: () => void;
+  setVideoPreviewMuted: (muted: boolean) => void;
+  setVideoInlineHost: (inline: VideoInlineHost | null) => void;
   setIsPlaying: (playing: boolean) => void;
   setDuration: (duration: number) => void;
   close: () => void;
@@ -111,11 +132,24 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [isMuted, setIsMuted] = useState(false);
   const [playbackRate, setPlaybackRateState] = useState(1);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isVideoExpanded, setIsVideoExpanded] = useState(false);
+  const [videoPreview, setVideoPreview] = useState<VideoPreview | null>(null);
+  const [videoPreviewMuted, setVideoPreviewMutedState] = useState(true);
+  const [videoInlineHost, setVideoInlineHostState] = useState<VideoInlineHost | null>(null);
+
+  const setVideoPreviewMuted = useCallback((muted: boolean) => setVideoPreviewMutedState(muted), []);
+  const setVideoInlineHost = useCallback((inline: VideoInlineHost | null) => setVideoInlineHostState(inline), []);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const play = (media: PlayableMedia) => {
+    setVideoPreview(null);
+    if (media.kind === 'audio') {
+      setIsVideoExpanded(false);
+    } else {
+      setIsExpanded(false);
+    }
     if (activeMedia?.id === media.id) {
       // Same media: resume playback
       if (media.kind === 'video' && videoRef.current) {
@@ -212,12 +246,25 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (videoRef.current) videoRef.current.playbackRate = rate;
   };
 
+  const previewVideo = (media: PlayableMedia, host: HTMLElement) => {
+    // A hover preview is silent and only runs when no playback is active, so it
+    // never competes with the single global audio/video pair.
+    if (isPlaying || activeMedia?.kind === 'video') return;
+    // Every hover preview starts silent; the card's sound button opts in.
+    setVideoPreviewMutedState(true);
+    setVideoPreview({ media, host });
+  };
+
+  const stopVideoPreview = () => setVideoPreview(null);
+
   const close = () => {
     if (audioRef.current) audioRef.current.pause();
     if (videoRef.current) videoRef.current.pause();
     setIsPlaying(false);
     setActiveMedia(null);
     setIsExpanded(false);
+    setIsVideoExpanded(false);
+    setVideoPreview(null);
     setCurrentTime(0);
     setDuration(0);
   };
@@ -251,6 +298,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         isMuted,
         playbackRate,
         isExpanded,
+        isVideoExpanded,
+        videoPreview,
+        videoPreviewMuted,
+        videoInlineHost,
         audioRef,
         videoRef,
         play,
@@ -262,6 +313,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         toggleMute,
         setPlaybackRate,
         setIsExpanded,
+        setIsVideoExpanded,
+        previewVideo,
+        stopVideoPreview,
+        setVideoPreviewMuted,
+        setVideoInlineHost,
         setIsPlaying,
         setDuration,
         close,

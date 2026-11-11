@@ -1,26 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, CircleAlert, Command, Film, Menu, MessageSquare, PanelLeftClose, Pencil, Plus, Search, Settings as SettingsIcon, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleAlert, Clock3, Command, Ellipsis, Film, Globe, LayoutGrid, MessageSquare, PanelLeft, PanelLeftClose, Pencil, Search, Settings as SettingsIcon, SquarePen, Trash2, UserRound, X } from 'lucide-react';
 import GithubSvg from './svg/GithubSvg';
 import { base64Blob, chat, generateAudio, generateImage, generateVideo, mediaOutputs, publicServiceError, request, safeMediaURL, videoContent } from '../lib/api';
 import { downloadLrcBlob, generateLrcFromPrompt } from '../lib/lrc';
 import { ensurePlayableAudioBlob } from '../lib/audio';
 import { alignLyricsToAudio, readAudioDuration } from '../lib/lyricAlignment';
-import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, storageMode, syncGuestRecords } from '../lib/storage';
+import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, syncGuestRecords } from '../lib/storage';
+import { isStoredMedia, registerStoredBlob } from '../lib/mediaStorage';
 import type { AccountState } from '../lib/account';
 import AccountDialog from './AccountDialog';
-import { DEFAULT_SETTINGS, type Asset, type Conversation, type ImageEngineMode, type MediaKind, type Model, type Settings, type View } from '../lib/types';
+import { DEFAULT_SETTINGS, type Asset, type Conversation, type ImageEngineMode, type MediaKind, type Settings, type View } from '../lib/types';
 import { composeSong, parseSong, songLyrics, sungLines } from '../lib/music';
 import { imageDimensions } from '../lib/generation';
 import { imageResolutionWarning, readImageResolution } from '../lib/imageResolution';
-import { videoEngineForModel, type VideoEngineMode } from '../lib/video';
+import { captureVideoCover } from '../lib/videoCover';
+import { galleryReuseOptions } from '../lib/galleryDetail';
+import type { VideoEngineMode } from '../lib/video';
 import BrandLogoSvg from './svg/BrandLogoSvg';
-import {
-  ChatAgentSvg,
-  CosmicVaultSvg
-} from './svg/AnimatedIcons';
+import { CosmicVaultSvg } from './svg/AnimatedIcons';
 import StatusBeaconSvg from './svg/StatusBeaconSvg';
 import ChatWorkspace from './ChatWorkspace';
 import Library from './Library';
+import Gallery from './Gallery';
 import SettingsDialog from './SettingsDialog';
 import GlobalMediaPlayer from './GlobalMediaPlayer';
 import Companion from './Companion';
@@ -30,10 +31,8 @@ import MoreMenu from './ui/MoreMenu';
 import { PlayerProvider, revokeAssetMediaURL, usePlayer } from '../lib/playerContext';
 
 const navigation = [
-  { view: 'chat' as const, label: 'AI 对话', icon: ChatAgentSvg, badge: 'Hot' },
   { view: 'workflow' as const, label: '短片工坊', icon: Film, badge: 'Beta' },
 ];
-const modelKey = { image: 'imageModel', video: 'videoModel', music: 'musicModel' } as const;
 const errorText = (error: unknown) => publicServiceError(error instanceof Error ? error.message : '发生未知错误，请重试。');
 const uid = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -54,7 +53,7 @@ function delay(ms: number, signal: AbortSignal) {
   });
 }
 
-const VALID_VIEWS: readonly View[] = ['home', 'chat', 'image', 'video', 'music', 'library', 'workflow'] as const;
+const VALID_VIEWS: readonly View[] = ['home', 'chat', 'image', 'video', 'music', 'library', 'gallery', 'workflow'] as const;
 
 // 短片工坊（视频工作流）为封闭内测，默认关闭；关闭时任何入口都回落到 AI 对话。
 function gateView(view: View, shortFilm: boolean): View {
@@ -88,7 +87,7 @@ function buildUrl(targetView: View, conversationId?: string): string {
   return `/${targetView}`;
 }
 
-function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shortFilm = false }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; shortFilm?: boolean }) {
+function StudioInner({ serviceReady = false, imageEngineMode, videoEngineMode, shortFilm = false }: { serviceReady?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; shortFilm?: boolean }) {
   const { confirm, prompt, dialog } = useDialogs();
   const { activeMedia, close: closePlayer, updateLyrics, updateCover } = usePlayer();
   const [view, setView] = useState<View>(() => {
@@ -120,6 +119,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
   };
   const [conversations, setConversations] = useState<Conversation[]>([]); const [assets, setAssets] = useState<Asset[]>([]);
   const [musicEdit, setMusicEdit] = useState<{ asset: Asset; token: string }>();
+  const [creationDraft, setCreationDraft] = useState<{ token: string; prompt: string; options: Record<string, string | number> } | null>(null);
   const [aligningIds, setAligningIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string>(() => {
     if (typeof window !== 'undefined') {
@@ -131,10 +131,13 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
   });
   const [ready, setReady] = useState(false); const [chatBusy, setChatBusy] = useState(false);
   const [loadError, setLoadError] = useState('');
-  const [models, setModels] = useState<Model[]>([]); const [modelsLoading, setModelsLoading] = useState(false); const [connected, setConnected] = useState(false);
+  const [modelsLoading, setModelsLoading] = useState(false); const [connected, setConnected] = useState(false);
   const [toast, setToast] = useState(''); const [sessionSearch, setSessionSearch] = useState(''); const [searchOpen, setSearchOpen] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const assetsRef = useRef<Asset[]>([]); const conversationsRef = useRef<Conversation[]>([]); const settingsRef = useRef(settings);
   const chatController = useRef<AbortController | null>(null); const jobs = useRef(new Map<string, AbortController>()); const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Existing videos get one frame-capture attempt per session.
+  const videoCoverAttempts = useRef(new Set<string>());
   const notify = useCallback((text: string) => { setToast(text); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 5000); }, []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const persistError = (error: unknown) => notify(`保存失败：${errorText(error)}。请下载重要内容备份。`);
@@ -144,19 +147,22 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
     // Merge only newly imported records; keep edits and deletions made while uploading.
     const knownChats = new Set(conversationsRef.current.map(c => c.id));
     const knownAssets = new Set(assetsRef.current.map(a => a.id));
+    const chatSnapshots = new Map(conversationsRef.current.map(c => [c.id, c]));
+    const assetSnapshots = new Map(assetsRef.current.map(a => [a.id, a]));
     try {
       const report = await syncGuestRecords(userId);
       setSyncFailures(report.failures);
+      if (!report.failures.length) notify('本地数据与云端附件已同步。');
       for (const id of report.synced.conversations) importedRef.current.conversations.add(id);
       for (const id of report.synced.assets) importedRef.current.assets.add(id);
       if (importedRef.current.conversations.size || importedRef.current.assets.size) {
         const [chats, works] = await Promise.all([getAll<Conversation>('conversations'), getAll<Asset>('assets')]);
         const newChats = chats.filter(c => importedRef.current.conversations.has(c.id) && !knownChats.has(c.id) && !conversationsRef.current.some(current => current.id === c.id));
-        conversationsRef.current = [...conversationsRef.current, ...newChats].sort((a, b) => b.updatedAt - a.updatedAt);
+        conversationsRef.current = [...conversationsRef.current.map(c => importedRef.current.conversations.has(c.id) && chatSnapshots.get(c.id) === c ? chats.find(row => row.id === c.id) || c : c), ...newChats].sort((a, b) => b.updatedAt - a.updatedAt);
         setConversations(conversationsRef.current);
         const newWorks = works.filter(a => importedRef.current.assets.has(a.id) && !knownAssets.has(a.id) && !assetsRef.current.some(current => current.id === a.id));
         const recovered = newWorks.map(a => a.status === 'pending' && !(a.kind === 'video' && a.remoteId) ? { ...a, status: 'failed' as const, error: '上次请求被中断，请点击重试。' } : a);
-        assetsRef.current = [...assetsRef.current, ...recovered].sort((a, b) => b.createdAt - a.createdAt);
+        assetsRef.current = [...assetsRef.current.map(a => importedRef.current.assets.has(a.id) && assetSnapshots.get(a.id) === a ? works.find(row => row.id === a.id) || a : a), ...recovered].sort((a, b) => b.createdAt - a.createdAt);
         setAssets(assetsRef.current);
         importedRef.current.conversations.clear(); importedRef.current.assets.clear();
         for (const asset of recovered) if (asset.status === 'failed') void put('assets', asset).catch(persistError);
@@ -272,35 +278,26 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
   }, []);
   useEffect(() => { if (activeId) { try { localStorage.setItem('olai.active', activeId); } catch { /* Session still works in memory. */ } } }, [activeId]);
 
-  const refreshModels = async (key = settingsRef.current.key, announce = true) => {
-    if (modelsLoading) return;
-    setModelsLoading(true);
-    try {
-      const response = await request('models', key);
-      const json = await response.json();
-      if (!Array.isArray(json.data)) throw new Error('服务返回的模型列表格式不正确。');
-      const available = json.data.filter((m: Model) => m.available !== false);
-      setModels(available);
-      setConnected(true);
-
-      if (announce) notify('创作服务已连接。');
-    } catch (error) {
-      setConnected(false);
-      notify(errorText(error));
-    } finally {
-      setModelsLoading(false);
-    }
-  };
-
-  useEffect(() => { if (ready && (settings.key || serverKey)) void refreshModels(settings.key, false); }, [ready, settings.key, serverKey]);
-  const requireConnection = () => { if (!settingsRef.current.key && !serverKey) { setSettingsOpen(true); notify('先连接你的 AI 服务，就可以开始创作。'); return false; } return true; };
   const changeSettings = (next: Settings, showToast = false) => {
     settingsRef.current = next; setSettings(next);
     try { saveSettings(next); if (showToast) { notify('设置已保存'); setSettingsOpen(false); } } catch (error) { persistError(error); }
   };
+  const refreshConnection = async (announce = true) => {
+    if (modelsLoading) return;
+    setModelsLoading(true);
+    try {
+      const response = await request('status');
+      const status = await response.json();
+      setConnected(status.ready === true);
+      if (announce) notify(status.ready ? '创作服务已连接。' : '创作服务尚未就绪，请联系服务提供方。');
+    } catch (error) { setConnected(false); notify(errorText(error)); }
+    finally { setModelsLoading(false); }
+  };
+  useEffect(() => { if (ready) void refreshConnection(false); }, [ready]);
+  const requireConnection = () => { if (!serviceReady) { notify('创作服务尚未就绪，请联系服务提供方。'); return false; } return true; };
   const newConversation = useCallback(() => {
     if (chatController.current) { notify('请先停止当前回答，再创建会话。'); return; }
-    const now = Date.now(); const conversation: Conversation = { id: uid(), title: '新的灵感', createdAt: now, updatedAt: now, messages: [], model: settingsRef.current.chatModel };
+    const now = Date.now(); const conversation: Conversation = { id: uid(), title: '新的灵感', createdAt: now, updatedAt: now, messages: [] };
     saveConversation(conversation); setActiveId(conversation.id); navigate('chat', conversation.id);
   }, [notify, navigate]);
   useEffect(() => {
@@ -345,21 +342,19 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
     const config = { ...settingsRef.current }; const now = Date.now();
     let conversation = conversationsRef.current.find(c => c.id === activeId);
     if (!conversation) {
-      conversation = { id: uid(), title: text.slice(0, 26), createdAt: now, updatedAt: now, messages: [], model: config.chatModel };
+      conversation = { id: uid(), title: text.slice(0, 26), createdAt: now, updatedAt: now, messages: [] };
       setActiveId(conversation.id);
       navigate('chat', conversation.id, true);
     }
     let history = [...conversation.messages];
     if (retryId) { const index = history.findIndex(m => m.id === retryId); if (index < 0) return; history = history.slice(0, index); }
     else history.push({ id: uid(), role: 'user', content: text });
-    const model = config.chatModel.trim();
-    if (!model) { notify('对话服务暂不可用，请检查连接。'); return; }
     const assistant = { id: uid(), role: 'assistant' as const, content: '' };
-    let running = { ...conversation, title: conversation.messages.length ? conversation.title : text.slice(0, 26) || conversation.title, model, updatedAt: now, messages: [...history, assistant] };
+    let running = { ...conversation, title: conversation.messages.length ? conversation.title : text.slice(0, 26) || conversation.title, updatedAt: now, messages: [...history, assistant] };
     const controller = new AbortController(); chatController.current = controller; setChatBusy(true); saveConversation(running);
     let saveTimer: ReturnType<typeof setTimeout> | undefined;
     try {
-      await chat(config.key, model, history, config.systemPrompt, config.temperature, controller.signal, delta => {
+      await chat(history, config.temperature, controller.signal, delta => {
         assistant.content += delta;
         running = { ...running, updatedAt: Date.now(), messages: [...history, { ...assistant }] };
         saveConversation(running, false);
@@ -372,22 +367,22 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
       clearTimeout(saveTimer); saveConversation(running); chatController.current = null; setChatBusy(false);
     }
   };
-  const pollVideo = async (original: Asset, key: string) => {
+  const pollVideo = async (original: Asset) => {
     if (!original.remoteId || jobs.current.has(original.id)) return;
     const controller = new AbortController(); jobs.current.set(original.id, controller);
     try {
       for (let attempt = 0; attempt < 240; attempt++) {
-        const response = await request(`videos/${encodeURIComponent(original.remoteId)}`, key, { signal: controller.signal });
+        const response = await request(`videos/${encodeURIComponent(original.remoteId)}`, { signal: controller.signal });
         const video = await response.json();
         if (video.status === 'failed') throw new Error(video.error?.message || video.error || '视频生成失败，请重试。');
         if (video.status === 'completed') {
           let blob: Blob;
-          try { blob = await videoContent(original.remoteId, key, controller.signal); }
+          try { blob = await videoContent(original.remoteId, controller.signal); }
           catch (error) {
             if ((error as Error & { status?: number }).status !== 409) throw error;
             await delay(5000, controller.signal); continue;
           }
-          await saveAsset({ ...original, status: 'completed', blob, url: undefined, error: undefined }); notify('你的视频已生成，去看看吧。'); return;
+          await saveCompletedAsset({ ...original, status: 'completed', blob, url: undefined, error: undefined }); notify('你的视频已生成，去看看吧。'); return;
         }
         if (!['in_progress', 'queued', 'pending', 'processing'].includes(video.status)) throw new Error(`无法识别视频任务状态：${video.status || '空'}`);
         await delay(5000, controller.signal);
@@ -398,19 +393,15 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
     } finally { jobs.current.delete(original.id); }
   };
   useEffect(() => {
-    if (ready && (settings.key || serverKey)) for (const asset of assets) if (asset.kind === 'video' && asset.status === 'pending' && asset.remoteId && !jobs.current.has(asset.id)) void pollVideo(asset, settings.key);
-  }, [ready, settings.key, serverKey, assets]);
+    if (ready && serviceReady) for (const asset of assets) if (asset.kind === 'video' && asset.status === 'pending' && asset.remoteId && !jobs.current.has(asset.id)) void pollVideo(asset);
+  }, [ready, serviceReady, assets]);
   const generateMusicCover = async (original: Asset) => {
     const jobId = `cover:${original.id}`;
     if (jobs.current.has(jobId) || original.kind !== 'music' || original.status !== 'completed') return;
     const controller = new AbortController();
     jobs.current.set(jobId, controller);
-    const config = { ...settingsRef.current };
     try {
-      const response = await generateImage({
-        key: config.key, model: config.imageModel, mode: imageEngineMode || config.imageEngineMode, aspectRatio: '1:1', imageSize: '1K', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]),
-        prompt: `为原创歌曲设计一张精美的方形专辑封面，以视觉画面表达歌曲主题与情绪，构图完整，适合音乐作品展示。只生成一张封面图片。\n歌曲：${original.song?.title || original.prompt.slice(0, 100)}\n音乐风格：${original.song?.style || '根据主题设计'}\n主题灵感：${original.options.inspiration || original.prompt.slice(0, 3000)}\n歌词意象：${(original.song ? sungLines(original.song) : original.lyrics || '').slice(0, 3000)}\n无需文字，不要水印。`,
-      });
+      const response = await request('generate/image', { method: 'POST', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]), body: JSON.stringify({ action: 'cover', song: original.song, prompt: original.prompt, inspiration: original.options.inspiration, lyrics: original.lyrics }) });
       let coverUrl: string;
       if (response.headers.get('content-type')?.includes('json')) {
         const output = mediaOutputs(await response.json(), 'image')[0];
@@ -425,7 +416,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
         coverUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(blob); });
       }
       // Keep remote artwork available offline when the origin permits downloading it.
-      if (/^https?:/.test(coverUrl)) {
+      if (/^https?:/.test(coverUrl) && !isStoredMedia(coverUrl)) {
         try {
           const downloaded = await fetch(coverUrl, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]) });
           if (downloaded.ok && downloaded.headers.get('content-type')?.startsWith('image/')) {
@@ -447,8 +438,33 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
     } finally { jobs.current.delete(jobId); }
   };
   useEffect(() => {
-    if (ready && (settings.key || serverKey)) for (const asset of assets) if (asset.kind === 'music' && asset.status === 'completed' && asset.coverStatus === 'pending') void generateMusicCover(asset);
-  }, [ready, settings.key, serverKey, assets]);
+    if (ready && serviceReady) for (const asset of assets) if (asset.kind === 'music' && asset.status === 'completed' && asset.coverStatus === 'pending') void generateMusicCover(asset);
+  }, [ready, serviceReady, assets]);
+  const captureStoredVideoCover = async (original: Asset) => {
+    const jobId = `videocover:${original.id}`;
+    if (jobs.current.has(jobId) || videoCoverAttempts.current.has(original.id)) return;
+    if (original.kind !== 'video' || original.status !== 'completed' || original.coverUrl) return;
+    const source = original.blob || original.url;
+    if (!source) return;
+    videoCoverAttempts.current.add(original.id);
+    const controller = new AbortController();
+    jobs.current.set(jobId, controller);
+    try {
+      const coverUrl = await captureVideoCover(source);
+      if (controller.signal.aborted) return;
+      const current = assetsRef.current.find(asset => asset.id === original.id);
+      if (!current || current.coverUrl) return;
+      await saveAsset({ ...current, coverUrl, coverStatus: 'completed', coverError: undefined });
+    } catch { /* Keep the gradient poster; the next session tries once more. */ }
+    finally { jobs.current.delete(jobId); }
+  };
+  useEffect(() => {
+    if (!ready || !serviceReady) return;
+    const target = assets.find(asset =>
+      asset.kind === 'video' && asset.status === 'completed' && !asset.coverUrl
+      && (asset.blob || asset.url) && !videoCoverAttempts.current.has(asset.id));
+    if (target) void captureStoredVideoCover(target);
+  }, [ready, serviceReady, assets]);
   const saveCompletedAsset = async (asset: Asset) => {
     let resolutionWarning: string | undefined;
     if (asset.kind === 'image' && (asset.blob || asset.url)) {
@@ -465,15 +481,22 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
         asset.lrc = generateLrcFromPrompt(sungLines(asset.song), asset.audioDuration, asset.song.title);
       } catch { /* Keep the clearly labelled estimate if metadata cannot be read. */ }
     }
+    // Videos get a real frame as their card cover; the gradient stays as a fallback.
+    if (asset.kind === 'video' && (asset.blob || asset.url)) {
+      try {
+        asset.coverUrl = await captureVideoCover(asset.blob || asset.url!);
+        asset.coverStatus = 'completed';
+        asset.coverError = undefined;
+      } catch { /* Keep the gradient poster when the frame cannot be read. */ }
+    }
     await saveAsset(asset);
     return resolutionWarning;
   };
   const generate = async (kind: MediaKind, prompt: string, options: Record<string, string | number>, retry?: Asset) => {
     if (!requireConnection() || !prompt.trim()) return;
     if (assetsRef.current.some(a => a.kind === kind && a.status === 'pending' && a.id !== retry?.id)) { notify('同类型作品正在生成，请等待完成。'); return; }
-    const config = { ...settingsRef.current }; const model = config[modelKey[kind]].trim();
-    if (!model) { setSettingsOpen(true); notify(`创作服务暂不可用，请检查连接。`); return; }
-    const asset: Asset = { id: retry?.id || uid(), kind, prompt, options, model, createdAt: Date.now(), status: 'pending' };
+    const config = { ...settingsRef.current };
+    const asset: Asset = { id: retry?.id || uid(), kind, prompt, options, createdAt: Date.now(), status: 'pending' };
     await saveAsset(asset);
     try {
       if (kind === 'music' && typeof options.song === 'string') {
@@ -487,11 +510,9 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
       }
       let response: Response;
       if (kind === 'video') {
-        response = await generateVideo({ key: config.key, model, prompt, options, mode: videoEngineMode });
+        response = await generateVideo({ prompt, options, mode: videoEngineMode });
       } else if (kind === 'image') {
         response = await generateImage({
-          key: config.key,
-          model,
           prompt,
           mode: imageEngineMode || config.imageEngineMode || 'auto',
           size: imageDimensions(String(options.aspect_ratio || 'auto'), String(options.image_size || '1K')),
@@ -504,8 +525,6 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
         let extra = {};
         try { extra = JSON.parse(config.musicExtra || '{}'); } catch { }
         response = await generateAudio({
-          key: config.key,
-          model,
           prompt,
           mode: config.audioEngineMode || 'auto',
           musicPath: config.musicPath || 'speech',
@@ -522,9 +541,9 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
       if (contentType.includes('json')) {
         const json = await response.json();
         if (kind === 'video' && json.status === 'failed') throw new Error(json.errors?.[0]?.message || '视频生成失败，请重试。');
-        if (kind === 'video' && (videoEngineMode || videoEngineForModel(model)) === 'task') {
+        if (kind === 'video' && videoEngineMode === 'task') {
           if (typeof json.id !== 'string' || !json.id || !['queued', 'pending', 'in_progress', 'processing', 'completed'].includes(json.status)) throw new Error('暂未收到视频任务，请重试或检查服务连接。');
-          const task = { ...asset, remoteId: json.id }; await saveAsset(task); void pollVideo(task, config.key); return;
+          const task = { ...asset, remoteId: json.id }; await saveAsset(task); void pollVideo(task); return;
         }
         const outputs = mediaOutputs(json, kind);
         if (!outputs.length) throw new Error(kind === 'music' ? '暂未收到音乐文件，请重试或检查服务连接。' : kind === 'video' ? '暂未收到视频文件，请重试或检查服务连接。' : '暂未收到图片，请重试或检查服务连接。');
@@ -534,7 +553,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
           else if (output.url) {
             const mediaUrl = safeMediaURL(output.url);
             url = mediaUrl;
-            try { const media = await fetch(mediaUrl, { signal: AbortSignal.timeout(20_000) }); if (media.ok) { const downloaded = await media.blob(); if (downloaded.size && (downloaded.type.startsWith('image/') || downloaded.type.startsWith('audio/') || downloaded.type.startsWith('video/') || downloaded.type === 'application/octet-stream')) { blob = kind === 'music' ? await ensurePlayableAudioBlob(downloaded) : downloaded; url = undefined; } } } catch { /* Retain remote URL when cross-origin download is unavailable. */ }
+            try { const media = await fetch(mediaUrl, { signal: AbortSignal.timeout(20_000) }); if (media.ok) { const downloaded = await media.blob(); if (downloaded.size && (downloaded.type.startsWith('image/') || downloaded.type.startsWith('audio/') || downloaded.type.startsWith('video/') || downloaded.type === 'application/octet-stream')) { blob = kind === 'music' ? await ensurePlayableAudioBlob(downloaded) : downloaded; if (isStoredMedia(output.url)) registerStoredBlob(blob, output.url); else url = undefined; } } } catch { /* Retain remote URL when cross-origin download is unavailable. */ }
           }
           const lrc = asset.lrc;
           const warning = await saveCompletedAsset({ ...asset, id: i ? uid() : asset.id, status: 'completed', blob, url, lrc });
@@ -596,6 +615,11 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
     downloadBlob(new Blob([JSON.stringify({ ...active, model: undefined }, null, 2)], { type: 'application/json' }), `olai-chat-${active.id.slice(0, 8)}.json`); notify('会话已导出为 JSON');
   };
   const retryAsset = (asset: Asset) => { navigate(asset.kind); void generate(asset.kind, asset.prompt, asset.options, asset); };
+  const reuseGalleryAsset = (asset: Asset, prompt: string) => {
+    setCreationDraft({ token: uid(), prompt, options: galleryReuseOptions(asset) });
+    navigate(asset.kind);
+    notify('已载入作品参数，可直接生成。');
+  };
   const editMusic = (asset: Asset) => {
     if (!asset.song || assetsRef.current.some(a => a.kind === 'music' && a.status === 'pending')) { notify('请等待当前歌曲生成完成后再编辑。'); return; }
     setMusicEdit({ asset, token: uid() });
@@ -613,7 +637,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
     jobs.current.set(jobId, controller);
     setAligningIds(ids => [...ids, asset.id]);
     try {
-      const result = await alignLyricsToAudio(asset, settingsRef.current.key, settingsRef.current.chatModel, AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]));
+      const result = await alignLyricsToAudio(asset, AbortSignal.any([controller.signal, AbortSignal.timeout(180_000)]));
       const current = assetsRef.current.find(a => a.id === asset.id);
       if (!current || controller.signal.aborted) return;
       await saveAsset({ ...current, lrc: result.lrc, lrcSource: 'audio', audioDuration: result.duration, lrcError: undefined });
@@ -631,70 +655,256 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
       setAligningIds(ids => ids.filter(id => id !== asset.id));
     }
   };
-  const label = view === 'library' ? '我的作品' : view === 'workflow' ? '短片工坊' : 'AI 对话';
+  const label = view === 'gallery' ? '作品广场' : view === 'library' ? '我的库' : view === 'workflow' ? '短片工坊' : 'AI 对话';
   const mediaKind = view === 'image' || view === 'video' || view === 'music' ? view : null;
   const recent = conversations.filter(c => c.title.toLowerCase().includes(sessionSearch.toLowerCase()));
+  const HISTORY_PREVIEW = 5;
+  const visibleRecent = historyExpanded || sessionSearch || searchOpen ? recent : recent.slice(0, HISTORY_PREVIEW);
+  const hasMoreHistory = !historyExpanded && !sessionSearch && !searchOpen && recent.length > HISTORY_PREVIEW;
+  const completedAssets = assets.filter(a => a.status === 'completed').length;
+  const closeSidebarOnMobile = () => {
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) setSidebarOpen(false);
+  };
+  const focusHistorySearch = () => {
+    setSidebarOpen(true);
+    setSearchOpen(true);
+    try { localStorage.setItem('olai.sidebar', 'true'); } catch { /* ignore */ }
+  };
+  const chatActive = view === 'chat' || view === 'image' || view === 'video' || view === 'music';
+  const profileName = account.user?.email?.split('@')[0] || '访客';
+  const profileMeta = account.user ? '已同步' : `各 ${account.generationLimit} 次 / 天 · 对话 ${account.chatLimit ?? 100} 条`;
 
   return <div className="studio-shell">
     {sidebarOpen && <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />}
-    <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
-      <div className="sidebar-drawer-header">
-        <button className="brand" onClick={() => navigate('chat')} aria-label="小o 首页">
-          <BrandLogoSvg size={43} />
-          <span className="brand-wordmark"><img src="/brand/olai-wordmark.png" alt="olai" width="585" height="240" /><small>ONLINE AI COMPANION</small></span>
+    <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`} aria-label="侧边栏">
+      {/* 折叠轨：仅图标导航 */}
+      <div className="sidebar-rail" aria-hidden={sidebarOpen}>
+        <button type="button" className="rail-btn rail-open" onClick={toggleSidebar} aria-label="打开边栏">
+          <PanelLeft size={20} />
+          <span className="rail-tip" aria-hidden="true">打开边栏</span>
         </button>
-      </div>
-      <span className="nav-caption">陪伴与灵感</span>
-      <nav aria-label="工作室导航">
-        {(shortFilm ? navigation : navigation.filter(item => item.view !== 'workflow')).map(({ view: target, label, icon: IconComponent, badge }) => (
-          <button
-            key={target}
-            className={`nav-item ${view === target ? 'active' : ''}`}
-            onClick={() => navigate(target)}
-            aria-current={view === target ? 'page' : undefined}
-          >
-            <span className="nav-icon-box">
-              <IconComponent size={19} active={view === target} />
-            </span>
-            {label}
-            {badge && <span className="nav-new">{badge}</span>}
-            {view !== 'library' && <span className="nav-active-dot" />}
+        <button type="button" className="rail-btn rail-brand" onClick={() => navigate('chat')} aria-label="小o 首页">
+          <BrandLogoSvg size={28} />
+          <span className="rail-tip" aria-hidden="true">小o</span>
+        </button>
+        <nav className="rail-nav" aria-label="快捷导航">
+          <button type="button" className="rail-btn" onClick={newConversation} disabled={chatBusy} aria-label="发起新对话">
+            <SquarePen size={20} strokeWidth={1.75} />
+            <span className="rail-tip" aria-hidden="true">{chatBusy ? '请先停止当前回答' : '发起新对话'}</span>
           </button>
-        ))}
-        <div className="nav-separator" />
-        <button
-          className={`nav-item ${view === 'library' ? 'active' : ''}`}
-          onClick={() => navigate('library')}
-          aria-current={view === 'library' ? 'page' : undefined}
-        >
-          <span className="nav-icon-box">
-            <CosmicVaultSvg size={19} active={view === 'library'} />
-          </span>
-          我的作品
-          <span className="count-badge">{assets.filter(a => a.status === 'completed').length}</span>
-        </button>
-      </nav>
-      <div className="recent-heading"><span>History</span><button className="icon-button" aria-label="搜索会话" onClick={() => setSearchOpen(!searchOpen)}><Search size={14} /></button></div>
-      {searchOpen && <input className="session-search" aria-label="搜索会话标题" placeholder="搜索会话…" value={sessionSearch} onChange={e => setSessionSearch(e.target.value)} autoFocus />}
-      <div className="recent-sessions">{recent.length ? recent.map(c => <div key={c.id} className={`session-row ${view === 'chat' && activeId === c.id ? 'selected' : ''}`}>
-        <button className="session-link" onClick={() => openConversation(c.id)} title={c.title}><span>{c.title}</span></button><div className="session-actions"><MoreMenu label={`更多会话操作：${c.title}`} items={[{ label: '重命名会话', icon: <Pencil size={15} />, onClick: () => void renameConversation(c) }, { label: '删除会话', icon: <Trash2 size={15} />, danger: true, disabled: chatBusy, onClick: () => void deleteConversation(c) }]} /></div></div>) : <div className="recent-empty"><MessageSquare size={20} strokeWidth={1.5} /><p>{sessionSearch ? '没有匹配的会话' : '还没有开始的对话'}</p><small>{sessionSearch ? '换个关键词试试' : '和小o聊聊，灵感会留在这里'}</small></div>}</div>
-      <div className="sidebar-bottom">
-        <div className="local-storage-note">
-          <ShieldCheck size={15} />
-          <div>
-            {account.user ? '创作记录，账号保存' : '创作数据，本地保存'}
-            <small>{account.user ? '在其他设备继续灵感' : ready && storageMode === 'localstorage' ? '本地缓存持久化' : '隐私驻留于浏览器'}</small>
+          <button type="button" className="rail-btn" onClick={focusHistorySearch} aria-label="搜索会话">
+            <Search size={20} strokeWidth={1.75} />
+            <span className="rail-tip" aria-hidden="true">搜索会话</span>
+          </button>
+          <button type="button" className={`rail-btn ${view === 'gallery' ? 'active' : ''}`} onClick={() => navigate('gallery')} aria-label="作品广场" aria-current={view === 'gallery' ? 'page' : undefined}>
+            <Globe size={20} strokeWidth={1.75} />
+            <span className="rail-tip" aria-hidden="true">作品广场</span>
+          </button>
+          <button
+            type="button"
+            className={`rail-btn ${view === 'library' ? 'active' : ''}`}
+            onClick={() => navigate('library')}
+            aria-label="我的库"
+            aria-current={view === 'library' ? 'page' : undefined}
+          >
+            <LayoutGrid size={20} strokeWidth={1.75} />
+            <span className="rail-tip" aria-hidden="true">我的库</span>
+          </button>
+          <button type="button" className={`rail-btn ${chatActive ? 'active' : ''}`} onClick={() => { setSidebarOpen(true); navigate('chat'); }} aria-label="最近">
+            <Clock3 size={20} strokeWidth={1.75} />
+            <span className="rail-tip" aria-hidden="true">最近</span>
+          </button>
+          {(shortFilm ? navigation : []).map(({ view: target, label: itemLabel, icon: IconComponent }) => (
+            <button
+              key={target}
+              type="button"
+              className={`rail-btn ${view === target ? 'active' : ''}`}
+              onClick={() => navigate(target)}
+              aria-label={itemLabel}
+              aria-current={view === target ? 'page' : undefined}
+            >
+              <IconComponent size={20} strokeWidth={1.75} />
+              <span className="rail-tip" aria-hidden="true">{itemLabel}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="rail-bottom">
+          <button type="button" className="rail-btn" onClick={() => setSettingsOpen(true)} aria-label="创作设置">
+            <SettingsIcon size={20} strokeWidth={1.75} />
+            <span className="rail-tip" aria-hidden="true">创作设置</span>
+          </button>
+          <button type="button" className="rail-avatar" disabled={!ready} onClick={openAccount} aria-label={account.user ? `我的账号 · ${profileName}` : '登录 / 注册'}>
+            <span className="rail-avatar-media"><BrandLogoSvg size={26} /></span>
+            <span className="rail-tip" aria-hidden="true">{account.user ? `我的账号 · ${profileName}` : '登录 / 注册'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 展开面板 */}
+      <div className="sidebar-panel">
+        <div className="sidebar-drawer-header">
+          <button className="brand" onClick={() => navigate('chat')} aria-label="小o 首页">
+            <BrandLogoSvg size={32} />
+            <span className="brand-wordmark"><img src="/brand/olai-wordmark.png" alt="olai" width="585" height="240" /></span>
+          </button>
+          <div className="sidebar-header-actions">
+            <button type="button" className="icon-button" aria-label="搜索会话" aria-pressed={searchOpen} onClick={() => setSearchOpen(!searchOpen)}>
+              <Search size={18} strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
+              className="icon-button sidebar-panel-toggle"
+              aria-label="收起侧边栏"
+              aria-expanded={sidebarOpen}
+              onClick={toggleSidebar}
+              title="收起侧边栏"
+            >
+              <PanelLeftClose size={18} />
+            </button>
           </div>
         </div>
-        <button className="account-button secondary-button" disabled={!ready} onClick={openAccount}>{account.user ? account.user.email : '登录 / 注册'}<small>各 {account.generationLimit} 次 / 天 · 对话不限</small></button>
-        <button className="profile-button" onClick={() => { setSettingsOpen(true); if (typeof window !== 'undefined' && window.innerWidth <= 768) setSidebarOpen(false); }}>
-          <span className="profile-avatar"><BrandLogoSvg size={30} /></span>
-          <span>我的小o<small>连接与创作偏好</small></span>
-          <SettingsIcon size={16} />
-        </button>
+
+        <nav aria-label="主导航">
+          <button
+            type="button"
+            className="nav-item nav-new-chat"
+            onClick={newConversation}
+            disabled={chatBusy}
+            title={chatBusy ? '请先停止当前回答，再发起新对话' : '发起新对话'}
+          >
+            <span className="nav-icon-box"><SquarePen size={18} strokeWidth={1.75} /></span>
+            <span className="nav-label">发起新对话</span>
+          </button>
+
+          <button
+            type="button"
+            className={`nav-item ${view === 'gallery' ? 'active' : ''}`}
+            onClick={() => { navigate('gallery'); closeSidebarOnMobile(); }}
+            aria-current={view === 'gallery' ? 'page' : undefined}
+          >
+            <span className="nav-icon-box"><Globe size={18} strokeWidth={1.75} /></span>
+            <span className="nav-label">作品广场</span>
+          </button>
+
+          <button
+            type="button"
+            className={`nav-item ${view === 'library' ? 'active' : ''}`}
+            onClick={() => { navigate('library'); closeSidebarOnMobile(); }}
+            aria-current={view === 'library' ? 'page' : undefined}
+          >
+            <span className="nav-icon-box"><LayoutGrid size={18} strokeWidth={1.75} /></span>
+            <span className="nav-label">我的库</span>
+            {completedAssets > 0 && <span className="count-badge">{completedAssets}</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`nav-item ${chatActive ? 'active' : ''}`}
+            onClick={() => { navigate('chat'); closeSidebarOnMobile(); }}
+            aria-current={chatActive ? 'page' : undefined}
+          >
+            <span className="nav-icon-box"><Clock3 size={18} strokeWidth={1.75} /></span>
+            <span className="nav-label">最近</span>
+          </button>
+
+          {(shortFilm ? navigation : []).map(({ view: target, label: itemLabel, icon: IconComponent, badge }) => (
+            <button
+              key={target}
+              type="button"
+              className={`nav-item ${view === target ? 'active' : ''}`}
+              onClick={() => { navigate(target); closeSidebarOnMobile(); }}
+              aria-current={view === target ? 'page' : undefined}
+            >
+              <span className="nav-icon-box"><IconComponent size={18} strokeWidth={1.75} /></span>
+              <span className="nav-label">{itemLabel}</span>
+              {badge && <span className="nav-new">{badge}</span>}
+            </button>
+          ))}
+
+          <MoreMenu
+            label="更多"
+            className="sidebar-more-trigger nav-more"
+            triggerIcon={<><span className="nav-icon-box"><Ellipsis size={18} strokeWidth={1.75} /></span><span className="nav-label sidebar-more-label">更多</span></>}
+            items={[
+              { label: 'AI 对话', icon: <MessageSquare size={15} />, onClick: () => { navigate('chat'); closeSidebarOnMobile(); } },
+              { label: '创作设置', icon: <SettingsIcon size={15} />, onClick: () => { setSettingsOpen(true); closeSidebarOnMobile(); } },
+              { label: account.user ? '我的账号' : '登录 / 注册', icon: <UserRound size={15} />, disabled: !ready, onClick: () => { openAccount(); closeSidebarOnMobile(); } },
+            ]}
+          />
+        </nav>
+
+        <div className="history-section">
+          <button type="button" className="history-section-toggle" onClick={() => setHistoryExpanded(v => !v)} aria-expanded={historyExpanded}>
+            <span>全部</span>
+            <ChevronRight size={16} className={historyExpanded ? 'is-open' : ''} />
+          </button>
+          {searchOpen && (
+            <input
+              className="session-search"
+              aria-label="搜索会话标题"
+              placeholder="搜索会话…"
+              value={sessionSearch}
+              onChange={e => setSessionSearch(e.target.value)}
+              autoFocus
+            />
+          )}
+          <div className="recent-sessions">
+            {visibleRecent.length ? visibleRecent.map(c => (
+              <div key={c.id} className={`session-row ${view === 'chat' && activeId === c.id ? 'selected' : ''}`}>
+                <button type="button" className="session-link" onClick={() => { openConversation(c.id); closeSidebarOnMobile(); }} title={c.title}>
+                  <span>{c.title}</span>
+                </button>
+                <div className="session-actions">
+                  <MoreMenu
+                    label={`更多会话操作：${c.title}`}
+                    items={[
+                      { label: '重命名会话', icon: <Pencil size={15} />, onClick: () => void renameConversation(c) },
+                      { label: '删除会话', icon: <Trash2 size={15} />, danger: true, disabled: chatBusy, onClick: () => void deleteConversation(c) },
+                    ]}
+                  />
+                </div>
+              </div>
+            )) : (
+              <div className="recent-empty">
+                <MessageSquare size={20} strokeWidth={1.5} />
+                <p>{sessionSearch ? '没有匹配的会话' : '还没有开始的对话'}</p>
+                <small>{sessionSearch ? '换个关键词试试' : '和小o聊聊，灵感会留在这里'}</small>
+              </div>
+            )}
+            {hasMoreHistory && (
+              <button type="button" className="history-more" onClick={() => setHistoryExpanded(true)}>
+                显示更多
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="sidebar-bottom">
+          <button
+            type="button"
+            className="profile-button"
+            disabled={!ready}
+            onClick={() => { openAccount(); closeSidebarOnMobile(); }}
+          >
+            <span className="profile-avatar"><BrandLogoSvg size={28} /></span>
+            <span>
+              {profileName}
+              <small>{profileMeta}</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="icon-button profile-settings"
+            aria-label="创作设置"
+            title="创作设置"
+            onClick={() => { setSettingsOpen(true); closeSidebarOnMobile(); }}
+          >
+            <SettingsIcon size={18} strokeWidth={1.75} />
+          </button>
+        </div>
       </div>
     </aside>
-    <main className={`main-shell ${view !== 'library' && view !== 'workflow' ? 'chat-main' : ''}`}>
+    <main className={`main-shell ${view !== 'library' && view !== 'gallery' && view !== 'workflow' ? 'chat-main' : ''}`}>
       <header className="topbar">
         <div className="breadcrumbs">
           <button
@@ -704,7 +914,7 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
             onClick={toggleSidebar}
             title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
           >
-            {sidebarOpen ? <PanelLeftClose size={19} /> : <Menu size={20} />}
+            {sidebarOpen ? <PanelLeftClose size={19} /> : <PanelLeft size={20} />}
           </button>
           <span className="topbar-brand">Olai 空间</span>
           <span className="breadcrumb-slash">/</span>
@@ -722,15 +932,16 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
             <GithubSvg size={16} />
           </a>
           <button className="topbar-settings" disabled={!ready} onClick={openAccount}><span>{account.user ? '我的账号' : '登录 / 注册'}</span></button>
-          <StatusBeaconSvg connected={connected} modelCount={models.length} loading={modelsLoading} />
+          <StatusBeaconSvg connected={connected} loading={modelsLoading} />
           <button className="topbar-settings" onClick={() => setSettingsOpen(true)}>
             <SettingsIcon size={15} />
-            <span>{settings.key || serverKey ? '创作设置' : '连接服务'}</span>
+            <span>创作设置</span>
             <ChevronDown size={13} />
           </button>
         </div>
       </header>
-      {!ready ? (
+      {/* 广场只依赖公开接口，不必等待账号与个人记录加载完成。 */}
+      {!ready && view !== 'gallery' ? (
         <div className="loading-workspace">
           <Companion size={100} animated />
           <span className="loading-track"><i /></span>
@@ -748,27 +959,28 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
             <span>{syncing ? '正在后台同步游客记录，可继续创作。' : `${syncFailures.length} 条游客记录同步未完成，内容仍保留在本地，可继续创作。`}</span>
             {syncFailures.length > 0 && <button className="secondary-button" disabled={syncing} onClick={() => void runGuestSync(account.user!.id)}>重试同步</button>}
           </div>}
-          {view !== 'library' && view !== 'workflow' && (
+          {view !== 'library' && view !== 'gallery' && view !== 'workflow' && (
             <ChatWorkspace
               cloudStorage={!!account.user}
               conversation={active}
               busy={chatBusy}
               onSend={text => void sendMessage(text)}
               onStop={() => chatController.current?.abort()}
-              onNew={newConversation}
               onRetry={id => void sendMessage('', id)}
               onExport={exportConversation}
               notify={notify}
               kind={mediaKind}
+              draftRequest={creationDraft}
+              onDraftConsumed={() => setCreationDraft(null)}
               onModeChange={kind => navigate(kind || 'chat')}
               media={{
                 imageEngineMode: imageEngineMode || settings.imageEngineMode,
-                videoEngineMode: videoEngineMode || videoEngineForModel(settings.videoModel),
+                videoEngineMode,
                 assets: assets.filter(a => a.kind === mediaKind),
                 busy: assets.some(a => a.kind === mediaKind && a.status === 'pending'),
                 onCompose: async (prompt, style, instrumental) => {
                   if (!requireConnection()) throw new Error('请先连接创作服务，再整理歌曲。');
-                  return composeSong(settingsRef.current.key, settingsRef.current.chatModel, prompt, style, instrumental);
+                  return composeSong(prompt, style, instrumental);
                 },
                 onGenerate: (prompt, options) => { if (mediaKind) void generate(mediaKind, prompt, options); },
                 onDelete: id => void deleteAsset(id),
@@ -783,9 +995,12 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
               }}
             />
           )}
+          {view === 'gallery' && <Gallery onNavigate={navigate} onDownload={asset => void downloadAsset(asset)} onReuse={reuseGalleryAsset} />}
           {view === 'library' && (
             <Library
               assets={assets}
+              cloudStorage={!!account.user}
+              onLogin={openAccount}
               onNavigate={navigate}
               onDelete={id => void deleteAsset(id)}
               onRetry={retryAsset}
@@ -795,15 +1010,12 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
               onDownloadCover={asset => void downloadCover(asset)}
               onRetryCover={retryCover}
               onDownload={asset => void downloadAsset(asset)}
+              onReuse={reuseGalleryAsset}
             />
           )}
           {view === 'workflow' && shortFilm && (
             <VideoWorkflowWorkspace
-              apiKey={settings.key}
-              chatModel={settings.chatModel}
-              imageModel={settings.imageModel}
-              videoModel={settings.videoModel}
-              musicModel={settings.musicModel}
+              videoEngineMode={videoEngineMode}
               generationLimit={account.generationLimit}
               onRequestQuota={async (kind, count) => {
                 const confirmed = await confirm(
@@ -823,12 +1035,10 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
       <SettingsDialog
         cloudStorage={!!account.user}
         initial={settings}
-        serverKey={serverKey}
-        models={models}
-        loadingModels={modelsLoading}
+        loading={modelsLoading}
         onClose={closeSettings}
         onSave={next => changeSettings(next, true)}
-        onRefresh={refreshModels}
+        onRefresh={() => refreshConnection()}
       />
     )}
     {accountOpen && <AccountDialog account={account} syncing={syncing} syncFailures={syncFailures} onRetrySync={() => { if (account.user) void runGuestSync(account.user.id); }} onClose={() => setAccountOpen(false)} />}
@@ -840,14 +1050,14 @@ function StudioInner({ serverKey = false, imageEngineMode, videoEngineMode, shor
       </div>
     )}
     {dialog}
-    <GlobalMediaPlayer onAlignLyrics={id => { const asset = assetsRef.current.find(a => a.id === id); if (asset) void alignMusicLyrics(asset); }} aligningIds={aligningIds} />
+    <GlobalMediaPlayer onAlignLyrics={activeMedia && assets.some(a => a.id === activeMedia.id) ? id => { const asset = assetsRef.current.find(a => a.id === id); if (asset) void alignMusicLyrics(asset); } : undefined} aligningIds={aligningIds} />
   </div>;
 }
 
-export default function Studio({ serverKey = false, imageEngineMode, videoEngineMode, shortFilm = false }: { serverKey?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; shortFilm?: boolean }) {
+export default function Studio({ serviceReady = false, imageEngineMode, videoEngineMode, shortFilm = false }: { serviceReady?: boolean; imageEngineMode?: ImageEngineMode; videoEngineMode?: VideoEngineMode; shortFilm?: boolean }) {
   return (
     <PlayerProvider>
-      <StudioInner serverKey={serverKey} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} shortFilm={shortFilm} />
+      <StudioInner serviceReady={serviceReady} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} shortFilm={shortFilm} />
     </PlayerProvider>
   );
 }

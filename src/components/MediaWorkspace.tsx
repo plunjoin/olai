@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpRight, LoaderCircle, Plus, Sparkles, Trash2, WandSparkles } from 'lucide-react';
 import type { Asset, ImageEngineMode, MediaKind, SongDraft, SongSection } from '../lib/types';
-import { newSong, SECTION_LABELS, SECTION_TYPES, songPrompt } from '../lib/music';
+import { newSong, SECTION_LABELS, SECTION_TYPES } from '../lib/music';
 import { IMAGE_RATIOS, normalizeRatio } from '../lib/generation';
 import type { VideoEngineMode } from '../lib/video';
 import AssetCard from './AssetCard';
@@ -26,9 +26,10 @@ export interface MediaWorkspaceProps {
   aligningIds?: string[];
   onDownloadCover?: (asset: Asset) => void;
   onRetryCover?: (asset: Asset) => void;
+  parameterRequest?: { token: string; options: Record<string, string | number> } | null;
 }
 
-export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCompose, onGenerate, onDelete, onRetry, onDownload, embedded = false, controller, onComposerStateChange, panelHost, imageEngineMode, videoEngineMode = 'chat', onPromptSuggestion, editRequest, onEdit, onAlignLyrics, aligningIds, onDownloadCover, onRetryCover }: MediaWorkspaceProps) {
+export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCompose, onGenerate, onDelete, onRetry, onDownload, embedded = false, controller, onComposerStateChange, panelHost, imageEngineMode, videoEngineMode = 'chat', onPromptSuggestion, editRequest, onEdit, onAlignLyrics, aligningIds, onDownloadCover, onRetryCover, parameterRequest }: MediaWorkspaceProps) {
   const [localPrompt, setPrompt] = useState(initialPrompt);
   const prompt = embedded ? initialPrompt : localPrompt;
   const [ratio, setRatio] = useState(kind === 'video' ? '16:9' : 'auto');
@@ -55,6 +56,20 @@ export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCo
     setMode('composer');
     setError('');
   }, [editRequest?.token, kind]);
+  useEffect(() => {
+    const options = parameterRequest?.options;
+    if (!options || kind === 'music') return;
+    const nextRatio = typeof options.aspect_ratio === 'string' ? options.aspect_ratio : '';
+    if (nextRatio) {
+      if (kind === 'image' && !IMAGE_RATIOS.includes(nextRatio)) { setCustomRatio(nextRatio); setRatio('custom'); }
+      else if (kind === 'image' || ['16:9', '9:16'].includes(nextRatio)) setRatio(nextRatio);
+    }
+    const nextQuality = String(kind === 'image' ? options.image_size : options.resolution || '');
+    if ((kind === 'image' ? ['1K', '2K', '4K'] : ['720p', '1080p', '4K']).includes(nextQuality)) setQuality(nextQuality);
+    if (kind === 'video' && typeof options.duration === 'number' && Number.isFinite(options.duration)) {
+      setDuration(Math.min(maximumDuration, Math.max(minimumDuration, Math.round(options.duration))));
+    }
+  }, [parameterRequest?.token, kind]);
   const errorNotice = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (error && embedded) errorNotice.current?.scrollIntoView({ block: 'nearest' }); }, [error, embedded]);
   const name = kind === 'image' ? '图像' : kind === 'video' ? '视频' : '音乐';
@@ -77,7 +92,7 @@ export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCo
         if (!draft) return;
         if (!draft.sections.length || !draft.sections.some(s => s.direction.trim() || (!draft.instrumental && s.lyrics.trim()))) throw new Error('请为至少一个段落填写歌词或编曲描述。');
         const finalSong = { ...draft, style: [draft.style, style].filter(Boolean).join('，') };
-        onGenerate(songPrompt(finalSong), { song: JSON.stringify(finalSong), music_mode: useDraft ? 'composer' : 'inspiration', inspiration: prompt.trim(), generate_cover: generateCover ? 1 : 0 });
+        onGenerate(prompt.trim() || finalSong.title || finalSong.style || '原创音乐', { song: JSON.stringify(finalSong), music_mode: useDraft ? 'composer' : 'inspiration', inspiration: prompt.trim(), generate_cover: generateCover ? 1 : 0 });
       } else {
         const aspect_ratio = normalizeRatio(ratio === 'custom' ? customRatio : ratio);
         onGenerate(`${prompt.trim()}${style ? `\n风格：${style}` : ''}`, kind === 'image' ? { aspect_ratio, image_size: quality, reasoning_effort: thinking, n: 1 } : { aspect_ratio, seconds: duration, resolution: quality, reasoning_effort: thinking });
@@ -129,15 +144,54 @@ export default function MediaWorkspace({ kind, initialPrompt, assets, busy, onCo
         <p className="generation-note">{kind === 'music' ? '歌曲、段落与歌词一起保存。歌词可导出 TXT；LRC 时间为估算，方便后续校准。' : kind === 'image' ? '作品卡片显示实际像素，未达到目标分辨率时会提示。原图自动收入作品库，可下载。' : videoEngineMode === 'chat' ? '时长、比例和画质作为创作偏好，实际效果以返回视频为准。完成后自动保存，可播放和下载。' : '时长与画质组合以服务支持为准，联想等级作为创作偏好。完成后自动保存，可播放和下载。'}</p>
       </CreationParameters>
       {embedded && error && <p ref={errorNotice} className="error-text creation-error" role="alert">{error}</p>}
-      <section className="generation-results"><div className="results-heading"><h2>创作结果 <span>{assets.length.toString().padStart(2, '0')}</span></h2><span>灵感在这里落地</span></div>{assets.length ? <div className={`results-grid ${kind === 'music' ? 'music-results' : ''}`}>{assets.map(asset => <AssetCard key={asset.id} asset={asset} onDelete={onDelete} onRetry={onRetry} onDownload={onDownload} onEdit={onEdit} onAlignLyrics={onAlignLyrics} aligning={aligningIds?.includes(asset.id)} onDownloadCover={onDownloadCover} onRetryCover={onRetryCover} />)}</div> : <div className={`generation-empty ${kind}-empty`}>
-        <div className="welcome-symbol"><Companion size={180} animated interactive /></div>
-        <span className="eyebrow">A LITTLE COMPANY. A LOT OF POSSIBILITY.</span>
-        <h1>{kind === 'music' ? '嗨，我是小o。一起写首歌吧？' : kind === 'video' ? '嗨，我是小o。一起拍个故事吧？' : '嗨，我是小o。今天想画些什么？'}</h1>
-        <p>{kind === 'music' ? '写下故事、情绪或几句歌词，小o 陪你谱成歌。' : kind === 'video' ? '描述场景、镜头和故事，小o 陪你把想象拍出来。' : '描述画面、颜色和风格，小o 陪你把灵感变成图像。'}</p>
-        <div className="suggestion-grid">
-          {(kind === 'music' ? [['写一首温柔的歌', '关于夏天、晚风和重逢的轻快流行歌。'], ['做一段氛围音乐', '没有人声，适合夜晚阅读的梦幻氛围音乐。']] : kind === 'video' ? [['拍一段电影感镜头', '镜头缓缓穿过花海，阳光落在随风摇曳的花瓣上。'], ['讲一个小故事', '一只小o 在星光下出发，穿过云层寻找新的朋友。']] : [['画一幅小o 插画', '蓝紫色星球小o 漂浮在星云与花朵之间，柔和插画风。'], ['做一张电影海报', '雨后的城市夜景，霓虹倒影，安静而有电影感。']]).map(([title, prompt], i) => <button key={title} onClick={() => onPromptSuggestion?.(prompt)}><span>0{i + 1}</span><strong>{title}</strong><p>{prompt}</p></button>)}
+      <section className={`generation-results ${kind}-results-panel`}>
+        <div className="results-heading">
+          <div className="results-heading-main">
+            <h2>创作结果</h2>
+            <span className="results-count">{assets.length}</span>
+          </div>
+          <span className="results-heading-note">{assets.length ? `共 ${assets.length} 件${name}` : `生成后会出现在这里`}</span>
         </div>
-      </div>}</section>
+        {assets.length ? (
+          <div className={`results-grid ${kind}-results`}>
+            {assets.map(asset => (
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                onDelete={onDelete}
+                onRetry={onRetry}
+                onDownload={onDownload}
+                onEdit={onEdit}
+                onAlignLyrics={onAlignLyrics}
+                aligning={aligningIds?.includes(asset.id)}
+                onDownloadCover={onDownloadCover}
+                onRetryCover={onRetryCover}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className={`generation-empty ${kind}-empty`}>
+            <div className="welcome-symbol"><Companion size={embedded ? 140 : 180} animated interactive /></div>
+            <span className="eyebrow">A LITTLE COMPANY. A LOT OF POSSIBILITY.</span>
+            <h1>{kind === 'music' ? '嗨，我是小o。一起写首歌吧？' : kind === 'video' ? '嗨，我是小o。一起拍个故事吧？' : '嗨，我是小o。今天想画些什么？'}</h1>
+            <p>{kind === 'music' ? '写下故事、情绪或几句歌词，小o 陪你谱成歌。' : kind === 'video' ? '描述场景、镜头和故事，小o 陪你把想象拍出来。' : '描述画面、颜色和风格，小o 陪你把灵感变成图像。'}</p>
+            <div className="suggestion-grid">
+              {(kind === 'music'
+                ? [['写一首温柔的歌', '关于夏天、晚风和重逢的轻快流行歌。'], ['做一段氛围音乐', '没有人声，适合夜晚阅读的梦幻氛围音乐。']]
+                : kind === 'video'
+                  ? [['拍一段电影感镜头', '镜头缓缓穿过花海，阳光落在随风摇曳的花瓣上。'], ['讲一个小故事', '一只小o 在星光下出发，穿过云层寻找新的朋友。']]
+                  : [['画一幅小o 插画', '蓝紫色星球小o 漂浮在星云与花朵之间，柔和插画风。'], ['做一张电影海报', '雨后的城市夜景，霓虹倒影，安静而有电影感。']]
+              ).map(([title, prompt], i) => (
+                <button key={title} type="button" onClick={() => onPromptSuggestion?.(prompt)}>
+                  <span>0{i + 1}</span>
+                  <strong>{title}</strong>
+                  <p>{prompt}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   </div>;
 }

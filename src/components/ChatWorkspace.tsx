@@ -16,26 +16,28 @@ export default function ChatWorkspace({
   busy,
   onSend,
   onStop,
-  onNew,
   onRetry,
   onExport,
   notify,
   kind,
   onModeChange,
   media,
+  draftRequest,
+  onDraftConsumed,
 }: {
   cloudStorage?: boolean;
   conversation?: Conversation;
   busy: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
-  onNew: () => void;
   onRetry: (id: string) => void;
   onExport: () => void;
   notify: (text: string) => void;
   kind: MediaKind | null;
   onModeChange: (kind: MediaKind | null) => void;
-  media: Omit<MediaWorkspaceProps, 'kind' | 'initialPrompt' | 'embedded' | 'controller' | 'onComposerStateChange'>;
+  draftRequest?: { token: string; prompt: string; options: Record<string, string | number> } | null;
+  onDraftConsumed?: () => void;
+  media: Omit<MediaWorkspaceProps, 'kind' | 'initialPrompt' | 'embedded' | 'controller' | 'onComposerStateChange' | 'parameterRequest'>;
 }) {
   const [input, setInput] = useState('');
   const [copied, setCopied] = useState('');
@@ -97,6 +99,14 @@ export default function ChatWorkspace({
   };
 
   useEffect(() => {
+    if (!draftRequest) return;
+    setInput(draftRequest.prompt);
+    changeParameters(true);
+    requestAnimationFrame(() => { composer.current?.focus(); adjustHeight(composer.current); });
+    onDraftConsumed?.();
+  }, [draftRequest?.token]);
+
+  useEffect(() => {
     if (kind !== 'music' || !media.editRequest) return;
     const { asset } = media.editRequest;
     setInput(typeof asset.options.inspiration === 'string' ? asset.options.inspiration : '');
@@ -142,8 +152,6 @@ export default function ChatWorkspace({
             <span>AI 对话</span>
           </span>
           <span className="toolbar-divider" />
-          {/* 高级动态模型选择器 */}
-
           <span className="stream-badge">
             <span className="stream-dot" />
             随时陪你聊
@@ -151,9 +159,6 @@ export default function ChatWorkspace({
         </div>
         <div className="toolbar-right">
           <MoreMenu label="更多对话操作" items={[{ label: '导出当前会话', icon: <Download size={16} />, disabled: !messages.length, onClick: onExport }]} />
-          <button className="secondary-button small" disabled={busy} onClick={onNew}>
-            <Plus size={15} />新会话
-          </button>
           {kind && <button ref={panelToggle} className={`icon-button parameters-sidebar-toggle ${parametersOpen ? 'is-active' : ''}`} type="button" aria-label={parametersOpen ? '收起创作参数' : '展开创作参数'} title={parametersOpen ? '收起创作参数' : '展开创作参数'} aria-expanded={parametersOpen} aria-controls={panelId} onClick={() => changeParameters(!parametersOpen)}>{parametersOpen ? <PanelRightClose size={19} /> : <SlidersHorizontal size={16} />}</button>}
         </div>
       </div>
@@ -170,7 +175,7 @@ export default function ChatWorkspace({
           if (el) setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 100);
         }}
       >
-        {kind ? <MediaWorkspace key={kind} {...media} kind={kind} initialPrompt={input} embedded controller={mediaController} onComposerStateChange={setMediaState} panelHost={panelHost} onPromptSuggestion={prompt => { setInput(prompt); setTimeout(() => { composer.current?.focus(); adjustHeight(composer.current); }, 0); }} /> : !messages.length ? (
+        {kind ? <MediaWorkspace key={kind} {...media} kind={kind} initialPrompt={input} embedded controller={mediaController} onComposerStateChange={setMediaState} panelHost={panelHost} parameterRequest={draftRequest} onPromptSuggestion={prompt => { setInput(prompt); setTimeout(() => { composer.current?.focus(); adjustHeight(composer.current); }, 0); }} /> : !messages.length ? (
           <div className="chat-welcome">
             <div className="welcome-symbol">
               <Companion size={180} animated interactive />
@@ -274,7 +279,10 @@ export default function ChatWorkspace({
             }}
           />
           <div className="composer-bottom">
-            <div className="composer-tools"><MoreMenu label="选择创作方式" className="creation-plus" disabled={mediaLocked || busy} triggerIcon={<Plus size={20} />} items={[{ label: '图片', icon: <Image size={16} />, onClick: () => onModeChange('image') }, { label: '音乐', icon: <Music2 size={16} />, onClick: () => onModeChange('music') }, { label: '视频', icon: <Video size={16} />, onClick: () => onModeChange('video') }]} /><span><Sparkles size={14} />{kind ? `一起创作${modeName}` : '让好奇心带路'}</span></div>
+            <div className="composer-tools">
+              <MoreMenu label="选择创作方式" className="creation-plus" disabled={mediaLocked || busy} triggerIcon={<Plus size={20} />} items={[{ label: '图片', icon: <Image size={16} />, onClick: () => onModeChange('image') }, { label: '音乐', icon: <Music2 size={16} />, onClick: () => onModeChange('music') }, { label: '视频', icon: <Video size={16} />, onClick: () => onModeChange('video') }]} />
+              <span className="composer-tools-hint"><Sparkles size={14} />{kind ? `一起创作${modeName}` : '让好奇心带路'}</span>
+            </div>
             {kind ? <button className="primary-button composer-generate" aria-label={`生成${modeName}`} disabled={busy || mediaLocked || !mediaState.hasInput} onClick={send}>{mediaLocked ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}{mediaLocked ? '正在创作…' : `生成${modeName}`}</button> : busy ? (
               <button className="send-button stop" aria-label="停止生成" onClick={onStop}>
                 <Square size={16} fill="currentColor" />

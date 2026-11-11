@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   CircleAlert,
   Disc3,
@@ -41,10 +41,12 @@ export default function AssetCard({
   onDownloadCover,
   onRetryCover,
   aligning = false,
+  readOnly = false,
 }: {
   asset: Asset;
-  onDelete: (id: string) => void;
-  onRetry: (asset: Asset) => void;
+  readOnly?: boolean;
+  onDelete?: (id: string) => void;
+  onRetry?: (asset: Asset) => void;
   onDownload: (asset: Asset) => void;
   onEdit?: (asset: Asset) => void;
   onAlignLyrics?: (asset: Asset) => void;
@@ -54,8 +56,18 @@ export default function AssetCard({
 }) {
   const url = useAssetURL(asset);
   const [loadError, setLoadError] = useState(false);
+  const [coverLoadError, setCoverLoadError] = useState(false);
+  const hasCover = !!asset.coverUrl && !coverLoadError;
+  useEffect(() => setCoverLoadError(false), [asset.coverUrl]);
   const [loadedResolution, setLoadedResolution] = useState<ImageResolution>();
-  const { activeMedia, isPlaying, play, pause, setIsExpanded } = usePlayer();
+  const { activeMedia, isPlaying, play, pause, setIsExpanded, setIsVideoExpanded, previewVideo, stopVideoPreview, videoPreview } = usePlayer();
+  const previewHost = useRef<HTMLDivElement>(null);
+  const previewTimer = useRef<number | undefined>(undefined);
+  const previewing = asset.kind === 'video' && videoPreview?.media.id === asset.id;
+  const previewingRef = useRef(false);
+  previewingRef.current = previewing;
+  const stopPreviewRef = useRef(stopVideoPreview);
+  stopPreviewRef.current = stopVideoPreview;
 
   useEffect(() => { setLoadError(false); setLoadedResolution(undefined); }, [url]);
   const resolution = loadedResolution || (asset.imageWidth && asset.imageHeight ? { width: asset.imageWidth, height: asset.imageHeight } : undefined);
@@ -65,11 +77,38 @@ export default function AssetCard({
   const isCurrentPlaying = isCurrentActive && isPlaying;
   const Icon = asset.kind === 'image' ? Image : asset.kind === 'video' ? Video : Music2;
 
+  useEffect(() => () => {
+    window.clearTimeout(previewTimer.current);
+    if (previewingRef.current) stopPreviewRef.current();
+  }, []);
+
+  const beginVideoPreview = () => {
+    if (asset.kind !== 'video' || !url) return;
+    if (typeof window !== 'undefined' && !window.matchMedia('(hover: hover)').matches) return;
+    window.clearTimeout(previewTimer.current);
+    previewTimer.current = window.setTimeout(() => {
+      const host = previewHost.current;
+      if (!host) return;
+      previewVideo({
+        id: asset.id,
+        kind: 'video',
+        src: url,
+        title: asset.song?.title || asset.prompt.slice(0, 36) || 'AI 视频',
+        prompt: asset.prompt,
+      }, host);
+    }, 150);
+  };
+  const endVideoPreview = () => {
+    window.clearTimeout(previewTimer.current);
+    if (previewingRef.current) stopVideoPreview();
+  };
+
   const handleMediaToggle = () => {
     if (!url) return;
     if (isCurrentPlaying) {
       pause();
     } else {
+      if (asset.kind === 'video') setIsVideoExpanded(true);
       play({
         id: asset.id,
         kind: asset.kind === 'video' ? 'video' : 'audio',
@@ -117,15 +156,15 @@ export default function AssetCard({
             <CircleAlert size={25} />
             <strong>生成未完成</strong>
             <span>{publicServiceError(asset.error || '生成未完成，请重试。')}</span>
-            <button className="secondary-button" onClick={() => onRetry(asset)}>
+            {!readOnly && onRetry && <button className="secondary-button" onClick={() => onRetry(asset)}>
               <RefreshCw size={14} />重试
-            </button>
+            </button>}
           </div>
         ) : !url || loadError ? (
           <div className="asset-placeholder">
             <Icon size={28} />
             <strong>{loadError ? '媒体链接暂时不可用' : '暂无可预览内容'}</strong>
-            <span>可重试生成，或尝试下载作品</span>
+            <span>{readOnly ? '原文件暂不可用，作品信息仍保留。' : '可重试生成，或尝试下载作品'}</span>
           </div>
         ) : asset.kind === 'image' ? (
           <img src={url} alt={asset.prompt} loading="lazy" onError={() => setLoadError(true)} onLoad={event => {
@@ -133,66 +172,73 @@ export default function AssetCard({
             setLoadedResolution({ width: image.naturalWidth, height: image.naturalHeight });
           }} />
         ) : asset.kind === 'video' ? (
-          <div className="card-video-container" onClick={handleMediaToggle}>
-            <video
-              src={url}
-              preload="metadata"
-              muted
-              playsInline
-              onError={() => setLoadError(true)}
-            />
+          <div className="card-video-container" onClick={handleMediaToggle} onMouseEnter={beginVideoPreview} onMouseLeave={endVideoPreview}>
+            <div className="card-video-poster" aria-hidden="true">
+              <span className="card-video-poster-glow" />
+              <Video size={42} />
+              <span>视频作品</span>
+            </div>
+            <div ref={previewHost} className="card-video-preview" aria-hidden="true" />
+            {previewing && <span className="card-video-preview-badge">静音预览</span>}
             <div className={`card-media-overlay ${isCurrentPlaying ? 'active' : ''}`}>
               <button
                 type="button"
                 className="card-play-trigger-btn"
-                aria-label={isCurrentPlaying ? '暂停' : '在右下角播放'}
-                title={isCurrentPlaying ? '暂停播放' : '右下角悬浮小屏播放'}
+                aria-label={isCurrentPlaying ? '暂停' : '播放视频'}
+                title={isCurrentPlaying ? '暂停播放' : '在播放器中观看'}
               >
                 {isCurrentPlaying ? <Pause size={24} /> : <Play size={24} className="play-icon-offset" />}
               </button>
               {isCurrentPlaying && (
                 <span className="card-playing-indicator">
-                  <span className="playing-pulse-dot" /> 右下角小屏播放中
+                  <span className="playing-pulse-dot" /> 正在播放器播放
                 </span>
               )}
             </div>
           </div>
         ) : (
-          <div className="card-audio-container" onClick={handleMediaToggle}>
-            {asset.coverUrl ? <img className="card-album-cover" src={asset.coverUrl} alt={`${asset.song?.title || '原创音乐'}封面`} /> : <div className={`card-vinyl ${isCurrentPlaying ? 'spinning' : ''}`}>
-              <div className="card-vinyl-groove" />
-              <div className="card-vinyl-label">
-                <Music2 size={24} />
+          <div className={`card-audio-container ${hasCover ? 'has-cover' : 'no-cover'} ${isCurrentPlaying ? 'is-playing' : ''}`} onClick={handleMediaToggle}>
+            {hasCover ? (
+              <img className="card-album-cover" src={asset.coverUrl} alt={`${asset.song?.title || '原创音乐'}封面`} onError={() => setCoverLoadError(true)} />
+            ) : (
+              <div className="card-audio-art" aria-hidden="true">
+                <span className="card-audio-orb" />
+                <span className="card-audio-orb secondary" />
+                <Music2 size={36} className="card-audio-note" />
               </div>
-            </div>}
-
-            {/* Equalizer animation */}
-            <div className={`card-audio-eq ${isCurrentPlaying ? 'active' : ''}`}>
-              <span className="c-eq-1" />
-              <span className="c-eq-2" />
-              <span className="c-eq-3" />
-              <span className="c-eq-4" />
-            </div>
-
-            <div className="card-audio-overlay">
+            )}
+            <div className={`card-media-overlay ${isCurrentPlaying ? 'active' : ''}`}>
               <button
                 type="button"
                 className="card-play-trigger-btn"
                 aria-label={isCurrentPlaying ? '暂停' : '播放'}
-                title={isCurrentPlaying ? '暂停' : '全局悬浮播放'}
+                title={isCurrentPlaying ? '暂停' : '播放'}
               >
-                {isCurrentPlaying ? <Pause size={24} /> : <Play size={24} className="play-icon-offset" />}
+                {isCurrentPlaying ? <Pause size={22} /> : <Play size={22} className="play-icon-offset" />}
               </button>
-              <button
-                type="button"
-                className="card-open-lyrics-btn"
-                onClick={handleExpandLyrics}
-                title="展开动态歌词与完整唱片"
-              >
-                <Disc3 size={13} />
-                <span>歌词 / 唱片</span>
-              </button>
+              {isCurrentPlaying && (
+                <span className="card-playing-indicator music">
+                  <span className="card-audio-eq active" aria-hidden="true">
+                    <span className="c-eq-1" /><span className="c-eq-2" /><span className="c-eq-3" /><span className="c-eq-4" />
+                  </span>
+                  播放中
+                </span>
+              )}
+              {!asset.song?.instrumental && (asset.lyrics || asset.lrc) && (
+                <button
+                  type="button"
+                  className="card-open-lyrics-btn"
+                  onClick={handleExpandLyrics}
+                  title="展开动态歌词"
+                >
+                  <Disc3 size={13} />
+                  <span>歌词</span>
+                </button>
+              )}
             </div>
+            {asset.coverStatus === 'pending' && (
+              <span className="card-cover-pending"><LoaderCircle size={12} className="spin" />封面绘制中</span>
+            )}
           </div>
         )}
 
@@ -207,24 +253,42 @@ export default function AssetCard({
           <div className="image-resolution">{resolution ? `实际尺寸：${resolution.width} × ${resolution.height} 像素` : '实际尺寸：暂未读取'}{asset.options.image_size ? ` · 目标 ${asset.options.image_size}` : ''}</div>
           {resolutionWarning && <div className="image-resolution-warning" role="status">{resolutionWarning}</div>}
         </>}
-        {asset.kind === 'music' && asset.song && (
-          <div className="asset-song-details">
-            <span>{asset.song.instrumental ? '纯音乐' : asset.lrcSource === 'audio' ? '歌词已按音频校准' : '歌词已关联 · 时间待校准'}</span>
-            <details>
-              <summary>查看歌曲段落</summary>
-              <pre>{asset.lyrics || asset.song.sections.map(s => `[${s.type}] ${s.direction}`).join('\n')}</pre>
-            </details>
-          </div>
+        {asset.kind === 'music' ? (
+          <>
+            <div className="music-card-head">
+              <strong className="music-card-title" title={asset.song?.title || asset.prompt}>
+                {asset.song?.title || asset.prompt.slice(0, 40) || '未命名歌曲'}
+              </strong>
+              {asset.song && (
+                <div className="music-card-tags">
+                  <span>{asset.song.instrumental ? '纯音乐' : '人声歌曲'}</span>
+                  {!asset.song.instrumental && asset.lrcSource === 'audio' && <span className="is-ready">歌词已校准</span>}
+                  {!asset.song.instrumental && asset.lyrics && asset.lrcSource !== 'audio' && <span>歌词待校准</span>}
+                  {asset.song.style && <span className="is-style">{asset.song.style.split(/[，,]/)[0]}</span>}
+                </div>
+              )}
+            </div>
+            {asset.song?.title && asset.prompt && (
+              <p className="music-card-prompt" title={asset.prompt}>{asset.prompt}</p>
+            )}
+            {asset.lrcError && <p className="lyric-alignment-error" role="alert">{asset.lrcError}</p>}
+            {asset.coverStatus === 'failed' && (
+              <p className="lyric-alignment-error" role="alert">
+                封面未完成{asset.coverError ? `：${asset.coverError}` : ''}
+                {!readOnly && onRetryCover && <button type="button" className="text-button" onClick={() => onRetryCover(asset)}>重试</button>}
+              </p>
+            )}
+            {aligning && <p className="cover-status" role="status"><LoaderCircle size={12} className="spin" />正在校准歌词…</p>}
+            {asset.song && (
+              <details className="asset-song-details">
+                <summary>查看歌曲段落</summary>
+                <pre>{asset.lyrics || asset.song.sections.map(s => `[${s.type}] ${s.direction}`).join('\n')}</pre>
+              </details>
+            )}
+          </>
+        ) : (
+          <p title={asset.prompt}>{asset.prompt}</p>
         )}
-        {asset.kind === 'music' && asset.lrcError && <p className="lyric-alignment-error" role="alert">{asset.lrcError}</p>}
-        {asset.kind === 'music' && asset.status === 'completed' && asset.coverStatus === 'pending' && <p className="cover-status" role="status"><LoaderCircle size={12} className="spin" />正在绘制歌曲封面…</p>}
-        {asset.kind === 'music' && asset.coverStatus === 'failed' && <p className="lyric-alignment-error" role="alert">封面生成未完成：{asset.coverError} {onRetryCover && <button className="text-button" onClick={() => onRetryCover(asset)}>重试封面</button>}</p>}
-        {asset.kind === 'music' && asset.status === 'completed' && <div className="music-asset-actions">
-          {asset.song && onEdit && <button className="secondary-button small" onClick={() => onEdit(asset)}><Pencil size={13} />编辑后生成</button>}
-          {!asset.song?.instrumental && asset.lyrics && onAlignLyrics && <button className="secondary-button small" disabled={aligning} onClick={() => onAlignLyrics(asset)}>{aligning ? <LoaderCircle size={13} className="spin" /> : <WandSparkles size={13} />}{aligning ? '正在校准歌词…' : '校准歌词'}</button>}
-          {!asset.coverUrl && asset.coverStatus !== 'failed' && onRetryCover && <button className="secondary-button small" disabled={asset.coverStatus === 'pending'} onClick={() => onRetryCover(asset)}>{asset.coverStatus === 'pending' ? <LoaderCircle size={13} className="spin" /> : <Image size={13} />}{asset.coverStatus === 'pending' ? '正在生成封面…' : '生成封面'}</button>}
-        </div>}
-        <p title={asset.song?.title || asset.prompt}>{asset.song?.title || asset.prompt}</p>
         <div className="asset-meta">
           <span>
             {new Date(asset.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })} ·{' '}
@@ -251,7 +315,7 @@ export default function AssetCard({
                 <FileText size={15} />
               </button>
             )}
-            {asset.status === 'completed' && (
+            {asset.status === 'completed' && (!readOnly || url) && (
               <button
                 className="icon-button"
                 aria-label="下载作品"
@@ -261,8 +325,26 @@ export default function AssetCard({
                 <Download size={15} />
               </button>
             )}
-            {asset.status === 'completed' && asset.coverUrl && onDownloadCover && <button className="icon-button" aria-label="下载封面" title="下载封面" onClick={() => onDownloadCover(asset)}><Image size={15} /></button>}
-            <MoreMenu label="更多作品操作" items={[{ label: '删除作品', icon: <Trash2 size={15} />, danger: true, disabled: asset.status === 'pending', onClick: () => onDelete(asset.id) }]} />
+            {asset.status === 'completed' && asset.coverUrl && onDownloadCover && (
+              <button className="icon-button" aria-label="下载封面" title="下载封面" onClick={() => onDownloadCover(asset)}>
+                <Image size={15} />
+              </button>
+            )}
+            {!readOnly && <MoreMenu
+              label="更多作品操作"
+              items={[
+                ...(asset.kind === 'music' && asset.status === 'completed' && asset.song && onEdit
+                  ? [{ label: '编辑后生成', icon: <Pencil size={15} />, onClick: () => onEdit(asset) }]
+                  : []),
+                ...(asset.kind === 'music' && asset.status === 'completed' && !asset.song?.instrumental && asset.lyrics && onAlignLyrics
+                  ? [{ label: aligning ? '正在校准歌词…' : '校准歌词', icon: aligning ? <LoaderCircle size={15} className="spin" /> : <WandSparkles size={15} />, disabled: aligning, onClick: () => onAlignLyrics(asset) }]
+                  : []),
+                ...(asset.kind === 'music' && asset.status === 'completed' && !asset.coverUrl && asset.coverStatus !== 'failed' && onRetryCover
+                  ? [{ label: asset.coverStatus === 'pending' ? '正在生成封面…' : '生成封面', icon: asset.coverStatus === 'pending' ? <LoaderCircle size={15} className="spin" /> : <Image size={15} />, disabled: asset.coverStatus === 'pending', onClick: () => onRetryCover(asset) }]
+                  : []),
+                ...(onDelete ? [{ label: '删除作品', icon: <Trash2 size={15} />, danger: true, disabled: asset.status === 'pending', onClick: () => onDelete(asset.id) }] : []),
+              ]}
+            />}
           </div>
         </div>
       </div>

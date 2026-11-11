@@ -26,8 +26,8 @@ export default function MoreMenu({ label = '更多操作', items, triggerIcon, c
   }, [open]);
   return <><button ref={trigger} type="button" className={`icon-button more-trigger ${className} ${open ? 'is-open' : ''}`} disabled={disabled} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>{triggerIcon || <MoreHorizontal size={18} />}</button>
     {open && createPortal(<div ref={menu} id={id} className="more-menu" role="menu" aria-label={label} style={position} onKeyDown={e => {
-      if (e.key === 'Escape') { e.preventDefault(); dismiss(true); }
-      if (e.key === 'Tab') { e.preventDefault(); dismiss(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(true); }
+      if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); dismiss(true); }
       if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]; const index = buttons.indexOf(document.activeElement as HTMLButtonElement); const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length; buttons[next]?.focus(); }
     }}>{items.map(item => <button type="button" role="menuitem" key={item.label} disabled={item.disabled} className={item.danger ? 'is-danger' : ''} onClick={() => { dismiss(true); item.onClick(); }}>{item.icon}<span>{item.label}</span></button>)}</div>, document.body)}
   </>;

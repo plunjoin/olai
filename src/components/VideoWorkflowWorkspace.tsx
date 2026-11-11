@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, ChevronLeft, Download, Film, Plus, Trash2 } from 'lucide-react';
+import { AlertCircle, ChevronLeft, Download, Film, Play, Plus, Trash2 } from 'lucide-react';
+import { usePlayer } from '../lib/playerContext';
 import WorkflowBoard from './WorkflowBoard';
 import {
-  buildKeyframePrompt,
-  buildMusicPrompt,
-  buildScriptPrompt,
-  buildShotListPrompt,
-  buildVideoPrompt,
   calculateTotalDuration,
   countPendingGenerations,
   createWorkflowProject,
@@ -19,15 +15,11 @@ import {
 } from '../lib/videoWorkflow';
 import { assembleVideo, exportSRT } from '../lib/videoAssembly';
 import { base64Blob, generateAudio, generateImage, generateVideo, mediaOutputs, publicServiceError, request, safeMediaURL, videoContent } from '../lib/api';
-import { OMNI_SEGMENT_DURATION, videoEngineForModel } from '../lib/video';
+import { OMNI_SEGMENT_DURATION, type VideoEngineMode } from '../lib/video';
 import { getAll, put, remove } from '../lib/storage';
 
 interface VideoWorkflowWorkspaceProps {
-  apiKey: string;
-  chatModel: string;
-  imageModel: string;
-  videoModel: string;
-  musicModel: string;
+  videoEngineMode?: VideoEngineMode;
   generationLimit: number;
   onRequestQuota: (kind: 'image' | 'video' | 'music', count: number) => Promise<boolean>;
   onError: (message: string) => void;
@@ -51,11 +43,7 @@ const AI_VIDEO_EXTEND_MAX_SECONDS = parseInt(import.meta.env.AI_VIDEO_EXTEND_MAX
 const MAX_CONCURRENCY = 2;
 
 export default function VideoWorkflowWorkspace({
-  apiKey,
-  chatModel,
-  imageModel,
-  videoModel,
-  musicModel,
+  videoEngineMode = 'chat',
   generationLimit,
   onRequestQuota,
   onError,
@@ -69,6 +57,7 @@ export default function VideoWorkflowWorkspace({
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'failed'>('saved');
   const saveVersion = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  const { play, setIsVideoExpanded } = usePlayer();
 
   // 加载项目列表
   useEffect(() => {
@@ -144,20 +133,7 @@ export default function VideoWorkflowWorkspace({
     abortRef.current = new AbortController();
     
     try {
-      const prompt = buildScriptPrompt(currentProject.idea, currentProject.targetLength || 30, currentProject.elements);
-      const response = await request('chat/completions', apiKey, {
-        method: 'POST',
-        signal: abortRef.current.signal,
-        body: JSON.stringify({
-          model: chatModel,
-          messages: [
-            { role: 'system', content: '你是一位专业的短视频编剧。输出格式严格为 JSON，不要添加任何其他说明文字。' },
-            { role: 'user', content: prompt },
-          ],
-          stream: false,
-        }),
-      });
-      
+      const response = await request('chat/completions', { method: 'POST', signal: abortRef.current.signal, body: JSON.stringify({ action: 'workflow-script', idea: currentProject.idea, targetLength: currentProject.targetLength || 30, elements: currentProject.elements }) });
       const json = await response.json();
       const content = json.choices?.[0]?.message?.content;
       if (!content) throw new Error('未收到编剧输出');
@@ -191,7 +167,7 @@ export default function VideoWorkflowWorkspace({
       setLoadingMessage('');
       abortRef.current = null;
     }
-  }, [currentProject, apiKey, chatModel, saveProject, onError]);
+  }, [currentProject, saveProject, onError]);
 
   // 阶段 2: 生成分镜列表
   const generateShotList = useCallback(async () => {
@@ -202,26 +178,7 @@ export default function VideoWorkflowWorkspace({
     abortRef.current = new AbortController();
     
     try {
-      const prompt = buildShotListPrompt(
-        currentProject.script,
-        currentProject.styleBible,
-        currentProject.targetLength || 30,
-        currentProject.elements
-      );
-      
-      const response = await request('chat/completions', apiKey, {
-        method: 'POST',
-        signal: abortRef.current.signal,
-        body: JSON.stringify({
-          model: chatModel,
-          messages: [
-            { role: 'system', content: '你是一位专业的短片导演。输出格式严格为 JSON 数组，不要添加任何其他说明文字。' },
-            { role: 'user', content: prompt },
-          ],
-          stream: false,
-        }),
-      });
-      
+      const response = await request('chat/completions', { method: 'POST', signal: abortRef.current.signal, body: JSON.stringify({ action: 'workflow-shots', script: currentProject.script, styleBible: currentProject.styleBible, targetLength: currentProject.targetLength || 30, elements: currentProject.elements }) });
       const json = await response.json();
       const content = json.choices?.[0]?.message?.content;
       if (!content) throw new Error('未收到导演输出');
@@ -251,7 +208,7 @@ export default function VideoWorkflowWorkspace({
       setLoadingMessage('');
       abortRef.current = null;
     }
-  }, [currentProject, apiKey, chatModel, saveProject, onError]);
+  }, [currentProject, saveProject, onError]);
 
   // 阶段 3: 生成关键帧
   const generateKeyframes = useCallback(async (regenerateShotId?: string) => {
@@ -288,11 +245,9 @@ export default function VideoWorkflowWorkspace({
         await saveProject({ ...currentProject, shots: updatedShots });
         
         try {
-          const prompt = buildKeyframePrompt(shot, currentProject.styleBible!, currentProject.elements);
+          const context = { action: 'workflow-keyframe', shot, styleBible: currentProject.styleBible, elements: currentProject.elements };
           const response = await generateImage({
-            key: apiKey,
-            model: imageModel,
-            prompt,
+            prompt: '', context,
             imageSize: '1K',
             aspectRatio: '16:9',
             signal: abortRef.current.signal,
@@ -352,7 +307,7 @@ export default function VideoWorkflowWorkspace({
       setLoadingMessage('');
       abortRef.current = null;
     }
-  }, [currentProject, apiKey, imageModel, onRequestQuota, saveProject, onError]);
+  }, [currentProject, onRequestQuota, saveProject, onError]);
 
   // 阶段 4: 生成视频
   const generateVideos = useCallback(async (regenerateShotId?: string) => {
@@ -371,7 +326,7 @@ export default function VideoWorkflowWorkspace({
     }
     
     // 计算实际生成次数（连续长镜头模式）
-    const isOmni = /omni/i.test(videoModel);
+    const isOmni = videoEngineMode === 'task';
     let generationCount = shotsToGenerate.length;
     
     if (currentProject.useContinuousShot && isOmni && AI_VIDEO_OMNI_ASYNC) {
@@ -384,7 +339,7 @@ export default function VideoWorkflowWorkspace({
     
     setLoading(true);
     abortRef.current = new AbortController();
-    const videoMode = videoEngineForModel(videoModel, AI_VIDEO_OMNI_ASYNC);
+    const videoMode = videoEngineMode;
     
     try {
       const updatedShots = [...currentProject.shots];
@@ -411,12 +366,10 @@ export default function VideoWorkflowWorkspace({
             
             try {
               const hasKeyframe = !!shot.keyframeBlob && AI_VIDEO_IMAGE_INPUT && !extendFrom;
-              const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe, currentProject.elements);
+              const context = { action: 'workflow-video', shot, styleBible: currentProject.styleBible, hasKeyframe, elements: currentProject.elements };
               
               const response = await generateVideo({
-                key: apiKey,
-                model: videoModel,
-                prompt,
+                prompt: '', context,
                 options: {
                   aspect_ratio: '16:9',
                   resolution: '720p',
@@ -442,13 +395,13 @@ export default function VideoWorkflowWorkspace({
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 attempts++;
                 
-                const statusResponse = await request(`videos/${json.id}`, apiKey, {
+                const statusResponse = await request(`videos/${json.id}`, {
                   signal: abortRef.current?.signal,
                 });
                 const status = await statusResponse.json();
                 
                 if (status.status === 'completed') {
-                  const blob = await videoContent(json.id, apiKey, abortRef.current?.signal);
+                  const blob = await videoContent(json.id, abortRef.current?.signal);
                   const url = URL.createObjectURL(blob);
                   
                   updatedShots[shotIndex] = {
@@ -513,12 +466,10 @@ export default function VideoWorkflowWorkspace({
               
               try {
                 const hasKeyframe = !!shot.keyframeBlob && AI_VIDEO_IMAGE_INPUT;
-                const prompt = buildVideoPrompt(shot, currentProject.styleBible!, hasKeyframe, currentProject.elements);
+                const context = { action: 'workflow-video', shot, styleBible: currentProject.styleBible, hasKeyframe, elements: currentProject.elements };
                 
                 const response = await generateVideo({
-                  key: apiKey,
-                  model: videoModel,
-                  prompt,
+                  prompt: '', context,
                   options: {
                     aspect_ratio: '16:9',
                     seconds: Math.min(Math.max(shot.duration, 4), 8),
@@ -543,13 +494,13 @@ export default function VideoWorkflowWorkspace({
                     await new Promise(resolve => setTimeout(resolve, 1000));
                     attempts++;
                     
-                    const statusResponse = await request(`videos/${json.id}`, apiKey, {
+                    const statusResponse = await request(`videos/${json.id}`, {
                       signal: abortRef.current?.signal,
                     });
                     const status = await statusResponse.json();
                     
                     if (status.status === 'completed') {
-                      const blob = await videoContent(json.id, apiKey, abortRef.current?.signal);
+                      const blob = await videoContent(json.id, abortRef.current?.signal);
                       const url = URL.createObjectURL(blob);
                       
                       updatedShots[shotIndex] = {
@@ -651,7 +602,7 @@ export default function VideoWorkflowWorkspace({
       setLoadingMessage('');
       abortRef.current = null;
     }
-  }, [currentProject, apiKey, videoModel, onRequestQuota, saveProject, onError]);
+  }, [currentProject, videoEngineMode, onRequestQuota, saveProject, onError]);
 
   // 阶段 5: 生成配乐
   const generateMusicTrack = useCallback(async () => {
@@ -666,12 +617,10 @@ export default function VideoWorkflowWorkspace({
     
     try {
       const totalDuration = calculateTotalDuration(currentProject.shots);
-      const prompt = buildMusicPrompt(currentProject.script, currentProject.styleBible, totalDuration);
+      const context = { action: 'workflow-music', script: currentProject.script, styleBible: currentProject.styleBible, duration: totalDuration };
       
       const response = await generateAudio({
-        key: apiKey,
-        model: musicModel,
-        prompt,
+        prompt: '', context,
         duration: totalDuration,
         signal: abortRef.current.signal,
       });
@@ -727,7 +676,7 @@ export default function VideoWorkflowWorkspace({
       setLoadingMessage('');
       abortRef.current = null;
     }
-  }, [currentProject, apiKey, musicModel, onRequestQuota, saveProject, onError]);
+  }, [currentProject, onRequestQuota, saveProject, onError]);
 
   // 阶段 6: 合成成片
   const assembleFinal = useCallback(async (includeSubtitles: boolean) => {
@@ -850,7 +799,7 @@ export default function VideoWorkflowWorkspace({
   }
 
   const pending = countPendingGenerations(currentProject.shots || []);
-  const isOmni = /omni/i.test(videoModel);
+  const isOmni = videoEngineMode === 'task';
   
   // 计算连续长镜头模式的生成次数
   let continuousGenerations = 0;
@@ -926,7 +875,7 @@ export default function VideoWorkflowWorkspace({
                 共 {currentProject.shots.length} 个镜头，总时长 {calculateTotalDuration(currentProject.shots)} 秒
                 {isOmni && AI_VIDEO_OMNI_ASYNC && (
                   <span className="workflow-note-inline">
-                    （Omni 每段固定 {OMNI_SEGMENT_DURATION} 秒）
+                    （连续镜头每段固定 {OMNI_SEGMENT_DURATION} 秒）
                   </span>
                 )}
               </p>
@@ -1011,7 +960,13 @@ export default function VideoWorkflowWorkspace({
                   <div key={shot.id} className="workflow-video-card">
                     <h4>镜头 {shot.number} ({shot.duration}秒)</h4>
                     {shot.videoUrl && shot.videoStatus === 'completed' && (
-                      <video src={shot.videoUrl} controls />
+                      <button
+                        type="button"
+                        className="workflow-play-media"
+                        onClick={() => { setIsVideoExpanded(true); play({ id: `wf-${currentProject.id}-${shot.id}`, kind: 'video', src: shot.videoUrl!, title: `镜头 ${shot.number} · ${currentProject.title}` }); }}
+                      >
+                        <Play size={16} />播放镜头视频
+                      </button>
                     )}
                     {shot.videoStatus === 'pending' && <p>生成中...</p>}
                     {shot.videoStatus === 'failed' && (
@@ -1048,7 +1003,13 @@ export default function VideoWorkflowWorkspace({
               {currentProject.musicUrl && (
                 <div className="workflow-music">
                   <h4>背景音乐</h4>
-                  <audio src={currentProject.musicUrl} controls />
+                  <button
+                    type="button"
+                    className="workflow-play-media"
+                    onClick={() => play({ id: `wf-music-${currentProject.id}`, kind: 'audio', src: currentProject.musicUrl!, title: `背景音乐 · ${currentProject.title}` })}
+                  >
+                    <Play size={16} />播放背景音乐
+                  </button>
                 </div>
               )}
               
@@ -1080,7 +1041,13 @@ export default function VideoWorkflowWorkspace({
               {currentProject.finalVideoUrl && currentProject.finalVideoStatus === 'completed' && (
                 <div className="workflow-final-video">
                   <h4>成片</h4>
-                  <video src={currentProject.finalVideoUrl} controls />
+                  <button
+                    type="button"
+                    className="workflow-play-media"
+                    onClick={() => { setIsVideoExpanded(true); play({ id: `wf-final-${currentProject.id}`, kind: 'video', src: currentProject.finalVideoUrl!, title: `成片 · ${currentProject.title}` }); }}
+                  >
+                    <Play size={16} />播放成片
+                  </button>
                   <button onClick={downloadFinalVideo} className="workflow-download">
                     <Download size={16} />
                     下载成片
@@ -1100,7 +1067,15 @@ export default function VideoWorkflowWorkspace({
                 {currentProject.shots?.map((shot, i) => (
                   <div key={shot.id} className="workflow-final-shot">
                     <span>镜头 {i + 1}</span>
-                    {shot.videoUrl && <video src={shot.videoUrl} controls />}
+                    {shot.videoUrl && (
+                      <button
+                        type="button"
+                        className="workflow-play-media"
+                        onClick={() => { setIsVideoExpanded(true); play({ id: `wf-final-shot-${currentProject.id}-${shot.id}`, kind: 'video', src: shot.videoUrl!, title: `镜头 ${i + 1} · ${currentProject.title}` }); }}
+                      >
+                        <Play size={15} />播放
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
