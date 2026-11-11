@@ -329,9 +329,17 @@ npm install --omit=dev --include=optional
 
 本地访问无需设置 `SITE_ORIGIN`，服务按请求的实际 Host（含端口）与协议校验 Origin，支持 `localhost:4321`、`127.0.0.1:4321` 和局域网地址，拒绝不同来源。
 
-通过反向代理部署时，设置 `SITE_ORIGIN` 为公开站点的完整 origin，不含路径和末尾斜杠（例如 `https://olai.example.com`）。
+通过反向代理部署时，设置 `SITE_ORIGIN` 为公开站点的完整 origin，不含路径和末尾斜杠（例如 `https://olai.example.com`）。应用自行校验所有变更请求的 `Origin`（[`src/middleware.ts`](src/middleware.ts) 与各接口路由），因此无需在构建时写入域名；Astro 内置的来源校验已关闭，它在反向代理后会把 `Origin` 与适配器归一化后的 `localhost` 地址比较，从而误拒正常请求。
 
 仅当可信代理覆盖 `X-Forwarded-For`、且外部不能直接连接应用时，启用 `TRUST_PROXY=true`。默认拒绝带有未受信任转发 IP 标头的游客生成及登录请求，避免伪造 IP 改变额度。
+
+代理需保留原始 `Host` 并传递 `X-Forwarded-Proto`（`https` 时尤为重要），否则未配置 `SITE_ORIGIN` 时应用无法还原浏览器看到的来源并会拒绝请求：
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
 
 ## 上游接口与模型
 
