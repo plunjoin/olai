@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   addShot,
-  buildKeyframePrompt,
-  buildMusicPrompt,
-  buildScriptPrompt,
-  buildShotListPrompt,
-  buildVideoPrompt,
   calculateTotalDuration,
   createWorkflowProject,
   duplicateShot,
@@ -18,6 +13,7 @@ import {
   updateShot,
   validateShotList,
 } from '../videoWorkflow';
+import { buildKeyframePrompt, buildMusicPrompt, buildScriptPrompt, buildShotListPrompt, buildVideoPrompt } from '../server/workflowPrompts';
 
 describe('videoWorkflow', () => {
   const styleBible: StyleBible = {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { attachElement, editProjectShots, updateProjectElement } from '../workflowEditor';
-import { buildKeyframePrompt, buildScriptPrompt, buildShotListPrompt, buildVideoPrompt, createEmptyShot, createWorkflowProject, moveShot, validateShotList, type VideoWorkflowProject, type WorkflowElement } from '../videoWorkflow';
+import { createEmptyShot, createWorkflowProject, moveShot, validateShotList, type VideoWorkflowProject, type WorkflowElement } from '../videoWorkflow';
+import { buildKeyframePrompt, buildScriptPrompt, buildShotListPrompt, buildVideoPrompt } from '../server/workflowPrompts';
 
 const character: WorkflowElement = { id: 'girl', kind: 'character', name: '小雨', description: '短发，黄色雨衣' };
 const scene: WorkflowElement = { id: 'street', kind: 'scene', name: '老街', description: '雨后霓虹倒影' };

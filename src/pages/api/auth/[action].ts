@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { db, User, eq } from '../../../lib/server/database';
 import { currentUser, endSession, passwordHash, startSession, userId, verifyPassword } from '../../../lib/server/auth';
-import { ClientIPError, clientIP, dailyLimit, hash, sameOrigin } from '../../../lib/server/policy';
+import { ClientIPError, chatDailyLimit, clientIP, dailyLimit, hash, sameOrigin } from '../../../lib/server/policy';
 import { reserve } from '../../../lib/server/quota';
 
 export const prerender = false;
@@ -12,7 +12,12 @@ export const ALL: APIRoute = async context => {
   try {
     if (request.method === 'GET' && action === 'me') {
       const user = await currentUser(context);
-      return Response.json({ user, generationLimit: dailyLimit(!!user) }, { headers: { 'Cache-Control': 'no-store' } });
+      if ((process.env.OSS_ENABLED ?? import.meta.env.OSS_ENABLED) === 'true') {
+        // Establish the HttpOnly device cookie before concurrent media requests.
+        const { mediaIdentity } = await import('../../../lib/server/media');
+        await mediaIdentity(context);
+      }
+      return Response.json({ user, generationLimit: dailyLimit(!!user), chatLimit: chatDailyLimit(!!user), mediaStorage: (process.env.OSS_ENABLED ?? import.meta.env.OSS_ENABLED) === 'true' ? 'oss' : 'local', shortFilm: (process.env.AI_SHORT_FILM ?? import.meta.env.AI_SHORT_FILM) === 'true' }, { headers: { 'Cache-Control': 'no-store' } });
     }
     if (request.method !== 'POST' || !['register', 'login', 'logout'].includes(action || '')) return fail('接口不存在。', 404);
     if (!sameOrigin(request)) return fail('不允许跨站调用。', 403);
@@ -42,7 +47,7 @@ export const ALL: APIRoute = async context => {
       user = { id: found.id, email: found.email };
     }
     await startSession(context, user.id);
-    return Response.json({ user, generationLimit: dailyLimit(true) }, { status: action === 'register' ? 201 : 200, headers: { 'Cache-Control': 'no-store' } });
+    return Response.json({ user, generationLimit: dailyLimit(true), chatLimit: chatDailyLimit(true) }, { status: action === 'register' ? 201 : 200, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (error instanceof ClientIPError) return fail(error.message, 400);
     console.error('Account request failed:', error);

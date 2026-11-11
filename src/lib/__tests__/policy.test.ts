@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clientIP, dailyLimit, dayKey, generationKind, sameOrigin } from '../server/policy';
-import { DEFAULT_SETTINGS } from '../types';
+import { chatConcurrencyLimit, chatDailyLimit, chatRateLimit, clientIP, dailyLimit, dayKey, generationKind, sameOrigin } from '../server/policy';
 
 afterEach(() => vi.unstubAllEnvs());
 describe('daily generation policy', () => {
@@ -16,20 +15,32 @@ describe('daily generation policy', () => {
     expect(dayKey(Date.parse('2026-10-07T15:59:59Z'))).toBe('2026-10-07');
     expect(dayKey(Date.parse('2026-10-07T16:00:00Z'))).toBe('2026-10-08');
   });
-  it('counts native media and aliases, leaves text unlimited, and rejects unknown engines', () => {
-    expect(generationKind('chat/completions', { model: DEFAULT_SETTINGS.imageModel })).toBe('image');
-    expect(generationKind('chat/completions', { model: DEFAULT_SETTINGS.musicModel })).toBe('music');
-    expect(generationKind('chat/completions', { model: DEFAULT_SETTINGS.videoModel })).toBe('video');
-    expect(generationKind('interactions', { model: DEFAULT_SETTINGS.videoModel })).toBe('video');
-    expect(generationKind('chat/completions', { model: DEFAULT_SETTINGS.chatModel })).toBeNull();
-    vi.stubEnv('AI_IMAGE_MODEL', 'gateway-image');
-    expect(generationKind('chat/completions', { model: 'gateway-image' })).toBe('image');
-    vi.stubEnv('AI_VIDEO_MODEL', 'gateway-video');
-    expect(generationKind('chat/completions', { model: 'gateway-video' })).toBe('video');
-    expect(generationKind('images/generations', { model: 'custom-image' })).toBe('image');
-    expect(generationKind('audio/speech', {})).toBe('music');
-    expect(generationKind('videos', {})).toBe('video');
-    expect(() => generationKind('chat/completions', { model: 'unknown' })).toThrow();
+  it('applies chat daily, rate and concurrency limits with defaults and validation', () => {
+    expect(chatDailyLimit(false)).toBe(100); expect(chatDailyLimit(true)).toBe(100);
+    vi.stubEnv('USER_DAILY_CHAT_LIMIT', '5'); expect(chatDailyLimit(true)).toBe(5);
+    vi.stubEnv('GUEST_DAILY_CHAT_LIMIT', '0'); expect(chatDailyLimit(false)).toBe(0);
+    vi.stubEnv('CHAT_RATE_LIMIT', '60'); expect(chatRateLimit()).toBe(60);
+    vi.stubEnv('CHAT_RATE_LIMIT', '0'); expect(chatRateLimit()).toBe(0);
+    vi.stubEnv('CHAT_CONCURRENT_LIMIT', '3'); expect(chatConcurrencyLimit()).toBe(3);
+    vi.stubEnv('CHAT_CONCURRENT_LIMIT', '-2'); expect(() => chatConcurrencyLimit()).toThrow();
+    vi.stubEnv('CHAT_CONCURRENT_LIMIT', 'abc'); expect(() => chatConcurrencyLimit()).toThrow();
+  });
+  it('counts media only by exact public generation routes', () => {
+    expect(generationKind('generate/image', { prompt: 'flowers' })).toBe('image');
+    expect(generationKind('generate/music', { prompt: 'a song' })).toBe('music');
+    expect(generationKind('generate/video', { prompt: 'a film' })).toBe('video');
+  });
+  it.each(['chat', 'compose-song', 'align-lyrics', 'workflow-script', 'workflow-shots'])('classifies text action %s without inferring a model', action => {
+    expect(generationKind('chat/completions', { action })).toBeNull();
+  });
+  it.each(['images/generations', 'audio/speech', 'videos', 'interactions', 'generate/image/extra', 'generate/unknown'])('rejects private or unsupported path %s', path => {
+    expect(() => generationKind(path, { model: 'gemini-3.1-flash-image', response_format: { type: 'image' } })).toThrow();
+  });
+  it.each(['generate-image', 'workflow-keyframe', 'unknown', 42])('rejects unsupported text action %s', action => {
+    expect(() => generationKind('chat/completions', { action })).toThrow();
+  });
+  it('does not accept a model identifier in place of a public text action', () => {
+    expect(() => generationKind('chat/completions', { model: 'lyria-3.5' })).toThrow();
   });
   it('uses the peer IP unless the trusted proxy setting is enabled', () => {
     vi.stubEnv('TRUST_PROXY', 'false');

@@ -1,5 +1,42 @@
-import { describe, expect, it, vi } from 'vitest';
-import { base64Blob, extractImagesFromContent, generateImage, mediaOutputs, publicServiceError, safeMediaURL } from './api';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { base64Blob, chat, extractImagesFromContent, generateImage, mediaOutputs, publicServiceError, request, safeMediaURL } from './api';
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('public API authentication and chat contract', () => {
+  it('uses the session cookie, removes bearer credentials and preserves request options', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({})); vi.stubGlobal('fetch', fetchMock);
+    const signal = new AbortController().signal;
+    await request('generate/image', { method: 'POST', signal, headers: { Authorization: 'Bearer private', 'X-Request-Id': 'request-1' }, body: JSON.stringify({ prompt: 'flowers' }) });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/generate/image');
+    const init = fetchMock.mock.calls[0][1];
+    expect(init).toMatchObject({ method: 'POST', signal, credentials: 'same-origin' });
+    expect(init.headers.has('Authorization')).toBe(false);
+    expect(init.headers.get('Content-Type')).toBe('application/json');
+    expect(init.headers.get('X-Request-Id')).toBe('request-1');
+  });
+
+  it('sends only chat action, temperature and valid conversational messages', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ choices: [{ message: { content: '你好' } }] })); vi.stubGlobal('fetch', fetchMock);
+    const signal = new AbortController().signal;
+    const onText = vi.fn();
+    await chat([
+      { id: '1', role: 'user', content: 'hello' },
+      { id: '2', role: 'assistant', content: '', interrupted: true },
+      { id: '3', role: 'assistant', content: 'failed response', error: 'failed' },
+      { id: '4', role: 'assistant', content: 'hi' },
+    ], .4, signal, onText);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/chat/completions');
+    expect(fetchMock.mock.calls[0][1].signal).toBe(signal);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: 'chat', temperature: .4, stream: true, messages: [{ role: 'user', content: 'hello' }, { role: 'assistant', content: 'hi' }] });
+    expect(onText).toHaveBeenCalledWith('你好');
+  });
+
+  it('retains the HTTP status without leaking raw provider errors', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ error: { message: 'Private provider rejected API key' } }, { status: 503 })));
+    await expect(request('generate/image')).rejects.toMatchObject({ status: 503, message: '创作服务暂时无法完成请求，请重试或检查服务连接。' });
+  });
+});
 
 describe('safeMediaURL', () => {
   it('allows http and https URLs', () => {
@@ -123,9 +160,10 @@ describe('publicServiceError', () => {
     expect(result).not.toContain('gemini');
   });
 
-  it('preserves non-sensitive error messages', () => {
+  it('preserves safe local messages and masks raw provider errors or credential details', () => {
     expect(publicServiceError('网络连接失败')).toBe('网络连接失败');
-    expect(publicServiceError('Invalid API key')).toBe('Invalid API key');
+    expect(publicServiceError('Invalid API key')).toBe('创作服务暂时无法完成请求，请重试或检查服务连接。');
+    expect(publicServiceError('密钥无效')).toBe('创作服务暂时无法完成请求，请重试或检查服务连接。');
   });
 });
 
@@ -140,11 +178,8 @@ describe('generateImage', () => {
 
     try {
       await expect(generateImage({
-        key: 'test',
-        model: 'gemini-3.1-flash-image',
         prompt: 'test prompt',
-        mode: 'upstream',
-      })).rejects.toThrow(/图片专用接口调用失败/);
+      })).rejects.toThrow('创作服务暂时无法完成请求，请重试或检查服务连接。');
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -2,27 +2,32 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { generateImage, mediaOutputs, publicServiceError } from '../api';
 import { imageResolutionWarning, readImageResolution } from '../imageResolution';
 import { generationKind } from '../server/policy';
-import { DEFAULT_SETTINGS } from '../types';
+import { buildGeneration } from '../server/generation';
+import { serverModel } from '../server/aiConfig';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('image resolution', () => {
-  it('sends 4K as an official image output parameter', async () => {
+  it('sends public resolution preferences and builds official 4K output fields on the server', async () => {
+    vi.stubEnv('AI_IMAGE_API_MODE', 'interactions');
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ steps: [] }));
     vi.stubGlobal('fetch', fetchMock);
-    await generateImage({ key: '', model: DEFAULT_SETTINGS.imageModel, prompt: 'Flowers', mode: 'interactions', imageSize: '4K', aspectRatio: '16:9' });
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/interactions');
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    await generateImage({ prompt: 'Flowers', imageSize: '4K', aspectRatio: '16:9' });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/generate/image');
+    const input = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(input).toEqual({ prompt: 'Flowers', imageSize: '4K', aspectRatio: '16:9', reasoningEffort: 'medium' });
+    const built = buildGeneration('generate/image', input);
+    expect(built.path).toBe('interactions');
+    const body = built.payload;
+    expect(body.model).toBe(serverModel('image'));
     expect(body.response_format).toEqual({ type: 'image', image_size: '4K', aspect_ratio: '16:9', delivery: 'inline' });
     expect(body.stream).toBe(false);
     expect(body.store).toBe(false);
     expect(body.generation_config).toBeUndefined();
   });
-  it.each(['auto', '2.35:1'])('keeps 4K for %s without sending an unsupported aspect ratio', async aspectRatio => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({}));
-    vi.stubGlobal('fetch', fetchMock);
-    await generateImage({ key: '', model: DEFAULT_SETTINGS.imageModel, prompt: 'Flowers', mode: 'interactions', imageSize: '4K', aspectRatio });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+  it.each(['auto', '2.35:1'])('keeps 4K for %s without sending an unsupported provider aspect ratio', aspectRatio => {
+    vi.stubEnv('AI_IMAGE_API_MODE', 'interactions');
+    const { payload: body } = buildGeneration('generate/image', { prompt: 'Flowers', imageSize: '4K', aspectRatio });
     expect(body.response_format.image_size).toBe('4K');
     expect(body.response_format.aspect_ratio).toBeUndefined();
     if (aspectRatio !== 'auto') expect(body.input).toContain(aspectRatio);
@@ -30,7 +35,7 @@ describe('image resolution', () => {
   it('reports a disabled official backend without silently generating a lower resolution', async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: { message: '官方 Gemini 后端未启用，请配置 gemini_api 或 WEB2API_GEMINI_API_KEY' } }, { status: 503 }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(generateImage({ key: '', model: DEFAULT_SETTINGS.imageModel, prompt: 'Flowers', mode: 'interactions', imageSize: '4K' })).rejects.toThrow('官方媒体生成接口尚未启用');
+    await expect(generateImage({ prompt: 'Flowers', imageSize: '4K' })).rejects.toThrow('创作服务暂时无法完成请求');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(publicServiceError('官方 Gemini 后端未启用')).not.toContain('Gemini');
   });
@@ -43,12 +48,10 @@ describe('image resolution', () => {
       { base64: undefined, url: 'https://example.com/full.jpg', mime: 'image/jpeg' },
     ]);
   });
-  it('counts official image requests and rejects other engines on the image route', () => {
-    expect(generationKind('interactions', { model: DEFAULT_SETTINGS.imageModel })).toBe('image');
-    vi.stubEnv('AI_IMAGE_MODEL', 'gemini-3.1-flash-image');
-    expect(generationKind('interactions', { model: 'gemini-3.1-flash-image' })).toBe('image');
-    expect(() => generationKind('interactions', { model: DEFAULT_SETTINGS.chatModel })).toThrow();
-    expect(() => generationKind('interactions', { model: 'unknown' })).toThrow();
+  it('counts image requests by the public route, never by a provider format or model', () => {
+    expect(generationKind('generate/image', { prompt: 'Flowers' })).toBe('image');
+    expect(() => generationKind('interactions', { response_format: { type: 'image' }, model: serverModel('image') })).toThrow();
+    expect(() => generationKind('images/generations', { prompt: 'Flowers' })).toThrow();
   });
   it('flags 1K output requested at 4K and accepts landscape, portrait and UHD images', () => {
     expect(imageResolutionWarning({ width: 1024, height: 576 }, '4K')).toContain('未达到所选 4K');

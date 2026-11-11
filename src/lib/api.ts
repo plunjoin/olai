@@ -1,23 +1,22 @@
 import type { AudioEngineMode, ImageEngineMode, Message } from './types';
 import { base64ToBytes, isRiffWav, parseAudioDataUri } from './audio';
-import { songPrompt } from './music';
-import { videoEngineForModel, type VideoEngineMode } from './video';
+import type { VideoEngineMode } from './video';
+import { registerStoredBlob } from './mediaStorage';
 
 export function publicServiceError(message: string, status?: number): string {
-  if (/官方 Gemini 后端未启用|gemini_api.*(?:disabled|not enabled)/i.test(message)) return '官方媒体生成接口尚未启用，请由服务提供方启用官方后端后再试。';
   if (status === 429 || /rate[_\s-]?limit|quota|额度|请求.*(?:受限|过多|频繁)/i.test(message)) {
     return '上游创作服务额度已用完或请求受限，请稍后重试。';
   }
-  return /gemini|lyria|veo|nano[\s-]?banana|omini|\bmodel\b|模型/i.test(message)
+  return /[A-Za-z]{3}|模型|密钥/i.test(message)
     ? '创作服务暂时无法完成请求，请重试或检查服务连接。'
     : message;
 }
 
-export async function request(path: string, key: string, init: RequestInit = {}) {
+export async function request(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  if (key) headers.set('Authorization', `Bearer ${key}`);
+  headers.delete('Authorization');
   if (init.body) headers.set('Content-Type', 'application/json');
-  const response = await fetch(`/api/${path}`, { ...init, headers });
+  const response = await fetch(`/api/${path}`, { ...init, headers, credentials: 'same-origin' });
   if (!response.ok) {
     let message = `请求失败（${response.status}）`;
     try { const body = await response.json(); message = body.error?.message || body.message || message; } catch { /* Keep HTTP error. */ }
@@ -44,7 +43,7 @@ export async function consumeSSE(body: ReadableStream<Uint8Array>, onText: (text
     if (data.trim() === '[DONE]') { doneEvent = true; return; }
     let parsed;
     try { parsed = JSON.parse(data); } catch { throw new Error('服务返回了无法解析的流式数据，请重试。'); }
-    if (parsed.error) throw new Error(parsed.error.message || '生成失败');
+    if (parsed.error) throw new Error(publicServiceError(parsed.error.message || '生成失败'));
     const delta = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content;
     if (typeof delta === 'string') emit(delta);
     else if (Array.isArray(delta)) for (const part of delta) if (part.text) emit(part.text);
@@ -63,12 +62,9 @@ export async function consumeSSE(body: ReadableStream<Uint8Array>, onText: (text
     }
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-export async function chat(key: string, model: string, messages: Message[], system: string, temperature: number, signal: AbortSignal, onText: (text: string) => void) {
-  const response = await request('chat/completions', key, { method: 'POST', signal,
-    body: JSON.stringify({ model, stream: true, temperature, messages: [
-      ...(system ? [{ role: 'system', content: system }] : []),
-      ...messages.filter(m => m.content && !m.error).map(({ role, content }) => ({ role, content })),
-    ] }),
+export async function chat(messages: Message[], temperature: number, signal: AbortSignal, onText: (text: string) => void) {
+  const response = await request('chat/completions', { method: 'POST', signal,
+    body: JSON.stringify({ action: 'chat', stream: true, temperature, messages: messages.filter(m => m.content && !m.error).map(({role,content}) => ({role,content})) }),
   });
   if (response.headers.get('content-type')?.includes('application/json')) {
     const json = await response.json();
@@ -291,301 +287,42 @@ export function mediaOutputs(json: any, kind: 'image' | 'music' | 'video'): { ur
 }
 
 export interface GenerateImageOptions {
-  key: string;
-  model: string;
-  prompt: string;
-  mode?: ImageEngineMode;
-  size?: string;
-  aspectRatio?: string;
-  imageSize?: string;
-  reasoningEffort?: string;
-  n?: number;
-  signal?: AbortSignal;
+  prompt: string; mode?: ImageEngineMode; size?: string; aspectRatio?: string; imageSize?: string;
+  reasoningEffort?: string; n?: number; signal?: AbortSignal; context?: Record<string, unknown>;
 }
-
-/**
- * 图像生成调度中心：支持 native 聊天接口与 upstream 专用透传接口
- */
-export async function generateImage({
-  key,
-  model,
-  prompt,
-  mode = 'auto',
-  size,
-  aspectRatio = 'auto',
-  imageSize = '1K',
-  reasoningEffort = 'medium',
-  n = 1,
-  signal,
-}: GenerateImageOptions): Promise<Response> {
-  if (mode === 'interactions') {
-    const supportedRatios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', '1:8', '8:1', '1:4', '4:1'];
-    return request('interactions', key, {
-      method: 'POST', signal,
-      body: JSON.stringify({
-        model,
-        input: `${prompt}\n画面比例：${aspectRatio === 'auto' ? '自动，根据描述构图' : aspectRatio}。联想等级：${reasoningEffort}。只生成图片，不输出文字说明。`,
-        response_format: { type: 'image', image_size: imageSize, delivery: 'inline',
-          ...(supportedRatios.includes(aspectRatio) ? { aspect_ratio: aspectRatio } : {}),
-        },
-        stream: false,
-        store: false,
-      }),
-    });
-  }
-  const isUpstreamExplicit = mode === 'upstream';
-  const isNativeExplicit = mode === 'native';
-
-  const callNative = () => {
-    const maxTokens = imageSize === '4K' ? 8192 : imageSize === '2K' ? 4096 : 2048;
-    return request('chat/completions', key, {
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: `${prompt}\n画面比例：${aspectRatio === 'auto' ? '自动，根据描述构图' : aspectRatio}。联想等级：${reasoningEffort}。只生成图片，不输出文字说明。` }],
-        stream: false,
-        image_size: imageSize,
-        max_tokens: maxTokens,
-      }),
-    });
-  };
-
-  const callUpstream = () =>
-    request('images/generations', key, {
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
-        model,
-        prompt: `${prompt}\n画面比例：${aspectRatio === 'auto' ? '自动' : aspectRatio}。画质：${imageSize}。联想等级：${reasoningEffort}。`,
-        n,
-        size,
-        response_format: 'b64_json',
-      }),
-    });
-
-  if (isUpstreamExplicit) {
-    try {
-      return await callUpstream();
-    } catch (err: any) {
-      if (err?.status === 502 || String(err?.message || '').includes('502')) {
-        throw new Error('图片专用接口调用失败，请检查服务是否启用透传并支持图片生成。');
-      }
-      throw err;
-    }
-  }
-
-  if (isNativeExplicit) {
-    return await callNative();
-  }
-
-  // 自动模式 (auto)
-  // 如果是典型的非 Gemini 原生模型（如 DALL-E 或 Flux 系列），优先尝试透传
-  const isUpstreamFirst = /^(dall-e|flux|sd|stable-diffusion)/i.test(model);
-  if (isUpstreamFirst) {
-    try {
-      return await callUpstream();
-    } catch (err: any) {
-      if (err?.status === 502 || err?.status === 404 || String(err?.message || '').includes('502')) {
-        return await callNative();
-      }
-      throw err;
-    }
-  }
-
-  // 默认（包括 gemini-*-image 系列模型）优先使用原生模式 (POST /v1/chat/completions)
-  try {
-    return await callNative();
-  } catch (err: any) {
-    if (err?.status === 404) {
-      return await callUpstream();
-    }
-    throw err;
-  }
+export function generateImage({ prompt, mode, size, aspectRatio = 'auto', imageSize = '1K', reasoningEffort = 'medium', signal, context }: GenerateImageOptions): Promise<Response> {
+  return request('generate/image', { method: 'POST', signal, body: JSON.stringify({ prompt, mode, size, aspectRatio, imageSize, reasoningEffort, ...context }) });
 }
-
 export interface GenerateAudioOptions {
-  key: string;
-  model: string;
-  prompt: string;
-  mode?: AudioEngineMode;
-  musicPath?: string;
-  voice?: string;
-  speed?: number;
-  responseFormat?: string;
-  extra?: Record<string, any>;
-  duration?: number;
-  song?: import('./types').SongDraft;
-  signal?: AbortSignal;
+  prompt: string; mode?: AudioEngineMode; musicPath?: string; voice?: string; speed?: number;
+  responseFormat?: string; extra?: Record<string, unknown>; duration?: number; song?: import('./types').SongDraft;
+  signal?: AbortSignal; context?: Record<string, unknown>;
 }
-
-/**
- * 音频生成调度中心：支持 native 聊天接口与 upstream 专用文本转语音透传接口
- */
-export async function generateAudio({
-  key,
-  model,
-  prompt,
-  mode = 'auto',
-  musicPath = 'speech',
-  voice = 'alloy',
-  speed = 1.0,
-  responseFormat = 'mp3',
-  extra = {},
-  duration,
-  song,
-  signal,
-}: GenerateAudioOptions): Promise<Response> {
-  const isUpstreamExplicit = mode === 'upstream';
-  const isNativeExplicit = mode === 'native';
-
-  const callNative = () =>
-    request('chat/completions', key, {
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
-        model,
-        messages: [{
-          role: 'user',
-          content: `${song ? songPrompt(song) : prompt}${duration !== undefined ? `\nTarget duration: ${duration} seconds.` : ''}\nReturn the generated audio.`,
-        }],
-        stream: false,
-      }),
-    });
-
-  const callUpstream = () =>
-    request(`audio/${musicPath || 'speech'}`, key, {
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
-        ...extra,
-        model,
-        input: song ? songPrompt(song) : prompt,
-        voice, speed,
-        response_format: responseFormat,
-      }),
-    });
-
-  if (isUpstreamExplicit) {
-    try {
-      return await callUpstream();
-    } catch (err: any) {
-      if (err?.status === 502 || String(err?.message || '').includes('502')) {
-        throw new Error('语音专用接口调用失败，请检查服务是否启用透传并支持语音生成。');
-      }
-      throw err;
-    }
-  }
-
-  if (isNativeExplicit) {
-    return await callNative();
-  }
-
-  // 自动模式 (auto)
-  // 如果是典型的上游专用语音模型（如 tts-1, tts-1-hd, speech-* 等），优先尝试 upstream 透传
-  const isUpstreamFirst = /^(tts-|speech-)/i.test(model);
-  if (isUpstreamFirst) {
-    try {
-      return await callUpstream();
-    } catch (err: any) {
-      if (err?.status === 502 || err?.status === 404 || String(err?.message || '').includes('502')) {
-        return await callNative();
-      }
-      throw err;
-    }
-  }
-
-  // A native generation failure does not imply that a passthrough music API exists.
-  return callNative();
+export function generateAudio({ prompt, duration, song, voice, speed, responseFormat, signal, context }: GenerateAudioOptions): Promise<Response> {
+  return request('generate/music', { method: 'POST', signal, body: JSON.stringify({ prompt, duration, song, voice, speed, responseFormat, ...context }) });
 }
-
-export async function generateVideo({ key, model, prompt, options, signal, mode = videoEngineForModel(model), inputImage, extendFrom }: {
-  key: string; 
-  model: string; 
-  prompt: string; 
-  options: Record<string, string | number>; 
-  signal?: AbortSignal; 
-  mode?: VideoEngineMode;
-  inputImage?: Blob; // 关键帧图片（图生视频）
-  extendFrom?: string; // 延续视频 ID（连续长镜头）
+export async function generateVideo({ prompt, options, signal, inputImage, extendFrom, context }: {
+  prompt: string; options: Record<string, string | number>; signal?: AbortSignal; mode?: VideoEngineMode;
+  inputImage?: Blob; extendFrom?: string; context?: Record<string, unknown>;
 }): Promise<Response> {
-  if (mode === 'chat') {
-    const seconds = Number(options.seconds ?? 4);
-    if (!Number.isInteger(seconds) || seconds < 3 || seconds > 10) throw new Error('当前视频生成支持 3–10 秒，请调整时长后重试。');
-    return request('chat/completions', key, { method: 'POST', signal, body: JSON.stringify({
-      model,
-      messages: [{ role: 'user', content: `请根据以下描述生成视频，返回生成的视频文件或视频链接。\n${prompt}\n目标时长：${seconds} 秒。\n画面比例：${options.aspect_ratio || '16:9'}。\n目标画质：${String(options.resolution || '720p').toUpperCase()}。${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}` }],
-      stream: false,
-      resolution: String(options.resolution || '720p').toLowerCase(),
-    }) });
-  }
-  
-  // Task 模式（Veo 或 Omni async）
-  const resolution = String(options.resolution || '720p').toLowerCase();
-  const aspectRatio = String(options.aspect_ratio || '16:9');
-  const isPortrait = aspectRatio === '9:16';
-  
-  // 确定尺寸
-  let size: string;
-  if (resolution === '4k') {
-    size = isPortrait ? '2160x3840' : '3840x2160';
-  } else if (resolution === '1080p') {
-    size = isPortrait ? '1080x1920' : '1920x1080';
-  } else if (resolution === '360p') {
-    size = isPortrait ? '360x640' : '640x360';
-  } else {
-    size = isPortrait ? '720x1280' : '1280x720';
-  }
-  
-  const body: any = {
-    model,
-    prompt: extendFrom ? `Extend this video. ${prompt}` : `${prompt}${options.reasoning_effort ? `\n创意丰富程度：${options.reasoning_effort}。` : ''}`,
-    size,
-  };
-  
-  // Veo 需要 seconds 参数
-  if (/^veo[-.]/i.test(model)) {
-    let seconds = Number(options.seconds ?? 4);
-    if (resolution === '4k' && seconds < 8) {
-      seconds = 8;
-    }
-    if (!Number.isInteger(seconds) || seconds < 4 || seconds > 8) {
-      throw new Error('Veo 视频生成支持 4–8 秒，4K 需要 8 秒，请调整时长后重试。');
-    }
-    body.seconds = seconds;
-  }
-  // Omni async 模式不需要 seconds（固定 ~10 秒/段）
-  
-  // 图生视频：首帧参考
+  let inputReference: string | undefined;
   if (inputImage) {
-    const reader = new FileReader();
-    const base64Promise = new Promise<string>((resolve, reject) => {
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(inputImage);
-    });
-    body.input_reference = await base64Promise;
+    const bytes = new Uint8Array(await inputImage.arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 32768) binary += String.fromCharCode(...bytes.subarray(i, i + 32768));
+    inputReference = btoa(binary);
   }
-  
-  // 延续视频
-  if (extendFrom) {
-    body.extend_from = extendFrom;
-  }
-  
-  return request('videos', key, { method: 'POST', signal, body: JSON.stringify(body) });
+  return request('generate/video', { method: 'POST', signal, body: JSON.stringify({ prompt, options, inputReference, extendFrom, ...context }) });
 }
-
-export async function videoContent(id: string, key: string, signal?: AbortSignal): Promise<Blob> {
-  const response = await request(`videos/${encodeURIComponent(id)}/content`, key, { signal });
+export async function videoContent(id: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await request(`videos/${encodeURIComponent(id)}/content`, { signal });
   const mime = response.headers.get('content-type') || '';
   if (!mime.startsWith('video/') && !mime.startsWith('application/octet-stream')) throw new Error('服务未返回可播放的视频文件。');
   const blob = await response.blob();
   if (!blob.size) throw new Error('视频内容为空。');
-  return mime.startsWith('video/') ? blob : new Blob([blob], { type: 'video/mp4' });
+  const result = mime.startsWith('video/') ? blob : new Blob([blob], { type: 'video/mp4' });
+  registerStoredBlob(result, response.headers.get('x-olai-media-url'));
+  return result;
 }
 
 export function safeMediaURL(url: string) {
