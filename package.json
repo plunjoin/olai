@@ -21,6 +21,7 @@
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
     "@libsql/client": "^0.18.0",
+    "ali-oss": "^6.23.0",
     "astro": "^5.13.0",
     "dompurify": "^3.2.6",
     "dotenv": "^18.0.6",

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // Keep the existing names and types so Astro DB files can be opened in place.
 export const User = sqliteTable('User', {
@@ -24,3 +24,9 @@ export const DailyUsage = sqliteTable('DailyUsage', {
 export const VideoJob = sqliteTable('VideoJob', {
   id: text('id').primaryKey(), owner: text('owner').notNull(), createdAt: integer('createdAt').notNull(),
 });
+export const MediaObject = sqliteTable('MediaObject', {
+  id: text('id').primaryKey(), objectKey: text('objectKey').notNull().unique(),
+  owner: text('owner').notNull(), attachmentId: text('attachmentId').notNull(),
+  mime: text('mime').notNull(), size: integer('size').notNull(), sha256: text('sha256').notNull(),
+  createdAt: integer('createdAt').notNull(),
+}, table => [uniqueIndex('MediaObject_identity_idx').on(table.owner, table.attachmentId, table.sha256, table.mime)]);

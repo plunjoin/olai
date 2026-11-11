@@ -2,6 +2,9 @@ import type { APIRoute } from 'astro';
 import { db, StudioRecord, RecordChunk, VideoJob, eq, and, asc } from '../../../lib/server/database';
 import { currentUser } from '../../../lib/server/auth';
 import { clientIP, hash, sameOrigin } from '../../../lib/server/policy';
+import { scrubRecordPrivacy } from '../../../lib/recordPrivacy';
+import { privateValues, redactText } from '../../../lib/server/publicResponse';
+import { ossEnabled } from '../../../lib/server/oss';
 
 export const prerender = false;
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -62,20 +65,55 @@ function recordError(value: any, store: string): string | null {
 export const ALL: APIRoute = async context => {
   const { request, params, url } = context;
   const store = params.store;
-  if (!allowedStores().includes(store || '') || !['GET', 'PUT', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
+  if (!allowedStores().includes(store || '') || !['GET', 'PUT', 'POST', 'DELETE'].includes(request.method)) return fail('接口不存在。', 404);
   if (request.method !== 'GET' && !sameOrigin(request)) return fail('不允许跨站调用。', 403);
   try {
     const user = await currentUser(context);
     if (!user) return fail('登录已过期，请重新登录后保存。', 401);
     if (request.headers.get('x-olai-user') !== user.id) return fail('账号已切换，请刷新页面后继续。', 409);
     const owned = and(eq(StudioRecord.userId, user.id), eq(StudioRecord.store, store!));
-    if (request.method === 'GET') {
+    const secrets = privateValues();
+    const scrubRecord = <T,>(value: T) => scrubRecordPrivacy(value, text => redactText(text, secrets));
+    if (request.method === 'GET' || request.method === 'POST') {
+      if (request.method === 'POST' && !ossEnabled()) return fail('媒体云存储尚未启用。', 503);
       const records = await db.select().from(StudioRecord).where(owned);
       const chunks = await db.select({ recordKey: RecordChunk.recordKey, data: RecordChunk.data }).from(RecordChunk)
         .innerJoin(StudioRecord, eq(RecordChunk.recordKey, StudioRecord.key)).where(owned).orderBy(asc(RecordChunk.position));
       const bodies = new Map<string, string[]>();
       for (const chunk of chunks) { const parts = bodies.get(chunk.recordKey) || []; parts.push(chunk.data); bodies.set(chunk.recordKey, parts); }
-      return Response.json({ records: records.map(record => JSON.parse(record.data || bodies.get(record.key)?.join('') || '{}')) }, { headers: { 'Cache-Control': 'no-store' } });
+      if (request.method === 'POST') {
+        const { mediaIdentity, reserveMediaUpload } = await import('../../../lib/server/media');
+        const { persistServerRecordMedia } = await import('../../../lib/server/recordMedia');
+        const identity = await mediaIdentity(context);
+        await reserveMediaUpload(identity);
+        const failures: string[] = []; const migratedIds: string[] = []; let migrated = 0;
+        for (const record of records) {
+          try {
+            const value = scrubRecord(JSON.parse(record.data || bodies.get(record.key)?.join('') || '{}'));
+            const updated = JSON.stringify(await persistServerRecordMedia(value, identity));
+            if (updated === JSON.stringify(value)) continue;
+            if (Buffer.byteLength(updated) > MAX_BYTES) throw new Error();
+            await db.transaction(async tx => {
+              // A migration must not replace edits made in another tab while
+              // a large upload was in flight. Retry from the newest revision.
+              const written = await tx.update(StudioRecord).set({ data: updated, updatedAt: Date.now() })
+                .where(and(owned, eq(StudioRecord.key, record.key), eq(StudioRecord.updatedAt, record.updatedAt))).returning({ key: StudioRecord.key });
+              if (!written.length) throw new Error();
+              await tx.delete(RecordChunk).where(eq(RecordChunk.recordKey, record.key));
+            });
+            migrated++; migratedIds.push(record.recordId);
+          } catch { failures.push(`记录「${record.recordId}」的附件尚未迁移，原始记录已保留，请稍后重试。`); }
+        }
+        return Response.json({ migrated, migratedIds, failures }, { headers: { 'Cache-Control': 'no-store' } });
+      }
+      let output = records.map(record => scrubRecord(JSON.parse(record.data || bodies.get(record.key)?.join('') || '{}')));
+      if (ossEnabled()) {
+        const { mediaIdentity } = await import('../../../lib/server/media');
+        const { publicRecordMedia } = await import('../../../lib/server/recordMedia');
+        const identity = await mediaIdentity(context);
+        output = output.map(value => publicRecordMedia(value, identity));
+      }
+      return Response.json({ records: output }, { headers: { 'Cache-Control': 'no-store' } });
     }
     if (request.method === 'DELETE') {
       const id = url.searchParams.get('id');
@@ -90,22 +128,37 @@ export const ALL: APIRoute = async context => {
     const raw = await readBody(request);
     if (raw === null) return fail('单条云端记录不能超过 64 MB，请下载较大的作品备份。', 413);
     let value;
-    try { value = JSON.parse(raw); } catch { return fail('记录格式无效。', 400); }
+    try { value = scrubRecord(JSON.parse(raw)); } catch { return fail('记录格式无效。', 400); }
     const validationError = recordError(value, store!);
     if (validationError) {
       console.warn('Record validation failed:', { store, reason: validationError });
       return fail(validationError, 400);
     }
+    if (ossEnabled()) {
+      if (url.searchParams.get('import') === 'guest') {
+        const key = hash(`${user.id}:${store}:${value.id}`);
+        const [existing] = await db.select().from(StudioRecord).where(and(owned, eq(StudioRecord.key, key))).limit(1);
+        // No media transfer/ownership mutation for an already imported record.
+        // Preserve newer cloud edits and make interrupted imports retry-safe.
+        if (existing) return Response.json({ ok: true, existing: true });
+      }
+      const { mediaIdentity, reserveMediaUpload } = await import('../../../lib/server/media');
+      const { persistServerRecordMedia } = await import('../../../lib/server/recordMedia');
+      const identity = await mediaIdentity(context);
+      await reserveMediaUpload(identity);
+      value = await persistServerRecordMedia(value, identity);
+    }
     const key = hash(`${user.id}:${store}:${value.id}`);
-    const data = raw.length <= CHUNK_SIZE ? raw : '';
+    const serialized = JSON.stringify(value);
+    const data = serialized.length <= CHUNK_SIZE ? serialized : '';
     const record = { key, userId: user.id, store: store!, recordId: value.id, data, updatedAt: Date.now() };
     const chunks: { id: string; recordKey: string; position: number; data: string }[] = [];
-    if (!data) for (let start = 0; start < raw.length;) {
-      let end = Math.min(start + CHUNK_SIZE, raw.length);
+    if (!data) for (let start = 0; start < serialized.length;) {
+      let end = Math.min(start + CHUNK_SIZE, serialized.length);
       // Preserve UTF-16 surrogate pairs when a boundary crosses an emoji.
-      if (end < raw.length && /[\uD800-\uDBFF]/.test(raw[end - 1])) end--;
+      if (end < serialized.length && /[\uD800-\uDBFF]/.test(serialized[end - 1])) end--;
       const position = chunks.length;
-      chunks.push({ id: `${key}:${position}`, recordKey: key, position, data: raw.slice(start, end) });
+      chunks.push({ id: `${key}:${position}`, recordKey: key, position, data: serialized.slice(start, end) });
       start = end;
     }
     if (url.searchParams.get('import') === 'guest') {
@@ -132,8 +185,9 @@ export const ALL: APIRoute = async context => {
     ] as const;
     await db.batch(writes);
     return Response.json({ ok: true });
-  } catch (error) {
-    console.error('Record request failed:', error);
+  } catch {
+    // Database errors may contain serialized record parameters. Never log them.
+    console.error('Record request failed.');
     return fail('云端记录暂时无法读取或保存，请稍后重试。', 503);
   }
 };

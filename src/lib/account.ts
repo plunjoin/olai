@@ -1,5 +1,5 @@
 export interface Account { id: string; email: string }
-export interface AccountState { user: Account | null; generationLimit: number }
+export interface AccountState { user: Account | null; generationLimit: number; chatLimit?: number; mediaStorage?: 'oss' | 'local'; shortFilm?: boolean }
 export async function accountRequest(action: 'me' | 'login' | 'register' | 'logout', input?: { email: string; password: string }): Promise<AccountState> {
   const response = await fetch(`/api/auth/${action}`, { credentials: 'same-origin',
     ...(action === 'me' ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input || {}) }),
@@ -10,7 +10,7 @@ export async function accountRequest(action: 'me' | 'login' | 'register' | 'logo
   let data;
   try { data = await response.json(); } catch { throw new Error('账号接口返回的数据格式无效，请检查服务配置。'); }
   if (!response.ok) throw new Error(data?.error?.message || '账号服务暂不可用。');
-  if (!data || !Object.hasOwn(data, 'user') || (data.user !== null && (!data.user || typeof data.user.id !== 'string' || typeof data.user.email !== 'string')) || (action !== 'logout' && !Number.isSafeInteger(data.generationLimit))) {
+  if (!data || !Object.hasOwn(data, 'user') || (data.user !== null && (!data.user || typeof data.user.id !== 'string' || typeof data.user.email !== 'string')) || (action !== 'logout' && !Number.isSafeInteger(data.generationLimit)) || (data.chatLimit !== undefined && !Number.isSafeInteger(data.chatLimit))) {
     throw new Error('账号接口返回的数据格式无效，请检查服务配置。');
   }
   return data;

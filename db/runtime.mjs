@@ -33,6 +33,8 @@ const schema = [
   'CREATE INDEX IF NOT EXISTS "RecordChunk_position_recordKey_idx" ON "RecordChunk" ("position", "recordKey")',
   'CREATE TABLE IF NOT EXISTS "DailyUsage" ("key" TEXT PRIMARY KEY, "count" INTEGER NOT NULL, "expiresAt" INTEGER NOT NULL)',
   'CREATE TABLE IF NOT EXISTS "VideoJob" ("id" TEXT PRIMARY KEY, "owner" TEXT NOT NULL, "createdAt" INTEGER NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS "MediaObject" ("id" TEXT PRIMARY KEY, "objectKey" TEXT NOT NULL UNIQUE, "owner" TEXT NOT NULL, "attachmentId" TEXT NOT NULL, "mime" TEXT NOT NULL, "size" INTEGER NOT NULL, "sha256" TEXT NOT NULL, "createdAt" INTEGER NOT NULL)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS "MediaObject_identity_idx" ON "MediaObject" ("owner", "attachmentId", "sha256", "mime")',
 ];
 
 export async function initializeDatabase(options = {}) {
@@ -42,6 +44,10 @@ export async function initializeDatabase(options = {}) {
     if (local) {
       await client.execute('PRAGMA busy_timeout = 10000');
       await client.execute('PRAGMA journal_mode = WAL');
+      // WAL keeps the database consistent without an fsync per commit. Media
+      // streaming charges traffic as chunks arrive, and FULL sync turned every
+      // commit into a disk wait (~24ms on a slow volume), throttling downloads.
+      await client.execute('PRAGMA synchronous = NORMAL');
     }
     await client.execute('PRAGMA foreign_keys = ON');
     await client.batch(schema, 'write');
