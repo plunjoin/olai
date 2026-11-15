@@ -1,0 +1,132 @@
+/* Reserved /download page: store listing landing, links filled in after launch. */
+
+.download-body {
+  min-height: 100vh;
+  background: var(--bg-page, #f6f8fc);
+  color: var(--text-primary);
+}
+
+.download-page {
+  padding: 28px 42px 40px;
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.download-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 36px;
+  flex-wrap: wrap;
+}
+
+.download-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.download-brand small {
+  display: block;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.download-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 13px;
+}
+
+.download-nav a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.download-nav a:hover {
+  color: var(--text-primary);
+}
+
+.download-intro {
+  margin-bottom: 28px;
+}
+
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin: 8px 0 48px;
+}
+
+.download-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 220px;
+  padding: 22px 22px 20px;
+  border-radius: 22px;
+  background: var(--bg-surface, #fff);
+  border: 1px solid rgba(34, 44, 81, 0.06);
+  box-shadow: 0 1px 2px rgba(34, 44, 81, 0.04), 0 18px 40px -30px rgba(34, 44, 81, 0.5);
+}
+
+.download-card h2 {
+  margin: 8px 0 0;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.download-card p {
+  margin: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.download-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--bg-subtle, #eef2f7);
+  color: var(--text-muted);
+}
+
+.download-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.download-card.is-soon .download-cta {
+  color: var(--text-muted);
+  background: var(--bg-subtle, #eef2f7);
+  cursor: default;
+}
+
+.download-card.is-ready .download-cta {
+  color: #fff;
+}
+
+@media (max-width: 800px) {
+  .download-page { padding: 22px 20px 32px; }
+  .download-grid { grid-template-columns: 1fr; }
+  .download-card { min-height: 0; }
+}

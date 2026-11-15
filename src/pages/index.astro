@@ -1,0 +1,38 @@
+---
+import HomeLanding from '../components/HomeLanding';
+import { localeFromAcceptLanguage } from '../lib/i18n';
+import '../styles/global.css';
+import '../styles/brand.css';
+import '../styles/home-landing.css';
+
+export const prerender = false;
+
+const locale = localeFromAcceptLanguage(Astro.request.headers.get('accept-language'));
+const copy = locale === 'en'
+  ? {
+      title: 'Olai — Online AI Companion',
+      description: 'Olai is your AI companion and all-in-one creative space for conversation, images, video and music. Create on the web now; the app will be here when it ships.',
+      noscript: 'Please enable JavaScript to use Olai.',
+    }
+  : {
+      title: 'Olai — 在线 AI 伴侣',
+      description: 'Olai 是你的在线 AI 伴侣与全能创意空间，支持对话、图像、视频与音乐。现在就可以在网页里创作，应用上架后也可在此下载。',
+      noscript: '请启用 JavaScript 以使用 Olai。',
+    };
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f8fc" />
+    <meta name="description" content={copy.description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{copy.title}</title>
+  </head>
+  <body class="site-home-body">
+    <HomeLanding client:load />
+    <noscript>{copy.noscript}</noscript>
+  </body>
+</html>

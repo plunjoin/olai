@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowRight, ArrowUpRight, Sparkles, WandSparkles, Clock3 } from 'lucide-react';
 import Artwork from './Artwork';
+import { t } from '../lib/i18n';
 import type { Asset, Conversation, MediaKind, View } from '../lib/types';
 import {
   ChatAgentSvg,
@@ -121,9 +122,13 @@ export default function Home({
             <br />
             把一个小小的念头，变成画面、故事与旋律。
           </p>
-          <div className="hero-buttons"><button onClick={() => onNavigate('chat')} className="lime-button">和 Olai 聊聊<ArrowRight size={17} /></button><button className="hero-secondary" onClick={() => onNavigate('image')}>开始创作<ArrowUpRight size={16} /></button></div>
+          <div className="hero-buttons">
+            <button type="button" onClick={() => onNavigate('chat')} className="lime-button">和 Olai 聊聊<ArrowRight size={17} /></button>
+            <button type="button" className="hero-secondary" onClick={() => onNavigate('image')}>开始创作<ArrowUpRight size={16} /></button>
+            <a className="hero-secondary" href="/download">{t('下载应用')}</a>
+          </div>
           <div className="hero-footnote">
-            <span /> 随时在线，让每一个灵感都有回应
+            <span /> {t('应用即将上架，先在网页使用，发布后可在此下载。')}
           </div>
         </div>
         <Artwork variant="orbit" />
@@ -220,6 +225,7 @@ export default function Home({
 
       <footer className="page-footer">
         <span>olai · 让灵感有个伴</span>
+        <a href="/download">{t('下载应用')}</a>
         <span>ONLINE AI COMPANION <span className="footer-star">✦</span></span>
       </footer>
     </div>
