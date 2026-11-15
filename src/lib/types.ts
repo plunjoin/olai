@@ -35,6 +35,19 @@ export interface Model {
   /** 上游 /models 返回的能力类型；music 与 speech 分开 */
   kind?: ModelKind;
 }
+/** 按模型计价的档位；客户端只看到积分，不接触上游模型 ID。 */
+export interface ModelPrices {
+  image?: Record<string, number>;
+  video?: Record<string, number>;
+  music?: { perMinute?: number };
+  chat?: { perMessage?: number };
+}
+export interface PublicModel {
+  id: string;
+  name: string;
+  kind: ModelKind;
+  prices: ModelPrices;
+}
 export type ImageEngineMode = 'auto' | 'native' | 'upstream' | 'interactions';
 export type AudioEngineMode = 'auto' | 'native' | 'upstream';
 export interface Settings {

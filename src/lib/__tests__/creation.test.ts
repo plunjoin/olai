@@ -100,7 +100,7 @@ describe('server generation builders', () => {
   it('normalizes Veo sizes and forces 8 seconds for 4K, ignoring arbitrary size fields', () => {
     vi.stubEnv('AI_VIDEO_MODEL', 'veo-3.1-fast-generate-preview');
     const built = buildGeneration('generate/video', { prompt: 'flowers', options: { aspect_ratio: '9:16', seconds: 4, resolution: '4K', reasoning_effort: 'high', size: 'fake-size' } });
-    expect(built).toEqual({ kind: 'video', path: 'videos', payload: { model: serverModel('video'), prompt: 'flowers\n创意丰富程度：high。', size: '2160x3840', seconds: 8 } });
+    expect(built).toEqual({ kind: 'video', points: 64, path: 'videos', payload: { model: serverModel('video'), prompt: 'flowers\n创意丰富程度：high。', size: '2160x3840', seconds: 8 } });
     for (const [ratio, resolution, seconds, size] of [['16:9', '720p', 5, '1280x720'], ['9:16', '1080p', 6, '1080x1920'], ['16:9', '4K', 4, '3840x2160']] as const) {
       expect(buildGeneration('generate/video', { prompt: 'test', options: { aspect_ratio: ratio, resolution, seconds } }).payload.size).toBe(size);
     }
@@ -143,10 +143,44 @@ describe('server generation builders', () => {
   });
   it('uses speech fields only when upstream audio is configured by the server', () => {
     vi.stubEnv('AI_AUDIO_API_MODE', 'upstream'); vi.stubEnv('AI_MUSIC_MODEL', 'tts-1');
-    expect(buildGeneration('generate/music', { prompt: '你好', voice: 'alloy' })).toEqual({ kind: 'music', path: 'audio/speech', payload: { model: 'tts-1', input: '你好', voice: 'alloy', speed: 1, response_format: 'mp3' } });
+    expect(buildGeneration('generate/music', { prompt: '你好', voice: 'alloy' })).toEqual({ kind: 'music', points: 4, path: 'audio/speech', payload: { model: 'tts-1', input: '你好', voice: 'alloy', speed: 1, response_format: 'mp3' } });
   });
   it.each(['model', 'key', 'apiKey', 'systemPrompt', 'system'])('rejects client-supplied private field %s', field => {
     expect(() => buildGeneration('generate/image', { prompt: 'flowers', [field]: 'override' })).toThrow(InputError);
+  });
+  it('uses the selected model upstream id and its own per-model prices', () => {
+    vi.stubEnv('AI_IMAGE_API_MODE', 'auto'); vi.stubEnv('AI_IMAGE_MODEL', SERVER_MODELS.image);
+    const image = {
+      publicId: 'mdl_aaaaaaaaaaaaaaaaaaaaaaaa', upstreamId: 'private-image-engine', kind: 'image' as const,
+      prices: { image: { '1K': 7, '2K': 8, '4K': 9 } },
+    };
+    const built = buildGeneration('generate/image', { prompt: 'flowers', imageSize: '2K' }, image);
+    expect(built.points).toBe(8);
+    expect(built.payload.model).toBe('private-image-engine');
+    expect(buildGeneration('generate/image', { prompt: 'flowers', imageSize: '2K' }).payload.model).toBe(serverModel('image'));
+
+    const chat = {
+      publicId: 'mdl_bbbbbbbbbbbbbbbbbbbbbbbb', upstreamId: 'private-chat-engine', kind: 'chat' as const,
+      prices: { chat: { perMessage: 4 } },
+    };
+    const direct = buildGeneration('chat/completions', { action: 'chat', messages: [{ role: 'user', content: 'hi' }] }, chat);
+    expect(direct.points).toBe(4);
+    expect(direct.payload.model).toBe('private-chat-engine');
+    // 内部写作任务不允许用户替换成对话模型。
+    const internal = buildGeneration('chat/completions', { action: 'compose-song', inspiration: '夏天' }, chat);
+    expect(internal.payload.model).toBe(serverModel('chat'));
+    expect(internal.points).toBe(0);
+  });
+  it('prices a selected video model per second and respects its task mode', () => {
+    const video = {
+      publicId: 'mdl_cccccccccccccccccccccccc', upstreamId: 'veo-3.1-fast-generate-preview', kind: 'video' as const,
+      prices: { video: { '360p': 1, '720p': 2, '1080p': 3, '4k': 5 } },
+    };
+    const built = buildGeneration('generate/video', { prompt: 'flowers', options: { resolution: '1080p', seconds: 5, aspect_ratio: '16:9' } }, video);
+    expect(built.path).toBe('videos');
+    expect(built.points).toBe(15);
+    expect(built.payload.model).toBe('veo-3.1-fast-generate-preview');
+    expect(built.payload.seconds).toBe(5);
   });
 });
 

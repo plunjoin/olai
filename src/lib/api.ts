@@ -2,13 +2,14 @@ import type { AudioEngineMode, ImageEngineMode, Message } from './types';
 import { base64ToBytes, isRiffWav, parseAudioDataUri } from './audio';
 import type { VideoEngineMode } from './video';
 import { registerStoredBlob } from './mediaStorage';
+import { t } from './i18n';
 
 export function publicServiceError(message: string, status?: number): string {
   if (status === 429 || /rate[_\s-]?limit|quota|额度|请求.*(?:受限|过多|频繁)/i.test(message)) {
-    return '上游创作服务额度已用完或请求受限，请稍后重试。';
+    return t('上游创作服务额度已用完或请求受限，请稍后重试。');
   }
   return /[A-Za-z]{3}|模型|密钥/i.test(message)
-    ? '创作服务暂时无法完成请求，请重试或检查服务连接。'
+    ? t('创作服务暂时无法完成请求，请重试或检查服务连接。')
     : message;
 }
 
@@ -18,7 +19,7 @@ export async function request(path: string, init: RequestInit = {}) {
   if (init.body) headers.set('Content-Type', 'application/json');
   const response = await fetch(`/api/${path}`, { ...init, headers, credentials: 'same-origin' });
   if (!response.ok) {
-    let message = `请求失败（${response.status}）`;
+    let message = t('请求失败（{status}）', { status: response.status });
     try { const body = await response.json(); message = body.error?.message || body.message || message; } catch { /* Keep HTTP error. */ }
     const err = new Error(publicServiceError(message, response.status)) as Error & { status?: number };
     err.status = response.status;
@@ -34,7 +35,7 @@ export async function consumeSSE(body: ReadableStream<Uint8Array>, onText: (text
   const emit = (text: string) => {
     content += text;
     const error = content.match(/(?:^|\n)\[Error\]\s*(.*)/s);
-    if (error) throw new Error(publicServiceError(error[1] || '生成失败，请重试。'));
+    if (error) throw new Error(publicServiceError(error[1] || t('生成失败，请重试。')));
     onText(text);
   };
   const consume = (event: string) => {
@@ -42,8 +43,8 @@ export async function consumeSSE(body: ReadableStream<Uint8Array>, onText: (text
     if (!data) return;
     if (data.trim() === '[DONE]') { doneEvent = true; return; }
     let parsed;
-    try { parsed = JSON.parse(data); } catch { throw new Error('服务返回了无法解析的流式数据，请重试。'); }
-    if (parsed.error) throw new Error(publicServiceError(parsed.error.message || '生成失败'));
+    try { parsed = JSON.parse(data); } catch { throw new Error(t('服务返回了无法解析的流式数据，请重试。')); }
+    if (parsed.error) throw new Error(publicServiceError(parsed.error.message || t('生成失败')));
     const delta = parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content;
     if (typeof delta === 'string') emit(delta);
     else if (Array.isArray(delta)) for (const part of delta) if (part.text) emit(part.text);
@@ -62,17 +63,17 @@ export async function consumeSSE(body: ReadableStream<Uint8Array>, onText: (text
     }
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-export async function chat(messages: Message[], temperature: number, signal: AbortSignal, onText: (text: string) => void) {
+export async function chat(messages: Message[], temperature: number, signal: AbortSignal, onText: (text: string) => void, modelId?: string) {
   const response = await request('chat/completions', { method: 'POST', signal,
-    body: JSON.stringify({ action: 'chat', stream: true, temperature, messages: messages.filter(m => m.content && !m.error).map(({role,content}) => ({role,content})) }),
+    body: JSON.stringify({ action: 'chat', stream: true, temperature, messages: messages.filter(m => m.content && !m.error).map(({role,content}) => ({role,content})), ...(modelId ? { modelId } : {}) }),
   });
   if (response.headers.get('content-type')?.includes('application/json')) {
     const json = await response.json();
     const content = json.choices?.[0]?.message?.content;
-    if (typeof content !== 'string' || !content) throw new Error('服务未返回对话内容。');
+    if (typeof content !== 'string' || !content) throw new Error(t('服务未返回对话内容。'));
     onText(content); return;
   }
-  if (!response.body) throw new Error('服务未返回响应流。');
+  if (!response.body) throw new Error(t('服务未返回响应流。'));
   await consumeSSE(response.body, onText);
 }
 
@@ -161,7 +162,7 @@ export function extractAudiosFromContent(content: string): ExtractedMedia[] {
       if (link.startsWith('data:audio/')) {
         try {
           const comma = link.indexOf(',');
-          if (comma === -1) throw new Error('无效的音频数据');
+          if (comma === -1) throw new Error(t('无效的音频数据'));
           const base64 = link.slice(comma + 1).replace(/\s+/g, '');
           results.push({
             base64,
@@ -317,9 +318,9 @@ export async function generateVideo({ prompt, options, signal, inputImage, exten
 export async function videoContent(id: string, signal?: AbortSignal): Promise<Blob> {
   const response = await request(`videos/${encodeURIComponent(id)}/content`, { signal });
   const mime = response.headers.get('content-type') || '';
-  if (!mime.startsWith('video/') && !mime.startsWith('application/octet-stream')) throw new Error('服务未返回可播放的视频文件。');
+  if (!mime.startsWith('video/') && !mime.startsWith('application/octet-stream')) throw new Error(t('服务未返回可播放的视频文件。'));
   const blob = await response.blob();
-  if (!blob.size) throw new Error('视频内容为空。');
+  if (!blob.size) throw new Error(t('视频内容为空。'));
   const result = mime.startsWith('video/') ? blob : new Blob([blob], { type: 'video/mp4' });
   registerStoredBlob(result, response.headers.get('x-olai-media-url'));
   return result;
@@ -329,7 +330,7 @@ export function safeMediaURL(url: string) {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
   const parsed = new URL(url, origin);
   if (['https:', 'http:', 'blob:'].includes(parsed.protocol) || /^data:(image|audio|video)\//.test(url)) return parsed.href;
-  throw new Error('服务返回了不支持的媒体链接。');
+  throw new Error(t('服务返回了不支持的媒体链接。'));
 }
 
 export function base64Blob(data: string, mime: string) {

@@ -6,8 +6,10 @@ import { currentUser } from '../../lib/server/auth';
 import { ClientIPError, chatConcurrencyLimit, chatDailyLimit, chatRateLimit, clientIP, dailyLimit, hash, sameOrigin } from '../../lib/server/policy';
 import { reserveGeneration, refundGeneration, reserve } from '../../lib/server/quota';
 import { acquireChatSlot, releaseOnStreamEnd } from '../../lib/server/chatGate';
+import { chargePoints, maybeRewardInvite, refundPoints } from '../../lib/server/points';
 import { aiEnv, decodeTaskId, encodeTaskId, serviceReady } from '../../lib/server/aiConfig';
 import { buildGeneration, InputError, type GenerationRequest } from '../../lib/server/generation';
+import { resolveModel, type ModelChoice, type SelectableKind } from '../../lib/server/models';
 import { privateValues, publicJSON, publicSSE, publicUpstreamError, redactText } from '../../lib/server/publicResponse';
 
 export const prerender = false;
@@ -47,11 +49,25 @@ export const ALL: APIRoute = async context => {
   let reservedKind: string | undefined, reservedOwner: string | undefined;
   let chatSlot: (() => void) | undefined;
   let upstreamStarted = false;
+  let chargedPoints: { userId: string; cost: number; ref: string } | undefined;
+  // 登录用户按档位扣积分；游客继续使用每日额度。扣费与退款都幂等。
+  const charge = async (userId: string, cost: number): Promise<number | null> => {
+    const ref = randomUUID();
+    const balance = await chargePoints(userId, cost, ref);
+    if (balance !== null) chargedPoints = { userId, cost, ref };
+    return balance;
+  };
   const refund = async () => {
-    if (!reservedKind || !reservedOwner) return;
-    const kind = reservedKind, owner = reservedOwner;
-    reservedKind = undefined; reservedOwner = undefined;
-    await refundGeneration(owner, kind);
+    if (reservedKind && reservedOwner) {
+      const kind = reservedKind, owner = reservedOwner;
+      reservedKind = undefined; reservedOwner = undefined;
+      await refundGeneration(owner, kind).catch(() => {});
+    }
+    if (chargedPoints) {
+      const { userId, cost, ref } = chargedPoints;
+      chargedPoints = undefined;
+      await refundPoints(userId, cost, ref).catch(() => {});
+    }
   };
   try {
     const user = await currentUser(context);
@@ -73,7 +89,19 @@ export const ALL: APIRoute = async context => {
       upstreamPath = `videos/${encodeURIComponent(internalId)}${path.endsWith('/content') ? '/content' : ''}`;
     } else {
       const input = await readInput(request);
-      generation = buildGeneration(path, input);
+      // 用户选择的模型只对普通对话和三类生成生效；其它内部任务不允许替换模型。
+      let selection: ModelChoice | undefined;
+      if (typeof input.modelId === 'string' && input.modelId) {
+        const expected: SelectableKind | null = path === 'chat/completions'
+          ? (input.action === undefined || input.action === 'chat' ? 'chat' : null)
+          : path === 'generate/image' ? 'image' : path === 'generate/music' ? 'music' : path === 'generate/video' ? 'video' : null;
+        if (expected) {
+          const model = await resolveModel(input.modelId, expected);
+          if (!model) return fail('所选模型不可用，请刷新页面后重新选择。', 400);
+          selection = model;
+        }
+      }
+      generation = buildGeneration(path, input, selection);
       usesPreset = Boolean(generation.kind || (input.action && input.action !== 'chat'));
       if (input.extendFrom !== undefined) {
         if (generation.path !== 'videos' || typeof input.extendFrom !== 'string') throw new InputError('视频延续参数无效。');
@@ -88,6 +116,10 @@ export const ALL: APIRoute = async context => {
           return fail(`今日${label}生成额度已用完（每天 ${limit} 次）。${user ? '请北京时间零点后再试。' : '登录后可使用账号额度。'}`, 429);
         }
         reservedKind = kind; reservedOwner = owner;
+        if (user && generation.points > 0 && await charge(user.id, generation.points) === null) {
+          await refund();
+          return fail(`积分不足：本次生成需要 ${generation.points} 积分。邀请好友注册可获得积分。`, 402);
+        }
       } else {
         const limit = chatDailyLimit(!!user);
         if (!limit) return fail('对话功能已停用。', 429);
@@ -99,6 +131,10 @@ export const ALL: APIRoute = async context => {
         chatSlot = slot;
         if (!await reserveGeneration(owner, 'chat', limit)) { chatSlot(); return fail(`今日对话额度已用完（每天 ${limit} 条），请北京时间零点后再试。`, 429); }
         reservedKind = 'chat'; reservedOwner = owner;
+        if (user && generation.points > 0 && await charge(user.id, generation.points) === null) {
+          await refund();
+          return fail(`积分不足：本次对话需要 ${generation.points} 积分。`, 402);
+        }
       }
     }
     const base = aiEnv('AI_API_BASE_URL').replace(/\/$/, '');
@@ -116,6 +152,8 @@ export const ALL: APIRoute = async context => {
       upstream = await send(generation.fallback.path, generation.fallback.payload);
     }
     if (!upstream.ok) { await refund(); chatSlot?.(); await upstream.body?.cancel().catch(() => {}); return publicUpstreamError(upstream.status); }
+    // 被邀请人完成首次成功生成后才发放邀请奖励；失败路径已在上面提前返回。
+    if (user && generation) void maybeRewardInvite(user.id).catch(() => {});
     const headers = new Headers({ 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no', 'X-Content-Type-Options': 'nosniff' });
     const contentType = upstream.headers.get('content-type') || '';
     const privatePrompts: string[] = [];

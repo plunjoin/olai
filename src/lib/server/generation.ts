@@ -3,6 +3,8 @@ import { parseSong } from '../music';
 import { songPrompt } from './songPrompt';
 import { imageDimensions, normalizeRatio } from '../generation';
 import { buildKeyframePrompt, buildMusicPrompt, buildScriptPrompt, buildShotListPrompt, buildVideoPrompt } from './workflowPrompts';
+import { chatCost, imageCost, musicCost, videoCost } from './pricing';
+import { modelPoints, type ModelChoice } from './models';
 import type { MediaKind } from '../types';
 
 export class InputError extends Error {}
@@ -11,7 +13,7 @@ const text = (value: unknown, max = 10000): string => typeof value === 'string' 
 const number = (value: unknown, fallback: number, min: number, max: number): number => value === undefined ? fallback : typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : invalid();
 const pick = (value: unknown, values: string[], fallback: string): string => value === undefined ? fallback : typeof value === 'string' && values.includes(value) ? value : invalid();
 const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : invalid();
-export interface GenerationRequest { path: string; payload: Record<string, any>; kind: MediaKind | null; fallback?: { path: string; payload: Record<string, any> } }
+export interface GenerationRequest { path: string; payload: Record<string, any>; kind: MediaKind | null; points: number; fallback?: { path: string; payload: Record<string, any> } }
 
 function workflowInput(input: Record<string, any>) {
   if (aiEnv('AI_SHORT_FILM') !== 'true') throw new InputError('此创作功能尚未开放。');
@@ -31,10 +33,12 @@ function shotInput(value: unknown) {
 
 // Build provider requests from a small application contract, never from arbitrary
 // client provider payloads. Quota classification comes from this server decision.
-export function buildGeneration(path: string, input: Record<string, any>): GenerationRequest {
+export function buildGeneration(path: string, input: Record<string, any>, choice?: ModelChoice): GenerationRequest {
   if ('model' in input || 'key' in input || 'apiKey' in input || 'systemPrompt' in input || 'system' in input) invalid();
   if (path === 'chat/completions') {
     const action = input.action || 'chat';
+    // 只有普通对话允许用户选模型；作词、对齐、分镜等内部任务固定使用服务端模型。
+    const selected = choice && choice.kind === 'chat' && action === 'chat' ? choice : undefined;
     let messages: any[] = [];
     let system = '';
     if (action === 'chat') {
@@ -58,7 +62,7 @@ export function buildGeneration(path: string, input: Record<string, any>): Gener
       system = action === 'workflow-script' ? '你是一位专业的短视频编剧。输出格式严格为 JSON，不要添加任何其他说明文字。' : '你是一位专业的短片导演。输出格式严格为 JSON 数组，不要添加任何其他说明文字。';
       messages = [{ role: 'user', content: action === 'workflow-script' ? buildScriptPrompt(text(input.idea), duration, elements) : buildShotListPrompt(text(input.script, 50000), styleBible(input.styleBible), duration, elements) }];
     } else invalid();
-    return { path: 'chat/completions', kind: null, payload: { model: serverModel('chat'), stream: action === 'chat' && input.stream === true, temperature: action === 'align-lyrics' ? 0 : number(input.temperature, .7, 0, 2), messages: [{ role: 'system', content: system }, ...messages] } };
+    return { path: 'chat/completions', kind: null, points: selected ? modelPoints(selected, {}) : chatCost(), payload: { model: selected?.upstreamId || serverModel('chat'), stream: action === 'chat' && input.stream === true, temperature: action === 'align-lyrics' ? 0 : number(input.temperature, .7, 0, 2), messages: [{ role: 'system', content: system }, ...messages] } };
   }
   const kind = path === 'generate/image' ? 'image' : path === 'generate/music' ? 'music' : path === 'generate/video' ? 'video' : invalid();
   let prompt = text(input.prompt || '', 100000);
@@ -78,32 +82,39 @@ export function buildGeneration(path: string, input: Record<string, any>): Gener
     const ratio = input.action === 'cover' ? '1:1' : normalizeRatio(text(input.aspectRatio || 'auto', 40));
     const quality = pick(input.imageSize, ['1K', '2K', '4K'], '1K');
     const effort = pick(input.reasoningEffort, ['minimal', 'medium', 'high'], 'medium');
-    const model = serverModel('image');
+    const selected = choice?.kind === 'image' ? choice : undefined;
+    const model = selected?.upstreamId || serverModel('image');
     const native = { path: 'chat/completions', payload: { model, messages: [{ role: 'user', content: `${prompt}\n画面比例：${ratio === 'auto' ? '自动，根据描述构图' : ratio}。联想等级：${effort}。只生成图片，不输出文字说明。` }], stream: false, image_size: quality, max_tokens: quality === '4K' ? 8192 : quality === '2K' ? 4096 : 2048 } };
     const upstream = { path: 'images/generations', payload: { model, prompt: `${prompt}\n画面比例：${ratio}。画质：${quality}。联想等级：${effort}。`, n: 1, size: imageDimensions(ratio, quality), response_format: 'b64_json' } };
     const mode = aiEnv('AI_IMAGE_API_MODE', 'auto');
+    const points = selected ? modelPoints(selected, { quality }) : imageCost(quality);
     if (mode === 'interactions') {
       const ratios = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', '1:8', '8:1', '1:4', '4:1'];
-      return { kind, path: 'interactions', payload: { model, input: native.payload.messages[0].content, response_format: { type: 'image', image_size: quality, delivery: 'inline', ...(ratios.includes(ratio) ? { aspect_ratio: ratio } : {}) }, stream: false, store: false } };
+      return { kind, points, path: 'interactions', payload: { model, input: native.payload.messages[0].content, response_format: { type: 'image', image_size: quality, delivery: 'inline', ...(ratios.includes(ratio) ? { aspect_ratio: ratio } : {}) }, stream: false, store: false } };
     }
-    if (mode === 'upstream' || (mode === 'auto' && /^(dall-e|flux|sd|stable-diffusion)/i.test(model))) return { kind, ...upstream, ...(mode === 'auto' ? { fallback: native } : {}) };
-    return { kind, ...native, ...(mode === 'auto' ? { fallback: upstream } : {}) };
+    if (mode === 'upstream' || (mode === 'auto' && /^(dall-e|flux|sd|stable-diffusion)/i.test(model))) return { kind, points, ...upstream, ...(mode === 'auto' ? { fallback: native } : {}) };
+    return { kind, points, ...native, ...(mode === 'auto' ? { fallback: upstream } : {}) };
   }
   if (kind === 'music') {
     if (input.song) prompt = songPrompt(parseSong(JSON.stringify(input.song)));
-    const duration = input.duration === undefined ? '' : `\nTarget duration: ${number(input.duration, 120, 1, 600)} seconds.`;
-    if (aiEnv('AI_AUDIO_API_MODE') === 'upstream') return { kind, path: 'audio/speech', payload: { model: serverModel(kind), input: prompt, voice: text(input.voice || 'alloy', 100), speed: number(input.speed, 1, .25, 4), response_format: pick(input.responseFormat, ['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'], 'mp3') } };
-    return { kind, path: 'chat/completions', payload: { model: serverModel(kind), messages: [{ role: 'user', content: `${prompt}${duration}\nReturn the generated audio.` }], stream: false } };
+    const seconds = number(input.duration, 120, 1, 600);
+    const duration = input.duration === undefined ? '' : `\nTarget duration: ${seconds} seconds.`;
+    const selected = choice?.kind === 'music' ? choice : undefined;
+    const model = selected?.upstreamId || serverModel(kind);
+    const points = selected ? modelPoints(selected, { seconds }) : musicCost(seconds);
+    if (aiEnv('AI_AUDIO_API_MODE') === 'upstream') return { kind, points, path: 'audio/speech', payload: { model, input: prompt, voice: text(input.voice || 'alloy', 100), speed: number(input.speed, 1, .25, 4), response_format: pick(input.responseFormat, ['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'], 'mp3') } };
+    return { kind, points, path: 'chat/completions', payload: { model, messages: [{ role: 'user', content: `${prompt}${duration}\nReturn the generated audio.` }], stream: false } };
   }
   const options = object(input.options || {});
   const resolution = pick(typeof options.resolution === 'string' ? options.resolution.toLowerCase() : undefined, ['360p', '720p', '1080p', '4k'], '720p');
   const ratio = pick(options.aspect_ratio, ['16:9', '9:16'], '16:9');
   const effort = pick(options.reasoning_effort, ['minimal', 'medium', 'high'], 'medium');
-  const model = serverModel('video');
-  if (videoMode() === 'chat') {
+  const selected = choice?.kind === 'video' ? choice : undefined;
+  const model = selected?.upstreamId || serverModel('video');
+  if (videoMode(model) === 'chat') {
     const seconds = number(options.seconds, 4, 3, 10);
     if (!Number.isInteger(seconds) || input.extendFrom || input.inputReference) invalid();
-    return { kind, path: 'chat/completions', payload: { model, messages: [{ role: 'user', content: `请根据以下描述生成视频，返回生成的视频文件或视频链接。\n${prompt}\n目标时长：${seconds} 秒。\n画面比例：${ratio}。\n目标画质：${resolution.toUpperCase()}。\n创意丰富程度：${effort}。` }], stream: false, resolution } };
+    return { kind, points: selected ? modelPoints(selected, { resolution, seconds }) : videoCost(resolution, seconds), path: 'chat/completions', payload: { model, messages: [{ role: 'user', content: `请根据以下描述生成视频，返回生成的视频文件或视频链接。\n${prompt}\n目标时长：${seconds} 秒。\n画面比例：${ratio}。\n目标画质：${resolution.toUpperCase()}。\n创意丰富程度：${effort}。` }], stream: false, resolution } };
   }
   const size = { '360p': [640, 360], '720p': [1280, 720], '1080p': [1920, 1080], '4k': [3840, 2160] }[resolution]!;
   const payload: Record<string, any> = { model, prompt: `${input.extendFrom ? 'Extend this video. ' : ''}${prompt}\n创意丰富程度：${effort}。`, size: (ratio === '9:16' ? [...size].reverse() : size).join('x') };
@@ -113,5 +124,6 @@ export function buildGeneration(path: string, input: Record<string, any>): Gener
   }
   if (input.inputReference !== undefined) { const image = text(input.inputReference, 20 * 1024 * 1024); if (!/^[A-Za-z0-9+/]+={0,2}$/.test(image)) invalid(); payload.input_reference = image; }
   // extend_from must be decoded and ownership-checked by the route, never trusted.
-  return { kind, path: 'videos', payload };
+  const seconds = number(payload.seconds ?? options.seconds, 4, 1, 60);
+  return { kind, points: selected ? modelPoints(selected, { resolution, seconds }) : videoCost(resolution, seconds), path: 'videos', payload };
 }

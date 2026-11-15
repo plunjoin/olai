@@ -15,6 +15,11 @@ vi.mock('./database', async () => {
     'CREATE TABLE DailyUsage (key TEXT PRIMARY KEY, count INTEGER, expiresAt INTEGER)',
     'CREATE TABLE LoginSession (tokenHash TEXT PRIMARY KEY, userId TEXT, expiresAt INTEGER)',
     'CREATE TABLE VideoJob (id TEXT PRIMARY KEY, owner TEXT, createdAt INTEGER)',
+    'CREATE TABLE PointAccount (userId TEXT PRIMARY KEY, balance INTEGER, updatedAt INTEGER)',
+    'CREATE TABLE PointLedger (id TEXT PRIMARY KEY, userId TEXT, delta INTEGER, reason TEXT, refId TEXT, createdAt INTEGER)',
+    'CREATE UNIQUE INDEX PointLedger_reason_refId_idx ON PointLedger(reason,refId)',
+    'CREATE TABLE InviteCode (code TEXT PRIMARY KEY, userId TEXT UNIQUE, createdAt INTEGER)',
+    'CREATE TABLE Invite (id TEXT PRIMARY KEY, inviterId TEXT, inviteeId TEXT UNIQUE, code TEXT, createdAt INTEGER, rewardedAt INTEGER)',
   ], 'write');
   return { ...schema, ...operators, db: drizzle(client) };
 });
@@ -27,7 +32,7 @@ vi.mock('./oss', () => ({
 }));
 vi.mock('./mediaImport', async importOriginal => ({ ...await importOriginal<typeof import('./mediaImport')>(), importRemoteMedia: vi.fn(async () => ({ bytes: new Uint8Array([1, 2, 3]), mime: 'image/png' })) }));
 import { currentUser } from './auth';
-import { db, DailyUsage, MediaObject, StudioRecord, RecordChunk, VideoJob, eq } from './database';
+import { db, DailyUsage, Invite, InviteCode, MediaObject, PointAccount, PointLedger, StudioRecord, RecordChunk, VideoJob, eq } from './database';
 import { putOSS } from './oss';
 import { importRemoteMedia } from './mediaImport';
 import { mediaIdentity, storeMedia } from './media';
@@ -46,7 +51,7 @@ beforeEach(async () => {
   vi.clearAllMocks(); vi.stubEnv('SITE_ORIGIN', 'https://olai.test'); vi.stubEnv('TRUST_PROXY', 'false'); vi.stubEnv('AI_SHORT_FILM', 'true');
   vi.mocked(currentUser).mockResolvedValue({ id: 'owner', email: 'owner@test' });
   vi.mocked(putOSS).mockResolvedValue(undefined);
-  for (const table of [MediaObject, StudioRecord, RecordChunk, DailyUsage, VideoJob]) await db.delete(table);
+  for (const table of [MediaObject, StudioRecord, RecordChunk, DailyUsage, VideoJob, PointAccount, PointLedger, InviteCode, Invite]) await db.delete(table);
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe('OSS generation, record persistence and migration', () => {
