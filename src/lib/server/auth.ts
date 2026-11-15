@@ -2,7 +2,8 @@ import { randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from 'node:util';
 import type { APIContext } from 'astro';
 import { db, User, LoginSession, eq, and, gt } from './database';
-import { hash, env } from './policy';
+import { hash } from './policy';
+import { setting } from './settings';
 
 const scrypt = promisify(scryptCallback);
 const COOKIE = 'olai_session';
@@ -36,6 +37,6 @@ export async function startSession(context: Pick<APIContext, 'cookies' | 'url'>,
   const token = randomBytes(32).toString('hex');
   await db.insert(LoginSession).values({ tokenHash: hash(token), userId, expiresAt: Date.now() + MAX_AGE * 1000 });
   context.cookies.set(COOKIE, token, { path: '/', httpOnly: true, sameSite: 'lax',
-    secure: (env('SITE_ORIGIN') || context.url.origin).startsWith('https:'), maxAge: MAX_AGE });
+    secure: (setting('SITE_ORIGIN') || context.url.origin).startsWith('https:'), maxAge: MAX_AGE });
 }
 export const userId = () => randomUUID();

@@ -1,7 +1,8 @@
 import type { APIContext } from 'astro';
 import { inArray } from 'drizzle-orm';
 import { db, StudioRecord, RecordChunk, MediaObject, and, asc, eq, gt } from './database';
-import { env, hash } from './policy';
+import { hash } from './policy';
+import { setting } from './settings';
 import { privateValues, redactText } from './publicResponse';
 import { assertMediaOrigin, downloadPublishedMedia, mediaFailure, mediaHeaders, MediaError, THUMBNAIL_WIDTH } from './media';
 
@@ -73,7 +74,7 @@ async function bodies(tx: Pick<typeof db, 'select'>, rows: RecordRow[]): Promise
   }
   return output;
 }
-function sourceOrigin(context: APIContext): string { return new URL(env('SITE_ORIGIN').trim() || context.url.origin).origin; }
+function sourceOrigin(context: APIContext): string { return new URL(setting('SITE_ORIGIN').trim() || context.url.origin).origin; }
 function inlineMedia(value: unknown, kind: string, field: Field): InlineMedia | null {
   if (typeof value !== 'string' || value.length > Math.ceil(GALLERY_INLINE_MAX_BYTES / 3) * 4 + 4096) return null;
   const comma = value.indexOf(',');

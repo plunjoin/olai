@@ -1,6 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { initializationFailure } from './lib/server/initializationFailure';
 import { sameOrigin } from './lib/server/policy';
+import { refreshSettings } from './lib/server/settings';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -17,6 +18,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     // before Astro's route loader replaces them with an HTML error response.
     await import('./lib/server/database');
     await import('./lib/server/auth');
+    // 后台修改的运行时配置最多 10 秒内同步到本进程。
+    await refreshSettings();
     const response = await next();
     if (response.status >= 500 && !response.headers.get('content-type')?.includes('application/json')) {
       return initializationFailure();

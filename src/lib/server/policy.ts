@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
 import type { MediaKind } from '../types';
+import { setting } from './settings';
 
 export function env(name: string, fallback = ''): string {
   return process.env[name] ?? import.meta.env[name] ?? fallback;
 }
 function limitFromEnv(name: string, fallback: string): number {
-  const raw = env(name, fallback);
+  const raw = setting(name, fallback);
   if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('每日额度环境变量必须是非负整数。');
   return Number(raw);
 }
@@ -32,7 +33,7 @@ export const hash = (value: string) => createHash('sha256').update(value).digest
 export class ClientIPError extends Error {}
 export function clientIP(request: Request, address: string): string {
   // Only enable behind a proxy which replaces this header and blocks direct access.
-  const trustProxy = env('TRUST_PROXY') === 'true';
+  const trustProxy = setting('TRUST_PROXY') === 'true';
   // The Node adapter itself reads X-Forwarded-For into clientAddress. Reject
   // that header when untrusted so it cannot change the guest quota identity.
   if (!trustProxy && request.headers.has('x-forwarded-for')) throw new ClientIPError('请配置可信代理后再使用转发 IP 标头。');
@@ -47,9 +48,11 @@ export function sameOrigin(request: Request): boolean {
   try {
     const source = new URL(origin);
     if (!['http:', 'https:'].includes(source.protocol) || origin !== source.origin) return false;
-    const configured = env('SITE_ORIGIN').trim();
-    if (configured) return source.origin === new URL(configured).origin;
+    const configured = setting('SITE_ORIGIN').trim();
+    if (configured && source.origin === new URL(configured).origin) return true;
     const url = new URL(request.url);
+    // 即使配置了 SITE_ORIGIN，也继续校验请求自身的 Host：这样后台误填站点地址
+    // 时仍能从当前站点改回来，而跨站请求依然会因 Origin 与 Host 不一致被拒绝。
     // The Node adapter can normalize an unlisted host to localhost and drop
     // its port. Host still carries the browser's actual destination authority.
     // Forwarded headers are deliberately excluded; proxies use SITE_ORIGIN.

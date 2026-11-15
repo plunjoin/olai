@@ -2,7 +2,7 @@ import { drizzle } from 'drizzle-orm/libsql';
 import { initializeDatabase } from '../../../db/runtime.mjs';
 
 export * from '../../../db/schema';
-export { eq, and, gt, lt, asc, sql } from 'drizzle-orm';
+export { eq, and, gt, gte, lt, isNull, asc, desc, sql } from 'drizzle-orm';
 
 const client = await initializeDatabase({ development: import.meta.env.DEV }).catch((error: unknown) => {
   console.error('Database initialization failed:', error instanceof Error ? error.message : error);

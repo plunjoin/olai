@@ -35,7 +35,7 @@ describe('runtime database', () => {
     runDatabase(`
       const client = await initializeDatabase();
       await client.batch([
-        "INSERT INTO User VALUES ('existing', 'existing@example.com', 'hash', 1)",
+        "INSERT INTO User (id, email, passwordHash, createdAt, emailVerifiedAt) VALUES ('existing', 'existing@example.com', 'hash', 1, NULL)",
         "INSERT INTO LoginSession VALUES ('session', 'existing', 2)",
         "INSERT INTO StudioRecord VALUES ('record', 'existing', 'assets', 'asset', '', 1)",
         "INSERT INTO RecordChunk VALUES ('chunk', 'record', 0, 'media')",

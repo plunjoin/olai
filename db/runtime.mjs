@@ -33,8 +33,24 @@ const schema = [
   'CREATE INDEX IF NOT EXISTS "RecordChunk_position_recordKey_idx" ON "RecordChunk" ("position", "recordKey")',
   'CREATE TABLE IF NOT EXISTS "DailyUsage" ("key" TEXT PRIMARY KEY, "count" INTEGER NOT NULL, "expiresAt" INTEGER NOT NULL)',
   'CREATE TABLE IF NOT EXISTS "VideoJob" ("id" TEXT PRIMARY KEY, "owner" TEXT NOT NULL, "createdAt" INTEGER NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS "OAuthAccount" ("provider" TEXT NOT NULL, "providerId" TEXT NOT NULL, "userId" TEXT NOT NULL REFERENCES "User" ("id"), "createdAt" INTEGER NOT NULL, PRIMARY KEY ("provider", "providerId"))',
+  'CREATE INDEX IF NOT EXISTS "OAuthAccount_userId_idx" ON "OAuthAccount" ("userId")',
+  'CREATE TABLE IF NOT EXISTS "PointAccount" ("userId" TEXT PRIMARY KEY REFERENCES "User" ("id"), "balance" INTEGER NOT NULL, "updatedAt" INTEGER NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS "PointLedger" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL REFERENCES "User" ("id"), "delta" INTEGER NOT NULL, "reason" TEXT NOT NULL, "refId" TEXT NOT NULL, "createdAt" INTEGER NOT NULL)',
+  'CREATE INDEX IF NOT EXISTS "PointLedger_userId_createdAt_idx" ON "PointLedger" ("userId", "createdAt")',
+  'CREATE UNIQUE INDEX IF NOT EXISTS "PointLedger_reason_refId_idx" ON "PointLedger" ("reason", "refId")',
+  'CREATE TABLE IF NOT EXISTS "InviteCode" ("code" TEXT PRIMARY KEY, "userId" TEXT NOT NULL UNIQUE REFERENCES "User" ("id"), "createdAt" INTEGER NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS "Invite" ("id" TEXT PRIMARY KEY, "inviterId" TEXT NOT NULL REFERENCES "User" ("id"), "inviteeId" TEXT NOT NULL UNIQUE REFERENCES "User" ("id"), "code" TEXT NOT NULL, "createdAt" INTEGER NOT NULL, "rewardedAt" INTEGER)',
+  'CREATE INDEX IF NOT EXISTS "Invite_inviterId_idx" ON "Invite" ("inviterId")',
+  'CREATE TABLE IF NOT EXISTS "AppSetting" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL, "updatedAt" INTEGER NOT NULL, "updatedBy" TEXT)',
+  'CREATE TABLE IF NOT EXISTS "UserBan" ("userId" TEXT PRIMARY KEY REFERENCES "User" ("id"), "reason" TEXT NOT NULL, "bannedBy" TEXT NOT NULL, "bannedAt" INTEGER NOT NULL)',
+  'CREATE TABLE IF NOT EXISTS "AdminLog" ("id" TEXT PRIMARY KEY, "adminId" TEXT NOT NULL, "adminEmail" TEXT NOT NULL, "action" TEXT NOT NULL, "target" TEXT NOT NULL, "detail" TEXT NOT NULL, "ip" TEXT NOT NULL, "createdAt" INTEGER NOT NULL)',
+  'CREATE INDEX IF NOT EXISTS "AdminLog_createdAt_idx" ON "AdminLog" ("createdAt")',
+  'CREATE TABLE IF NOT EXISTS "ModelCatalog" ("publicId" TEXT PRIMARY KEY, "upstreamId" TEXT NOT NULL UNIQUE, "alias" TEXT NOT NULL, "kind" TEXT NOT NULL, "enabled" INTEGER NOT NULL, "prices" TEXT NOT NULL, "sort" INTEGER NOT NULL, "createdAt" INTEGER NOT NULL, "updatedAt" INTEGER NOT NULL)',
   'CREATE TABLE IF NOT EXISTS "MediaObject" ("id" TEXT PRIMARY KEY, "objectKey" TEXT NOT NULL UNIQUE, "owner" TEXT NOT NULL, "attachmentId" TEXT NOT NULL, "mime" TEXT NOT NULL, "size" INTEGER NOT NULL, "sha256" TEXT NOT NULL, "createdAt" INTEGER NOT NULL)',
   'CREATE UNIQUE INDEX IF NOT EXISTS "MediaObject_identity_idx" ON "MediaObject" ("owner", "attachmentId", "sha256", "mime")',
+  'CREATE TABLE IF NOT EXISTS "EmailToken" ("tokenHash" TEXT PRIMARY KEY, "userId" TEXT NOT NULL REFERENCES "User" ("id"), "purpose" TEXT NOT NULL, "expiresAt" INTEGER NOT NULL, "createdAt" INTEGER NOT NULL)',
+  'CREATE INDEX IF NOT EXISTS "EmailToken_userId_purpose_idx" ON "EmailToken" ("userId", "purpose")',
 ];
 
 export async function initializeDatabase(options = {}) {
@@ -51,6 +67,12 @@ export async function initializeDatabase(options = {}) {
     }
     await client.execute('PRAGMA foreign_keys = ON');
     await client.batch(schema, 'write');
+    const columns = await client.execute('PRAGMA table_info("User")');
+    const names = new Set((columns.rows || []).map(row => row.name));
+    if (!names.has('emailVerifiedAt')) {
+      await client.execute('ALTER TABLE "User" ADD COLUMN "emailVerifiedAt" INTEGER');
+      await client.execute('UPDATE "User" SET "emailVerifiedAt" = "createdAt" WHERE "emailVerifiedAt" IS NULL');
+    }
     return client;
   } catch (error) {
     client.close();

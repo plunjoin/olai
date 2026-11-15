@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import type { Readable } from 'node:stream';
-import { env } from './policy';
+import { setting } from './settings';
 
 // ali-oss is CommonJS and ships no TS declarations. Keep its boundary small;
 // never return SDK responses, endpoints or errors to a browser.
@@ -19,16 +19,16 @@ export class OSSUnavailableError extends Error {
   constructor() { super('私有媒体服务暂不可用。'); }
 }
 export function ossInteger(name: string, fallback: number): number {
-  const value = env(name, String(fallback)).trim();
+  const value = setting(name, String(fallback)).trim();
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw new OSSUnavailableError();
   return Number(value);
 }
 function configuration() {
-  const region = env('OSS_REGION').trim();
-  const bucket = env('OSS_BUCKET', 'magicfang-linux-dev').trim();
-  const prefix = env('OSS_PREFIX', 'opt/olai').trim().replace(/^\/+|\/+$/g, '');
-  const accessKeyId = env('OSS_ACCESS_KEY_ID').trim();
-  const accessKeySecret = env('OSS_ACCESS_KEY_SECRET').trim();
+  const region = setting('OSS_REGION').trim();
+  const bucket = setting('OSS_BUCKET', 'magicfang-linux-dev').trim();
+  const prefix = setting('OSS_PREFIX', 'opt/olai').trim().replace(/^\/+|\/+$/g, '');
+  const accessKeyId = setting('OSS_ACCESS_KEY_ID').trim();
+  const accessKeySecret = setting('OSS_ACCESS_KEY_SECRET').trim();
   if (!/^oss-[a-z0-9-]+$/.test(region) || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(bucket)
     || !prefix || prefix.length > 200 || !prefix.split('/').every(part => /^[a-zA-Z0-9_-]+$/.test(part))
     || !accessKeyId || !accessKeySecret) throw new OSSUnavailableError();
@@ -42,7 +42,7 @@ function configuration() {
   return { region, bucket, prefix, accessKeyId, accessKeySecret, maxFileBytes };
 }
 export function ossEnabled(): boolean {
-  if (env('OSS_ENABLED') !== 'true') return false;
+  if (setting('OSS_ENABLED') !== 'true') return false;
   configuration(); // Explicit enablement fails closed on incomplete configuration.
   return true;
 }

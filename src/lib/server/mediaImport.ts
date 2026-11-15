@@ -1,7 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import { BlockList, isIP } from 'node:net';
 import { request as httpsRequest } from 'node:https';
-import { env } from './policy';
+import { setting } from './settings';
 import { mediaMaxBytes } from './oss';
 
 const denied = new BlockList();
@@ -15,8 +15,8 @@ export function publicMediaIP(ip: string): boolean {
 }
 export function allowedImportURL(source: string): URL {
   const url = new URL(source);
-  const hosts = env('OSS_IMPORT_HOSTS').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
-  try { hosts.push(new URL(env('AI_API_BASE_URL')).hostname.toLowerCase()); } catch { /* No provider host configured. */ }
+  const hosts = setting('OSS_IMPORT_HOSTS').split(',').map(value => value.trim().toLowerCase()).filter(Boolean);
+  try { hosts.push(new URL(setting('AI_API_BASE_URL')).hostname.toLowerCase()); } catch { /* No provider host configured. */ }
   if (url.protocol !== 'https:' || (url.port && url.port !== '443') || url.username || url.password || url.hash || !hosts.includes(url.hostname.toLowerCase()) || isIP(url.hostname.replace(/^\[|\]$/g, ''))) throw new Error('此媒体来源尚未被服务端允许，请联系管理员配置媒体来源。');
   return url;
 }

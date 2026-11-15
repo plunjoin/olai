@@ -4,7 +4,8 @@ import type { APIContext } from 'astro';
 import { db, MediaObject, DailyUsage, and, eq, lt, sql } from './database';
 import { currentUser } from './auth';
 import { cachedMedia, captureMedia, completeMedia } from './mediaCache';
-import { clientIP, env, hash, sameOrigin } from './policy';
+import { clientIP, hash, sameOrigin } from './policy';
+import { setting } from './settings';
 import { deleteOSS, ossEnabled, ossInteger, ossSettings, OSSUnavailableError, putOSS, readOSS } from './oss';
 
 export interface MediaIdentity { owner: string; guestOwner: string; userId: string | null }
@@ -50,7 +51,7 @@ export function mediaFailure(error: unknown, head = false): Response {
 }
 function requireEnabled() { if (!ossEnabled()) throw unavailable(); }
 function destinationOrigin(context: APIContext): string {
-  const configured = env('SITE_ORIGIN').trim();
+  const configured = setting('SITE_ORIGIN').trim();
   if (configured) return new URL(configured).origin;
   const host = context.request.headers.get('host');
   if (!host) return context.url.origin;
@@ -150,7 +151,7 @@ export function mediaURLPath(value: string, identity: MediaIdentity): string | n
   let path: string;
   if (value.startsWith('/api/media/')) path = value.split(/[?#]/, 1)[0];
   else {
-    const configured = env('SITE_ORIGIN').trim();
+    const configured = setting('SITE_ORIGIN').trim();
     const origin = identityContext.get(identity)?.origin ?? (configured ? new URL(configured).origin : undefined);
     if (!origin) return null;
     try {
