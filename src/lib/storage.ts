@@ -1,4 +1,5 @@
 import { openDB, type IDBPDatabase } from 'idb';
+import { t, tIn } from './i18n';
 import { DEFAULT_SETTINGS, type Asset, type Conversation, type Settings } from './types';
 import { accountRequest, type AccountState } from './account';
 import type { VideoWorkflowProject } from './videoWorkflow';
@@ -25,10 +26,10 @@ async function cloudRequest(store: string, init: RequestInit = {}, id?: string, 
   if (init.body) headers.set('Content-Type', 'application/json');
   const query = importing ? '?import=guest' : id ? `?id=${encodeURIComponent(id)}` : '';
   const response = await fetch(`/api/records/${store}${query}`, { ...init, headers, credentials: 'same-origin', signal: init.signal || AbortSignal.timeout(60_000) });
-  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(`云端记录接口未返回 JSON（HTTP ${response.status}），请检查服务配置。`);
+  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(t('云端记录接口未返回 JSON（HTTP {status}），请检查服务配置。', { status: response.status }));
   let data;
-  try { data = await response.json(); } catch { throw new Error('云端记录接口返回的数据格式无效。'); }
-  if (!response.ok) throw new Error(`${data?.error?.message || '云端保存失败。'}（HTTP ${response.status}）`);
+  try { data = await response.json(); } catch { throw new Error(t('云端记录接口返回的数据格式无效。')); }
+  if (!response.ok) throw new Error(t('{error}（HTTP {status}）', { error: data?.error?.message || t('云端保存失败。'), status: response.status }));
   return data;
 }
 function enqueue(key: string, write: () => Promise<void>): Promise<void> {
@@ -131,11 +132,11 @@ async function recordBody(value: Conversation | Asset | VideoWorkflowProject | L
     const item = { ...await persistRecordMedia(scrubRecordPrivacy(value), userId) } as Record<string, unknown>;
     delete item.linkedAccountId;
     const body = JSON.stringify(item);
-    if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error('记录正文超过 64 MB，请先下载备份。');
+    if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error(t('记录正文超过 64 MB，请先下载备份。'));
     return body;
   }
   if ('blob' in value && value.blob && Math.ceil(value.blob.size / 3) * 4 > MAX_RECORD_BYTES) {
-    throw new Error('文件编码后超过单条记录 64 MB 的上限，请先下载备份。');
+    throw new Error(t('文件编码后超过单条记录 64 MB 的上限，请先下载备份。'));
   }
   value = scrubRecordPrivacy(value);
   const item: Record<string, unknown> = { ...value };
@@ -172,7 +173,7 @@ async function recordBody(value: Conversation | Asset | VideoWorkflowProject | L
   if (typeof item.finalVideoUrl === 'string' && item.finalVideoUrl.startsWith('blob:')) delete item.finalVideoUrl;
   
   const body = JSON.stringify(item);
-  if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error('记录包含媒体编码后超过 64 MB 的上限，请先下载备份。');
+  if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error(t('记录包含媒体编码后超过 64 MB 的上限，请先下载备份。'));
   return body;
 }
 export type GuestSyncReport = { synced: { conversations: string[]; assets: string[]; workflows: string[] }; failures: string[] };
@@ -194,8 +195,8 @@ export function syncGuestRecords(userId: string): Promise<GuestSyncReport> {
           report.synced[store].push(value.id);
         } catch (error) {
           const label = 'title' in value ? value.title : value.prompt;
-          const detail = error instanceof Error && error.name === 'TimeoutError' ? '上传超时，请检查网络后重试。' : error instanceof Error ? error.message : '请重试。';
-          report.failures.push(`游客${store === 'conversations' ? '会话' : '作品'}「${label?.slice(0, 30) || value.id}」同步未完成，未同步的内容仍保留在本地。${detail}`);
+          const detail = error instanceof Error && error.name === 'TimeoutError' ? t('上传超时，请检查网络后重试。') : error instanceof Error ? error.message : t('请重试。');
+          report.failures.push(t('游客{item}「{name}」同步未完成，未同步的内容仍保留在本地。{detail}', { item: store === 'conversations' ? t('会话') : tIn('errors', '作品'), name: label?.slice(0, 30) || value.id, detail }));
         }
       }
       // Migrate legacy media already stored inline in the account database.
@@ -206,7 +207,7 @@ export function syncGuestRecords(userId: string): Promise<GuestSyncReport> {
           if (Array.isArray(migrated.failures)) report.failures.push(...migrated.failures);
           if (Array.isArray(migrated.migratedIds)) report.synced[store].push(...migrated.migratedIds);
         } catch (error) {
-          report.failures.push(`账号附件迁移未完成：${error instanceof Error ? error.message : '请重试。'}`);
+          report.failures.push(t('账号附件迁移未完成：{detail}', { detail: error instanceof Error ? error.message : t('请重试。') }));
         }
       }
     }
