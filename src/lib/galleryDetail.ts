@@ -1,6 +1,7 @@
+import { intlLocale, t, tIn } from './i18n';
 import type { Asset, MediaKind } from './types';
 
-const KIND_LABELS: Record<MediaKind, string> = { image: '图像', video: '视频', music: '音乐' };
+const KIND_LABELS: Record<MediaKind, string> = { image: tIn('gallery', '图像'), video: tIn('gallery', '视频'), music: tIn('gallery', '音乐') };
 const MODEL_LABELS: Record<MediaKind, string> = {
   image: 'Olai Image Engine',
   video: 'Olai Video Engine',
@@ -10,7 +11,7 @@ const MODEL_LABELS: Record<MediaKind, string> = {
 export interface GalleryParameter { label: string; value: string }
 
 export function galleryKindLabel(kind: MediaKind): string {
-  return KIND_LABELS[kind] ?? '作品';
+  return KIND_LABELS[kind] ?? t('作品');
 }
 
 export function galleryModelLabel(kind: MediaKind): string {
@@ -21,7 +22,7 @@ export function galleryModelLabel(kind: MediaKind): string {
 export function galleryTitle(asset: Asset): string {
   if (asset.kind === 'music' && asset.song?.title?.trim()) return asset.song.title.trim().slice(0, 80);
   const line = asset.prompt.trim().split('\n')[0]?.trim() ?? '';
-  return line.slice(0, 80) || (asset.kind === 'music' ? '未命名歌曲' : '未命名作品');
+  return line.slice(0, 80) || (asset.kind === 'music' ? t('未命名歌曲') : t('未命名作品'));
 }
 
 function pixelSize(asset: Asset): string | undefined {
@@ -42,7 +43,7 @@ function greatestCommonDivisor(a: number, b: number): number {
 function assetRatio(asset: Asset): string | undefined {
   const requested = asset.options.aspect_ratio;
   if (typeof requested === 'string' && /^(?:auto|\d{1,4}:\d{1,4})$/.test(requested)) {
-    return requested === 'auto' ? '自动' : requested;
+    return requested === 'auto' ? t('自动') : requested;
   }
   const width = asset.imageWidth;
   const height = asset.imageHeight;
@@ -62,38 +63,38 @@ function formatDuration(seconds: number): string {
 
 export function galleryPublishedAt(createdAt: number): string {
   const date = new Date(createdAt);
-  if (!Number.isFinite(date.getTime())) return '时间未知';
-  return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+  if (!Number.isFinite(date.getTime())) return t('时间未知');
+  return date.toLocaleDateString(intlLocale(), { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
 /** Read-only facts for the expanded detail panel. */
 export function galleryParameters(asset: Asset): GalleryParameter[] {
   const output: GalleryParameter[] = [
-    { label: '作品类型', value: galleryKindLabel(asset.kind) },
-    { label: '模型', value: galleryModelLabel(asset.kind) },
+    { label: t('作品类型'), value: galleryKindLabel(asset.kind) },
+    { label: t('模型'), value: galleryModelLabel(asset.kind) },
   ];
   const ratio = assetRatio(asset);
-  if (ratio) output.push({ label: '画面比例', value: ratio });
+  if (ratio) output.push({ label: t('画面比例'), value: ratio });
 
   if (asset.kind === 'image') {
     const target = asset.options.image_size;
-    if (typeof target === 'string' && target) output.push({ label: '目标分辨率', value: target });
+    if (typeof target === 'string' && target) output.push({ label: t('目标分辨率'), value: target });
     const actual = pixelSize(asset);
-    if (actual) output.push({ label: '实际尺寸', value: `${actual} 像素` });
+    if (actual) output.push({ label: t('实际尺寸'), value: t('{size} 像素', { size: actual }) });
   }
 
   if (asset.kind === 'video' && typeof asset.options.duration === 'number' && asset.options.duration > 0) {
-    output.push({ label: '视频时长', value: `${asset.options.duration} 秒` });
+    output.push({ label: t('视频时长'), value: t('{seconds} 秒', { seconds: asset.options.duration }) });
   }
 
   if (asset.kind === 'music') {
-    if (asset.song?.style) output.push({ label: '音乐风格', value: asset.song.style });
-    if (asset.song) output.push({ label: '演唱方式', value: asset.song.instrumental ? '纯音乐' : '人声歌曲' });
+    if (asset.song?.style) output.push({ label: t('音乐风格'), value: asset.song.style });
+    if (asset.song) output.push({ label: t('演唱方式'), value: asset.song.instrumental ? t('纯音乐') : t('人声歌曲') });
     const seconds = asset.audioDuration || (typeof asset.options.duration === 'number' ? asset.options.duration : 0);
-    if (seconds && Number.isFinite(seconds)) output.push({ label: '音频时长', value: formatDuration(seconds) });
+    if (seconds && Number.isFinite(seconds)) output.push({ label: t('音频时长'), value: formatDuration(seconds) });
   }
 
-  output.push({ label: '发布时间', value: galleryPublishedAt(asset.createdAt) });
+  output.push({ label: t('发布时间'), value: galleryPublishedAt(asset.createdAt) });
   return output;
 }
 

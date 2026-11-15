@@ -2,19 +2,20 @@ import { useMemo } from 'react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { convertAudioDataUriToPlayable } from '../lib/audio';
+import { t } from '../lib/i18n';
 import { usePlayer } from '../lib/playerContext';
 
 const renderer = {
   code({ text, lang }: { text: string; lang?: string }) {
     const l = lang || 'code';
     const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    return `<div class="code-block-wrapper"><div class="code-block-header"><span>${l}</span><button type="button" class="copy-code-btn" data-code="${encodeURIComponent(text)}">复制</button></div><pre><code class="language-${l}">${escaped}</code></pre></div>`;
+    return `<div class="code-block-wrapper"><div class="code-block-header"><span>${l}</span><button type="button" class="copy-code-btn" data-code="${encodeURIComponent(text)}">${t('复制')}</button></div><pre><code class="language-${l}">${escaped}</code></pre></div>`;
   },
   image({ href, text, title }: { href: string; text?: string; title?: string | null }) {
     if (!href) return '';
     if (href.startsWith('data:audio/') || /\.(mp3|wav|ogg|aac|m4a|flac)($|\?)/i.test(href)) {
       const playable = convertAudioDataUriToPlayable(href);
-      return `<div class="chat-audio-player"><div class="chat-audio-label">🎵 生成音频</div><button type="button" class="chat-audio-play" data-audio-src="${encodeURIComponent(playable)}">播放音频</button></div>`;
+      return `<div class="chat-audio-player"><div class="chat-audio-label">${t('🎵 生成音频')}</div><button type="button" class="chat-audio-play" data-audio-src="${encodeURIComponent(playable)}">${t('播放音频')}</button></div>`;
     }
     return `<img src="${href}" alt="${text || ''}" title="${title || ''}" class="chat-media-image" loading="lazy" />`;
   }
@@ -36,7 +37,7 @@ export default function Markdown({ text }: { text: string }) {
     const audio = (e.target as HTMLElement).closest<HTMLElement>('.chat-audio-play');
     if (audio?.dataset.audioSrc) {
       const src = decodeURIComponent(audio.dataset.audioSrc);
-      play({ id: `chat-audio-${src.slice(-24)}`, kind: 'audio', src, title: '生成音频' });
+      play({ id: `chat-audio-${src.slice(-24)}`, kind: 'audio', src, title: t('生成音频') });
       return;
     }
     const target = (e.target as HTMLElement).closest('.copy-code-btn') as HTMLElement;
@@ -45,7 +46,7 @@ export default function Markdown({ text }: { text: string }) {
     if (code) {
       void navigator.clipboard.writeText(code);
       const original = target.innerText;
-      target.innerText = '已复制！';
+      target.innerText = t('已复制！');
       setTimeout(() => { target.innerText = original; }, 1500);
     }
   };

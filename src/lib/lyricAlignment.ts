@@ -1,5 +1,6 @@
 import { request, safeMediaURL } from './api';
 import { pcmToWavBlob } from './audio';
+import { t } from './i18n';
 import { formatLrcTimestamp } from './lrc';
 import type { Asset } from './types';
 import { sungLines } from './music';
@@ -12,7 +13,7 @@ export function readAudioDuration(blob: Blob): Promise<number> {
       clearTimeout(timer); audio.onloadedmetadata = null; audio.onerror = null;
       audio.removeAttribute('src'); audio.load(); URL.revokeObjectURL(url);
       if (duration && Number.isFinite(duration)) resolve(duration);
-      else reject(new Error('无法读取音频时长，请检查音频文件。'));
+      else reject(new Error(t('无法读取音频时长，请检查音频文件。')));
     };
     const timer = setTimeout(() => finish(), 8000);
     audio.onloadedmetadata = () => finish(audio.duration);
@@ -25,11 +26,11 @@ export function alignmentToLrc(content: string, lyrics: string, duration: number
   const expected = lyrics.split('\n').map(text => text.trim()).filter(Boolean);
   let result;
   try { result = JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); }
-  catch { throw new Error('校准结果格式不完整，原歌词时间轴已保留。'); }
-  if (!Array.isArray(result?.lines) || result.lines.length !== expected.length || !expected.length) throw new Error('校准结果缺少歌词，原歌词时间轴已保留。');
+  catch { throw new Error(t('校准结果格式不完整，原歌词时间轴已保留。')); }
+  if (!Array.isArray(result?.lines) || result.lines.length !== expected.length || !expected.length) throw new Error(t('校准结果缺少歌词，原歌词时间轴已保留。'));
   let previousEnd = 0;
   const body = result.lines.flatMap((line: { index: number; start: number; end: number }, index: number) => {
-    if (line.index !== index || typeof line.start !== 'number' || typeof line.end !== 'number' || !Number.isFinite(line.start) || !Number.isFinite(line.end) || line.start < previousEnd || line.end <= line.start || line.end > duration || line.start >= duration) throw new Error('校准结果包含无效或重叠的时间点，原歌词时间轴已保留。');
+    if (line.index !== index || typeof line.start !== 'number' || typeof line.end !== 'number' || !Number.isFinite(line.start) || !Number.isFinite(line.end) || line.start < previousEnd || line.end <= line.start || line.end > duration || line.start >= duration) throw new Error(t('校准结果包含无效或重叠的时间点，原歌词时间轴已保留。'));
     previousEnd = line.end;
     return [`${formatLrcTimestamp(line.start)} ${expected[index]}`, `${formatLrcTimestamp(line.end)}`];
   });
@@ -38,22 +39,22 @@ export function alignmentToLrc(content: string, lyrics: string, duration: number
 
 export async function alignLyricsToAudio(asset: Asset, signal: AbortSignal): Promise<{ lrc: string; duration: number }> {
   const lyrics = asset.song ? sungLines(asset.song) : (asset.lyrics || '').replace(/^\[[^\]]+\]\s*$/gm, '');
-  if (!lyrics.trim() || asset.song?.instrumental) throw new Error('纯音乐无需校准歌词。');
+  if (!lyrics.trim() || asset.song?.instrumental) throw new Error(t('纯音乐无需校准歌词。'));
   let blob = asset.blob;
   if (!blob && asset.url) {
     try {
       const response = await fetch(safeMediaURL(asset.url), { signal });
       if (!response.ok) throw new Error();
       blob = await response.blob();
-    } catch { throw new Error('无法读取原始音频，请下载后检查文件，或重新生成。'); }
+    } catch { throw new Error(t('无法读取原始音频，请下载后检查文件，或重新生成。')); }
   }
-  if (!blob?.size) throw new Error('没有可用于校准的音频文件。');
+  if (!blob?.size) throw new Error(t('没有可用于校准的音频文件。'));
   signal.throwIfAborted();
   // Decode the actual audio and send a compact mono WAV, preserving its timing.
   const audioContext = new AudioContext();
   let decoded: AudioBuffer;
   try { decoded = await audioContext.decodeAudioData(await blob.arrayBuffer()); }
-  catch { throw new Error('音频格式暂时无法用于歌词校准，原歌词时间轴已保留。'); }
+  catch { throw new Error(t('音频格式暂时无法用于歌词校准，原歌词时间轴已保留。')); }
   finally { await audioContext.close(); }
   signal.throwIfAborted();
   const duration = decoded.duration;
@@ -78,6 +79,6 @@ export async function alignLyricsToAudio(asset: Asset, signal: AbortSignal): Pro
   }) });
   const result = await response.json();
   const content = result.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') throw new Error('服务未返回有效的音频校准结果，原歌词时间轴已保留。');
-  return { lrc: alignmentToLrc(content, lyrics, duration, asset.song?.title || '原创音乐'), duration };
+  if (typeof content !== 'string') throw new Error(t('服务未返回有效的音频校准结果，原歌词时间轴已保留。'));
+  return { lrc: alignmentToLrc(content, lyrics, duration, asset.song?.title || t('原创音乐')), duration };
 }

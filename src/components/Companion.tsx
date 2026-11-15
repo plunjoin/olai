@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { t } from '../lib/i18n';
 
 export default function Companion({ size = 140, className = '', animated = false, interactive = false }: { size?: number; className?: string; animated?: boolean; interactive?: boolean }) {
   const wrapper = useRef<HTMLSpanElement>(null);
@@ -47,7 +48,7 @@ export default function Companion({ size = 140, className = '', animated = false
     return () => { cancelAnimationFrame(frame); clearTimeout(blinkTimer); clearTimeout(openTimer); window.removeEventListener('pointermove', move); document.documentElement.removeEventListener('pointerleave', reset); window.removeEventListener('blur', reset); motion.removeEventListener('change', configure); pointer.removeEventListener('change', configure); document.removeEventListener('visibilitychange', configure); };
   }, [interactive]);
   if (!interactive) return <img src="/brand/olai-mascot.png" alt="" aria-hidden="true" width={590} height={500} className={`companion ${animated ? 'companion-float' : ''} ${className}`} style={{ width: size }} draggable={false} />;
-  return <span ref={wrapper} className={`companion companion-interactive ${animated ? 'companion-float' : ''} ${className}`} style={{ width: size }} role="img" aria-label="小o，你的灵感伙伴">
+  return <span ref={wrapper} className={`companion companion-interactive ${animated ? 'companion-float' : ''} ${className}`} style={{ width: size }} role="img" aria-label={t('小o，你的灵感伙伴')}>
     <img src="/brand/xiao-o-idle.png" alt="" width={590} height={500} draggable={false} />
     <svg viewBox="0 0 590 500" className="companion-face" aria-hidden="true"><g ref={gaze} className="companion-gaze">
       {[{ x: 249.5, y: 253 }, { x: 371.5, y: 222 }].map(({ x, y }) => <g key={x} transform={`translate(${x} ${y}) rotate(-13)`}><g className={`companion-eye ${blinking ? 'is-blinking' : ''}`}><rect x="-19" y="-31" width="38" height="62" rx="19" fill="#202957" /></g></g>)}

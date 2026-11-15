@@ -6,6 +6,7 @@
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { t } from './i18n';
 import type { Shot } from './videoWorkflow';
 
 let ffmpegInstance: FFmpeg | null = null;
@@ -31,17 +32,17 @@ export async function loadFFmpeg(onProgress?: (message: string) => void): Promis
   }
   
   ffmpegLoading = true;
-  onProgress?.('正在加载视频处理引擎...');
-  
+  onProgress?.(t('正在加载视频处理引擎...'));
+
   try {
     const ffmpeg = new FFmpeg();
-    
+
     ffmpeg.on('log', ({ message }) => {
       console.log('[FFmpeg]', message);
     });
-    
+
     ffmpeg.on('progress', ({ progress }) => {
-      onProgress?.(`处理中：${Math.round(progress * 100)}%`);
+      onProgress?.(t('处理中：{percent}%', { percent: Math.round(progress * 100) }));
     });
     
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
@@ -52,12 +53,12 @@ export async function loadFFmpeg(onProgress?: (message: string) => void): Promis
     
     ffmpegInstance = ffmpeg;
     ffmpegReady = true;
-    onProgress?.('视频处理引擎已就绪');
-    
+    onProgress?.(t('视频处理引擎已就绪'));
+
     return ffmpeg;
   } catch (error) {
     ffmpegLoading = false;
-    throw new Error(`加载视频处理引擎失败：${error instanceof Error ? error.message : '未知错误'}`);
+    throw new Error(t('加载视频处理引擎失败：{error}', { error: error instanceof Error ? error.message : t('未知错误') }));
   } finally {
     ffmpegLoading = false;
   }
@@ -195,13 +196,13 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
   const ffmpeg = await loadFFmpeg(onProgress);
   const plan = planAssembly(options);
   
-  onProgress?.('准备视频文件...', 0);
-  
+  onProgress?.(t('准备视频文件...'), 0);
+
   // 过滤出已完成的镜头
   const completedShots = shots.filter(s => s.videoBlob && s.videoStatus === 'completed');
-  
+
   if (completedShots.length === 0) {
-    throw new Error('没有可用的视频镜头');
+    throw new Error(t('没有可用的视频镜头'));
   }
   
   // 写入所有视频文件
@@ -211,7 +212,7 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
     await ffmpeg.writeFile(fileName, await fetchFile(shot.videoBlob!));
   }
   
-  onProgress?.('准备合成...', 10);
+  onProgress?.(t('准备合成...'), 10);
   
   // 创建 concat 列表
   const concatList = completedShots
@@ -229,7 +230,7 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
     await ffmpeg.writeFile('subtitles.srt', plan.subtitleText);
   }
   
-  onProgress?.('合成视频中...', 20);
+  onProgress?.(t('合成视频中...'), 20);
   
   // 构建 ffmpeg 命令
   const args: string[] = [
@@ -288,7 +289,7 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
   // 执行 ffmpeg 命令
   await ffmpeg.exec(args);
   
-  onProgress?.('读取合成结果...', 90);
+  onProgress?.(t('读取合成结果...'), 90);
   
   // 读取输出文件
   const data = await ffmpeg.readFile('output.mp4');
@@ -310,7 +311,7 @@ export async function assembleVideo(options: AssemblyOptions): Promise<Blob> {
     // Ignore cleanup errors
   }
   
-  onProgress?.('合成完成！', 100);
+  onProgress?.(t('合成完成！'), 100);
   
   return new Blob([typeof data === 'string' ? data : new Uint8Array(data)], { type: 'video/mp4' });
 }

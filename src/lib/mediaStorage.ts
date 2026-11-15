@@ -1,5 +1,6 @@
 // Browser-side persistence transport. Only same-origin media handles are stored;
 // OSS credentials, object keys and signed bucket URLs never enter this module.
+import { t } from './i18n';
 export const MEDIA_PATH = /^\/api\/media\/[a-f0-9-]{36}$/i;
 export function isStoredMedia(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -11,9 +12,9 @@ const generatedBlobs = new WeakMap<Blob, string>();
 export function registerStoredBlob(blob: Blob, url: string | null) { if (url && isStoredMedia(url)) generatedBlobs.set(blob, url); }
 async function resultURL(response: Response): Promise<string> {
   let body: any;
-  try { body = await response.json(); } catch { throw new Error('媒体存储接口返回的数据无效。'); }
-  if (!response.ok) throw new Error(body?.error?.message || `媒体上传失败（HTTP ${response.status}）。`);
-  if (!isStoredMedia(body.url)) throw new Error('媒体存储接口没有返回本站预览地址。');
+  try { body = await response.json(); } catch { throw new Error(t('媒体存储接口返回的数据无效。')); }
+  if (!response.ok) throw new Error(body?.error?.message || t('媒体上传失败（HTTP {status}）。', { status: response.status }));
+  if (!isStoredMedia(body.url)) throw new Error(t('媒体存储接口没有返回本站预览地址。'));
   return body.url;
 }
 export async function uploadMedia(blob: Blob, attachmentId: string, userId: string | null): Promise<string> {
@@ -39,7 +40,7 @@ async function persistSource(source: string, id: string, userId: string | null):
   if (isStoredMedia(source)) return source;
   if (/^(?:data:|blob:)/.test(source)) {
     const response = await fetch(source);
-    if (!response.ok) throw new Error('本地媒体读取失败，原始数据仍保留在浏览器。');
+    if (!response.ok) throw new Error(t('本地媒体读取失败，原始数据仍保留在浏览器。'));
     return uploadMedia(await response.blob(), id, userId);
   }
   const headers: Record<string, string> = { 'Content-Type': 'application/json', 'X-Olai-User': userId || 'guest' };
@@ -86,7 +87,7 @@ export async function hydrateWorkflowMedia<T>(project: T): Promise<T> {
   const hydrate = async (target: any, blobKey: string, urlKey: string) => {
     if (target[blobKey] || !isStoredMedia(target[urlKey])) return;
     const response = await fetch(target[urlKey], { credentials: 'same-origin', signal: AbortSignal.timeout(180_000) });
-    if (!response.ok) throw new Error('短片媒体读取失败，请重新同步后重试。');
+    if (!response.ok) throw new Error(t('短片媒体读取失败，请重新同步后重试。'));
     target[blobKey] = await response.blob();
   };
   if (Array.isArray(row.shots)) row.shots = await Promise.all(row.shots.map(async (source: any) => {

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { usePlayer } from '../lib/playerContext';
 import { lockBodyScroll } from '../lib/scrollLock';
+import { t } from '../lib/i18n';
 import { downloadLrcBlob, generateLrcFromPrompt, parseLRC, type LyricLine } from '../lib/lrc';
 import { sungLines } from '../lib/music';
 
@@ -517,18 +518,18 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
         ].filter(Boolean).join(' ')}
         onMouseEnter={() => setVideoHovered(true)}
         onMouseLeave={() => setVideoHovered(false)}
-        aria-label="视频播放器"
+        aria-label={t('视频播放器')}
         aria-hidden={!hasVideo || isDockedInline}
       >
         {isVideoExpanded && (
-          <button type="button" className="video-theater-backdrop" aria-label="收起视频播放器" onClick={collapseVideoTheater} />
+          <button type="button" className="video-theater-backdrop" aria-label={t('收起视频播放器')} onClick={collapseVideoTheater} />
         )}
         <div ref={videoFrameRef} className="video-player-frame">
           {hasVideo && (
             <div className={`floating-video-header ${videoHovered || !isPlaying || isVideoExpanded ? 'visible' : ''}`}>
               <div className="floating-video-title">
                 <span className="floating-video-badge">
-                  <Video size={11} /> {isVideoExpanded ? '大屏观看' : '视频播放'}
+                  <Video size={11} /> {isVideoExpanded ? t('大屏观看') : t('视频播放')}
                 </span>
                 <span className="title-text" title={activeMedia?.title}>
                   {activeMedia?.title}
@@ -539,8 +540,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                   type="button"
                   className="header-action-btn"
                   onClick={togglePip}
-                  title="画中画模式"
-                  aria-label="画中画"
+                  title={t('画中画模式')}
+                  aria-label={t('画中画')}
                 >
                   <PictureInPicture size={14} />
                 </button>
@@ -549,8 +550,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                     type="button"
                     className="header-action-btn video-theater-toggle"
                     onClick={collapseVideoTheater}
-                    title="收起为小窗"
-                    aria-label="收起为小窗"
+                    title={t('收起为小窗')}
+                    aria-label={t('收起为小窗')}
                   >
                     <Minimize2 size={14} />
                   </button>
@@ -559,8 +560,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                     type="button"
                     className="header-action-btn"
                     onClick={openVideoTheater}
-                    title="大屏观看"
-                    aria-label="大屏观看"
+                    title={t('大屏观看')}
+                    aria-label={t('大屏观看')}
                   >
                     <Maximize2 size={14} />
                   </button>
@@ -569,8 +570,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                   type="button"
                   className="header-action-btn close-btn"
                   onClick={close}
-                  title="关闭播放器"
-                  aria-label="关闭"
+                  title={t('关闭播放器')}
+                  aria-label={t('关闭')}
                 >
                   <X size={15} />
                 </button>
@@ -613,7 +614,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                     type="button"
                     className="v-btn play-btn"
                     onClick={togglePlay}
-                    aria-label={isPlaying ? '暂停' : '播放'}
+                    aria-label={isPlaying ? t('暂停') : t('播放')}
                   >
                     {isPlaying ? <Pause size={16} /> : <Play size={16} className="play-icon-offset" />}
                   </button>
@@ -627,8 +628,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                     type="button"
                     className="v-btn"
                     onClick={toggleMute}
-                    title={isMuted ? '取消静音' : '静音'}
-                    aria-label={isMuted ? '取消静音' : '静音'}
+                    title={isMuted ? t('取消静音') : t('静音')}
+                    aria-label={isMuted ? t('取消静音') : t('静音')}
                   >
                     {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                   </button>
@@ -637,8 +638,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                       type="button"
                       className="v-btn"
                       onClick={collapseVideoTheater}
-                      title="收起为小窗"
-                      aria-label="收起为小窗"
+                      title={t('收起为小窗')}
+                      aria-label={t('收起为小窗')}
                     >
                       <Minimize2 size={16} />
                     </button>
@@ -647,8 +648,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                       type="button"
                       className="v-btn"
                       onClick={openVideoTheater}
-                      title="大屏观看"
-                      aria-label="大屏观看"
+                      title={t('大屏观看')}
+                      aria-label={t('大屏观看')}
                     >
                       <Maximize2 size={16} />
                     </button>
@@ -657,8 +658,8 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                     type="button"
                     className="v-btn"
                     onClick={toggleFullscreen}
-                    title="全屏"
-                    aria-label="全屏"
+                    title={t('全屏')}
+                    aria-label={t('全屏')}
                   >
                     <Maximize2 size={16} />
                   </button>
@@ -677,14 +678,14 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
           {/* A. Compact disc: spins alone as a circle; on hover it stretches into
                  an ellipse and the controls slide out behind the artwork. */}
           {!isExpanded && (
-            <aside className="floating-audio-disc-wrap" aria-label="浮窗音乐播放器">
+            <aside className="floating-audio-disc-wrap" aria-label={t('浮窗音乐播放器')}>
               <button
                 ref={discRef}
                 type="button"
                 className="floating-audio-disc"
                 onClick={togglePlay}
-                aria-label={`${isPlaying ? '暂停' : '播放'}：${activeMedia.title}`}
-                title={`${activeMedia.title} · ${isPlaying ? '暂停' : '播放'}`}
+                aria-label={t('{action}：{title}', { action: isPlaying ? t('暂停') : t('播放'), title: activeMedia.title })}
+                title={t('{title} · {action}', { title: activeMedia.title, action: isPlaying ? t('暂停') : t('播放') })}
               >
                 <ProgressRing progress={progressPercent} />
                 <span className={`audio-disc-cover ${isPlaying ? 'is-spinning' : ''}`}>
@@ -698,16 +699,16 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
               </button>
 
               <div className="audio-disc-controls">
-                <button type="button" onClick={togglePlay} aria-label={isPlaying ? '暂停' : '播放'} title={isPlaying ? '暂停' : '播放'}>
+                <button type="button" onClick={togglePlay} aria-label={isPlaying ? t('暂停') : t('播放')} title={isPlaying ? t('暂停') : t('播放')}>
                   {isPlaying ? <Pause size={15} /> : <Play size={15} className="play-icon-offset" />}
                 </button>
-                <button type="button" onClick={openAudioPlayer} aria-label="展开播放器" title="展开播放器">
+                <button type="button" onClick={openAudioPlayer} aria-label={t('展开播放器')} title={t('展开播放器')}>
                   <Maximize2 size={15} />
                 </button>
-                <button type="button" onClick={toggleMute} aria-label={isMuted ? '取消静音' : '静音'} title={isMuted ? '取消静音' : '静音'}>
+                <button type="button" onClick={toggleMute} aria-label={isMuted ? t('取消静音') : t('静音')} title={isMuted ? t('取消静音') : t('静音')}>
                   {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
                 </button>
-                <button type="button" className="is-danger" onClick={close} aria-label="关闭播放器" title="关闭播放器">
+                <button type="button" className="is-danger" onClick={close} aria-label={t('关闭播放器')} title={t('关闭播放器')}>
                   <X size={15} />
                 </button>
               </div>
@@ -720,15 +721,15 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
               className={`audio-stage ${audioClosing ? 'is-closing' : ''}`}
               role="dialog"
               aria-modal="true"
-              aria-label={`音乐播放器：${activeMedia.title}`}
+              aria-label={t('音乐播放器：{title}', { title: activeMedia.title })}
             >
-              <button type="button" className="audio-stage-backdrop" aria-label="收起音乐播放器" onClick={collapseAudioPlayer} />
+              <button type="button" className="audio-stage-backdrop" aria-label={t('收起音乐播放器')} onClick={collapseAudioPlayer} />
               <section ref={audioPanelRef} className="audio-stage-panel">
                 <div className="audio-stage-art">
                   <div className="audio-stage-cover-wrap">
                     <div className={`audio-stage-cover ${isPlaying ? 'is-spinning' : ''}`}>
                       {activeMedia.coverUrl
-                        ? <img src={activeMedia.coverUrl} alt={`${activeMedia.title}封面`} />
+                        ? <img src={activeMedia.coverUrl} alt={t('{title}封面', { title: activeMedia.title })} />
                         : <Music2 size={68} />}
                     </div>
                     <ProgressRing progress={progressPercent} className="audio-stage-ring" />
@@ -736,7 +737,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                   <div className="audio-stage-now">
                     <span className="audio-stage-badge">AI AUDIO</span>
                     <h2 id="audio-player-title">{activeMedia.title}</h2>
-                    <p>{activeMedia.song?.style || '原创音乐'}{!activeMedia.song?.instrumental && ' · 人声歌曲'}</p>
+                    <p>{activeMedia.song?.style || t('原创音乐')}{!activeMedia.song?.instrumental && ` · ${t('人声歌曲')}`}</p>
                   </div>
                   <div className={`audio-stage-eq ${isPlaying ? 'active' : ''}`} aria-hidden="true">
                     <span /><span /><span /><span /><span /><span />
@@ -749,16 +750,16 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                 <div className="audio-stage-side">
                   <header className="audio-stage-head">
                     <div className="audio-stage-heading">
-                      <span className="audio-stage-kicker">正在播放</span>
+                      <span className="audio-stage-kicker">{t('正在播放')}</span>
                       <strong title={activeMedia.title}>{activeMedia.title}</strong>
                     </div>
                     <div className="audio-stage-head-actions">
-                      <button type="button" onClick={toggleMute} aria-label={isMuted ? '取消静音' : '静音'} title={isMuted ? '取消静音' : '静音'}>
+                      <button type="button" onClick={toggleMute} aria-label={isMuted ? t('取消静音') : t('静音')} title={isMuted ? t('取消静音') : t('静音')}>
                         {isMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
                       </button>
                       {/* Closes the dialog back to the compact disc; playback keeps
                           going. Stopping the player lives on the disc's own close. */}
-                      <button type="button" className="audio-stage-collapse is-danger" onClick={collapseAudioPlayer} aria-label="关闭弹窗" title="关闭弹窗">
+                      <button type="button" className="audio-stage-collapse is-danger" onClick={collapseAudioPlayer} aria-label={t('关闭弹窗')} title={t('关闭弹窗')}>
                         <X size={17} />
                       </button>
                     </div>
@@ -766,7 +767,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
 
                   {activeMedia.lyrics && !activeMedia.song?.instrumental && (
                     <div className="audio-stage-status">
-                      <span>{activeMedia.lrcSource === 'audio' ? '已按音频校准 · 可试听检查' : '歌词时间为估算 · 可按音频校准'}</span>
+                      <span>{activeMedia.lrcSource === 'audio' ? t('已按音频校准 · 可试听检查') : t('歌词时间为估算 · 可按音频校准')}</span>
                       {onAlignLyrics && (
                         <button
                           type="button"
@@ -775,7 +776,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                           onClick={() => onAlignLyrics(activeMedia.id)}
                         >
                           {aligningIds.includes(activeMedia.id) ? <LoaderCircle size={13} className="spin" /> : <Sparkles size={13} />}
-                          {aligningIds.includes(activeMedia.id) ? '正在校准歌词…' : '校准歌词'}
+                          {aligningIds.includes(activeMedia.id) ? t('正在校准歌词…') : t('校准歌词')}
                         </button>
                       )}
                     </div>
@@ -796,7 +797,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                               role="button"
                               tabIndex={0}
                               onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); seek(item.time); } }}
-                              title={`点击跳转到 ${formatTime(item.time)}`}
+                              title={t('点击跳转到 {time}', { time: formatTime(item.time) })}
                             >
                               <span className="lyric-time">{formatTime(item.time)}</span>
                               <span className="lyric-text">{item.text}</span>
@@ -807,7 +808,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                     ) : (
                       <div className="lyrics-empty">
                         <FileText size={34} />
-                        <p>{activeMedia.song?.instrumental ? '纯音乐，享受旋律。' : '暂无对齐歌词数据'}</p>
+                        <p>{activeMedia.song?.instrumental ? t('纯音乐，享受旋律。') : t('暂无对齐歌词数据')}</p>
                       </div>
                     )}
                   </div>
@@ -823,7 +824,7 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                         value={currentTime}
                         onChange={handleSeekSlider}
                         className="progress-slider"
-                        aria-label="播放进度"
+                        aria-label={t('播放进度')}
                         style={{
                           background: `linear-gradient(to right, var(--accent-lime, #7047eb) ${progressPercent}%, rgba(120, 132, 170, 0.18) ${progressPercent}%)`,
                         }}
@@ -833,15 +834,15 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
 
                     <div className="audio-stage-controls">
                       <div className="audio-stage-controls-side">
-                        <button type="button" onClick={changeRate} title="播放倍速" aria-label={`播放倍速 ${playbackRate} 倍`}>
+                        <button type="button" onClick={changeRate} title={t('播放倍速')} aria-label={t('播放倍速 {rate} 倍', { rate: playbackRate })}>
                           <span className="speed-tag">{playbackRate}x</span>
                         </button>
                         {localLrc && (
                           <>
-                            <button type="button" onClick={handleCopyLrc} title={copied ? '已复制歌词' : '复制 LRC 歌词'} aria-label="复制 LRC 歌词">
+                            <button type="button" onClick={handleCopyLrc} title={copied ? t('已复制歌词') : t('复制 LRC 歌词')} aria-label={t('复制 LRC 歌词')}>
                               {copied ? <Check size={17} /> : <Copy size={17} />}
                             </button>
-                            <button type="button" onClick={handleDownloadLrc} title="下载 LRC 歌词" aria-label="下载 LRC 歌词">
+                            <button type="button" onClick={handleDownloadLrc} title={t('下载 LRC 歌词')} aria-label={t('下载 LRC 歌词')}>
                               <Download size={17} />
                             </button>
                           </>
@@ -849,19 +850,19 @@ export default function GlobalMediaPlayer({ onAlignLyrics, aligningIds = [] }: {
                       </div>
 
                       <div className="audio-stage-controls-center">
-                        <button type="button" className="audio-stage-jump" onClick={() => jump(-5)} title="后退 5 秒" aria-label="后退 5 秒">
+                        <button type="button" className="audio-stage-jump" onClick={() => jump(-5)} title={t('后退 5 秒')} aria-label={t('后退 5 秒')}>
                           <RotateCcw size={19} />
                         </button>
-                        <button type="button" className="audio-stage-play" onClick={togglePlay} aria-label={isPlaying ? '暂停' : '播放'}>
+                        <button type="button" className="audio-stage-play" onClick={togglePlay} aria-label={isPlaying ? t('暂停') : t('播放')}>
                           {isPlaying ? <Pause size={24} /> : <Play size={24} className="play-icon-offset" />}
                         </button>
-                        <button type="button" className="audio-stage-jump" onClick={() => jump(5)} title="快进 5 秒" aria-label="快进 5 秒">
+                        <button type="button" className="audio-stage-jump" onClick={() => jump(5)} title={t('快进 5 秒')} aria-label={t('快进 5 秒')}>
                           <RotateCw size={19} />
                         </button>
                       </div>
 
                       <div className="audio-stage-controls-side is-right">
-                        <button type="button" onClick={toggleMute} title={isMuted ? '取消静音' : '静音'} aria-label={isMuted ? '取消静音' : '静音'}>
+                        <button type="button" onClick={toggleMute} title={isMuted ? t('取消静音') : t('静音')} aria-label={isMuted ? t('取消静音') : t('静音')}>
                           {isMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
                         </button>
                       </div>

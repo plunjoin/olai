@@ -4,6 +4,7 @@
  * 2. data:audio/pcm 与各类音频 data URI 解析与 Blob 转换
  * 3. 从 Markdown 消息中提取音频媒体链接
  */
+import { t } from './i18n';
 
 export interface ParsedAudio {
   blob: Blob;
@@ -100,12 +101,12 @@ export function isRiffWav(bytes: Uint8Array): boolean {
  */
 export function parseAudioDataUri(uri: string): ParsedAudio {
   if (!uri.startsWith('data:')) {
-    throw new Error('无效的 data URI');
+    throw new Error(t('无效的 data URI'));
   }
 
   const comma = uri.indexOf(',');
   if (comma === -1) {
-    throw new Error('未找到 Base64 数据的逗号分隔符');
+    throw new Error(t('未找到 Base64 数据的逗号分隔符'));
   }
 
   const meta = uri.slice(5, comma);

@@ -17,6 +17,7 @@ import { assembleVideo, exportSRT } from '../lib/videoAssembly';
 import { base64Blob, generateAudio, generateImage, generateVideo, mediaOutputs, publicServiceError, request, safeMediaURL, videoContent } from '../lib/api';
 import { OMNI_SEGMENT_DURATION, type VideoEngineMode } from '../lib/video';
 import { getAll, put, remove } from '../lib/storage';
+import { intlLocale, t } from '../lib/i18n';
 
 interface VideoWorkflowWorkspaceProps {
   videoEngineMode?: VideoEngineMode;
@@ -26,14 +27,14 @@ interface VideoWorkflowWorkspaceProps {
 }
 
 const STAGE_LABELS: Record<WorkflowStage, string> = {
-  init: '创意输入',
-  script: '编剧',
-  shotlist: '分镜',
-  keyframes: '关键帧',
-  videos: '视频生成',
-  music: '配乐',
-  assembly: '合成',
-  complete: '完成',
+  init: t('创意输入'),
+  script: t('编剧'),
+  shotlist: t('分镜'),
+  keyframes: t('关键帧'),
+  videos: t('视频生成'),
+  music: t('配乐'),
+  assembly: t('合成'),
+  complete: t('完成'),
 };
 
 // 环境变量配置
@@ -77,7 +78,7 @@ export default function VideoWorkflowWorkspace({
         musicUrl: restoreURL(project.musicBlob, project.musicUrl),
         finalVideoUrl: restoreURL(project.finalVideoBlob, project.finalVideoUrl),
       })));
-    }).catch(() => { if (active) onError('短片项目读取失败，请刷新页面重试。'); });
+    }).catch(() => { if (active) onError(t('短片项目读取失败，请刷新页面重试。')); });
     return () => { active = false; mediaURLs.forEach(url => URL.revokeObjectURL(url)); };
   }, []);
 
@@ -106,7 +107,7 @@ export default function VideoWorkflowWorkspace({
   }, []);
 
   const saveBoard = (project: VideoWorkflowProject) => {
-    void saveProject(project).catch(() => onError('项目保存失败，请点击重试保存。'));
+    void saveProject(project).catch(() => onError(t('项目保存失败，请点击重试保存。')));
   };
 
   // 创建新项目
@@ -129,26 +130,26 @@ export default function VideoWorkflowWorkspace({
     if (!currentProject) return;
     
     setLoading(true);
-    setLoadingMessage('编剧正在创作脚本和风格圣经...');
+    setLoadingMessage(t('编剧正在创作脚本和风格圣经...'));
     abortRef.current = new AbortController();
     
     try {
       const response = await request('chat/completions', { method: 'POST', signal: abortRef.current.signal, body: JSON.stringify({ action: 'workflow-script', idea: currentProject.idea, targetLength: currentProject.targetLength || 30, elements: currentProject.elements }) });
       const json = await response.json();
       const content = json.choices?.[0]?.message?.content;
-      if (!content) throw new Error('未收到编剧输出');
-      
+      if (!content) throw new Error(t('未收到编剧输出'));
+
       let scriptData;
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('输出中未找到 JSON 格式');
+        if (!jsonMatch) throw new Error(t('输出中未找到 JSON 格式'));
         scriptData = JSON.parse(jsonMatch[0]);
       } catch (e) {
-        throw new Error('编剧输出的 JSON 格式无效');
+        throw new Error(t('编剧输出的 JSON 格式无效'));
       }
-      
+
       if (!scriptData.script || !scriptData.styleBible) {
-        throw new Error('脚本或风格圣经缺失');
+        throw new Error(t('脚本或风格圣经缺失'));
       }
       
       await saveProject({
@@ -174,22 +175,22 @@ export default function VideoWorkflowWorkspace({
     if (!currentProject?.script || !currentProject.styleBible) return;
     
     setLoading(true);
-    setLoadingMessage('导演正在规划分镜...');
+    setLoadingMessage(t('导演正在规划分镜...'));
     abortRef.current = new AbortController();
     
     try {
       const response = await request('chat/completions', { method: 'POST', signal: abortRef.current.signal, body: JSON.stringify({ action: 'workflow-shots', script: currentProject.script, styleBible: currentProject.styleBible, targetLength: currentProject.targetLength || 30, elements: currentProject.elements }) });
       const json = await response.json();
       const content = json.choices?.[0]?.message?.content;
-      if (!content) throw new Error('未收到导演输出');
-      
+      if (!content) throw new Error(t('未收到导演输出'));
+
       let shotsData;
       try {
         const jsonMatch = content.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error('输出中未找到 JSON 数组');
+        if (!jsonMatch) throw new Error(t('输出中未找到 JSON 数组'));
         shotsData = JSON.parse(jsonMatch[0]);
       } catch (e) {
-        throw new Error('导演输出的 JSON 格式无效');
+        throw new Error(t('导演输出的 JSON 格式无效'));
       }
       
       const shots = validateShotList(shotsData, currentProject.elements);
@@ -239,7 +240,7 @@ export default function VideoWorkflowWorkspace({
         const shot = updatedShots[i];
         if (!shotsToGenerate.find(s => s.id === shot.id)) continue;
         
-        setLoadingMessage(`生成关键帧 ${shot.number}/${updatedShots.length}...`);
+        setLoadingMessage(t('生成关键帧 {index}/{total}...', { index: shot.number, total: updatedShots.length }));
         
         updatedShots[i] = { ...shot, keyframeStatus: 'pending' };
         await saveProject({ ...currentProject, shots: updatedShots });
@@ -257,7 +258,7 @@ export default function VideoWorkflowWorkspace({
           const outputs = mediaOutputs(json, 'image');
           
           if (outputs.length === 0) {
-            throw new Error('未生成关键帧图片');
+            throw new Error(t('未生成关键帧图片'));
           }
           
           const output = outputs[0];
@@ -272,7 +273,7 @@ export default function VideoWorkflowWorkspace({
             const r = await fetch(url);
             blob = await r.blob();
           } else {
-            throw new Error('关键帧数据格式无效');
+            throw new Error(t('关键帧数据格式无效'));
           }
           
           updatedShots[i] = {
@@ -359,7 +360,7 @@ export default function VideoWorkflowWorkspace({
             accumulatedDuration += shot.duration;
             const segmentsNeeded = Math.ceil(accumulatedDuration / OMNI_SEGMENT_DURATION);
             
-            setLoadingMessage(`连续长镜头：生成镜头 ${shot.number}/${updatedShots.length} (${segmentsNeeded * OMNI_SEGMENT_DURATION}秒)...`);
+            setLoadingMessage(t('连续长镜头：生成镜头 {index}/{total} ({seconds} 秒)...', { index: shot.number, total: updatedShots.length, seconds: segmentsNeeded * OMNI_SEGMENT_DURATION }));
             
             updatedShots[shotIndex] = { ...shot, videoStatus: 'pending' };
             await saveProject({ ...currentProject, shots: updatedShots });
@@ -381,7 +382,7 @@ export default function VideoWorkflowWorkspace({
               });
               
               const json = await response.json();
-              if (!json.id) throw new Error('未返回视频任务 ID');
+              if (!json.id) throw new Error(t('未返回视频任务 ID'));
               
               extendFrom = json.id;
               updatedShots[shotIndex] = { ...shot, videoRemoteId: json.id, videoStatus: 'pending' };
@@ -414,11 +415,11 @@ export default function VideoWorkflowWorkspace({
                   };
                   break;
                 } else if (status.status === 'failed') {
-                  throw new Error(status.error?.message || '视频生成失败');
+                  throw new Error(status.error?.message || t('视频生成失败'));
                 }
                 
                 if (attempts >= maxAttempts) {
-                  throw new Error('视频生成超时');
+                  throw new Error(t('视频生成超时'));
                 }
               }
             } catch (error: any) {
@@ -427,13 +428,13 @@ export default function VideoWorkflowWorkspace({
               // 处理 429 限流
               if (error.status === 429) {
                 const retryAfter = parseRetryAfter(error.headers?.get?.('Retry-After'));
-                const waitMessage = retryAfter 
-                  ? `请等待 ${retryAfter} 秒后重试` 
-                  : '已达到每日额度上限，请明天再试';
+                const waitMessage = retryAfter
+                  ? t('请等待 {seconds} 秒后重试', { seconds: retryAfter })
+                  : t('已达到每日额度上限，请明天再试');
                 updatedShots[shotIndex] = {
                   ...shot,
                   videoStatus: 'failed',
-                  videoError: `视频生成额度已用完。${waitMessage}`,
+                  videoError: t('视频生成额度已用完。{message}', { message: waitMessage }),
                 };
               } else {
                 updatedShots[shotIndex] = {
@@ -459,7 +460,7 @@ export default function VideoWorkflowWorkspace({
             if (shotIndex === -1) continue;
             
             const task = (async () => {
-              setLoadingMessage(`生成视频 ${shot.number}/${updatedShots.length}...`);
+              setLoadingMessage(t('生成视频 {index}/{total}...', { index: shot.number, total: updatedShots.length }));
               
               updatedShots[shotIndex] = { ...shot, videoStatus: 'pending' };
               await saveProject({ ...currentProject, shots: updatedShots });
@@ -482,7 +483,7 @@ export default function VideoWorkflowWorkspace({
                 
                 if (videoMode === 'task') {
                   const json = await response.json();
-                  if (!json.id) throw new Error('未返回视频任务 ID');
+                  if (!json.id) throw new Error(t('未返回视频任务 ID'));
                   
                   updatedShots[shotIndex] = { ...shot, videoRemoteId: json.id, videoStatus: 'pending' };
                   await saveProject({ ...currentProject, shots: updatedShots });
@@ -513,11 +514,11 @@ export default function VideoWorkflowWorkspace({
                       };
                       break;
                     } else if (status.status === 'failed') {
-                      throw new Error(status.error?.message || '视频生成失败');
+                      throw new Error(status.error?.message || t('视频生成失败'));
                     }
                     
                     if (attempts >= maxAttempts) {
-                      throw new Error('视频生成超时');
+                      throw new Error(t('视频生成超时'));
                     }
                   }
                 } else {
@@ -525,7 +526,7 @@ export default function VideoWorkflowWorkspace({
                   const outputs = mediaOutputs(json, 'video');
                   
                   if (outputs.length === 0) {
-                    throw new Error('未生成视频');
+                    throw new Error(t('未生成视频'));
                   }
                   
                   const output = outputs[0];
@@ -540,7 +541,7 @@ export default function VideoWorkflowWorkspace({
                     const r = await fetch(url);
                     blob = await r.blob();
                   } else {
-                    throw new Error('视频数据格式无效');
+                    throw new Error(t('视频数据格式无效'));
                   }
                   
                   updatedShots[shotIndex] = {
@@ -556,13 +557,13 @@ export default function VideoWorkflowWorkspace({
                 
                 if (error.status === 429) {
                   const retryAfter = parseRetryAfter(error.headers?.get?.('Retry-After'));
-                  const waitMessage = retryAfter 
-                    ? `请等待 ${retryAfter} 秒后重试` 
-                    : '已达到每日额度上限，请明天再试';
+                  const waitMessage = retryAfter
+                    ? t('请等待 {seconds} 秒后重试', { seconds: retryAfter })
+                    : t('已达到每日额度上限，请明天再试');
                   updatedShots[shotIndex] = {
                     ...shot,
                     videoStatus: 'failed',
-                    videoError: `视频生成额度已用完。${waitMessage}`,
+                    videoError: t('视频生成额度已用完。{message}', { message: waitMessage }),
                   };
                 } else {
                   updatedShots[shotIndex] = {
@@ -612,7 +613,7 @@ export default function VideoWorkflowWorkspace({
     if (!approved) return;
     
     setLoading(true);
-    setLoadingMessage('作曲中...');
+    setLoadingMessage(t('作曲中...'));
     abortRef.current = new AbortController();
     
     try {
@@ -629,7 +630,7 @@ export default function VideoWorkflowWorkspace({
       const outputs = mediaOutputs(json, 'music');
       
       if (outputs.length === 0) {
-        throw new Error('未生成音乐');
+        throw new Error(t('未生成音乐'));
       }
       
       const output = outputs[0];
@@ -644,7 +645,7 @@ export default function VideoWorkflowWorkspace({
         const r = await fetch(url);
         blob = await r.blob();
       } else {
-        throw new Error('音乐数据格式无效');
+        throw new Error(t('音乐数据格式无效'));
       }
       
       // 读取音频时长
@@ -683,13 +684,13 @@ export default function VideoWorkflowWorkspace({
     if (!currentProject?.shots) return;
     
     setLoading(true);
-    setLoadingMessage('准备合成...');
+    setLoadingMessage(t('准备合成...'));
     
     try {
       const completedShots = currentProject.shots.filter(s => s.videoBlob && s.videoStatus === 'completed');
       
       if (completedShots.length === 0) {
-        throw new Error('没有可用的视频镜头');
+        throw new Error(t('没有可用的视频镜头'));
       }
       
       const totalDuration = calculateTotalDuration(completedShots);
@@ -755,37 +756,37 @@ export default function VideoWorkflowWorkspace({
     return (
       <div className="workflow-container">
         <div className="workflow-header">
-          <h2>短片工坊</h2>
-          <p className="workflow-subtitle">把人物、场景和灵感，拖进你的故事</p>
+          <h2>{t('短片工坊')}</h2>
+          <p className="workflow-subtitle">{t('把人物、场景和灵感，拖进你的故事')}</p>
         </div>
-        
+
         <div className="workflow-projects">
-          <form className="wf-create-project" onSubmit={event => { event.preventDefault(); if (newIdea.trim()) void handleCreateProject(newIdea.trim(), newDuration).catch(() => onError('创建项目失败，请重试。')); }}>
+          <form className="wf-create-project" onSubmit={event => { event.preventDefault(); if (newIdea.trim()) void handleCreateProject(newIdea.trim(), newDuration).catch(() => onError(t('创建项目失败，请重试。'))); }}>
             <div className="wf-create-icon"><Film size={28} /></div>
-            <h3>开始一个新故事</h3>
-            <p>写下一句话创意，交给 AI 构思，或自己动手搭建分镜。</p>
-            <label htmlFor="workflow-idea">故事创意</label>
-            <textarea id="workflow-idea" value={newIdea} onChange={event => setNewIdea(event.target.value)} placeholder="例如：一个穿黄色雨衣的女孩，在雨后的老街找到一封来自未来的信…" rows={3} required />
-            <div className="wf-create-footer"><label>目标时长<select value={newDuration} onChange={event => setNewDuration(Number(event.target.value))}><option value={15}>15 秒</option><option value={30}>30 秒</option><option value={60}>60 秒</option><option value={90}>90 秒</option></select></label><button type="submit" className="workflow-action-primary" disabled={!newIdea.trim()}><Plus size={17} />创建短片</button></div>
+            <h3>{t('开始一个新故事')}</h3>
+            <p>{t('写下一句话创意，交给 AI 构思，或自己动手搭建分镜。')}</p>
+            <label htmlFor="workflow-idea">{t('故事创意')}</label>
+            <textarea id="workflow-idea" value={newIdea} onChange={event => setNewIdea(event.target.value)} placeholder={t('例如：一个穿黄色雨衣的女孩，在雨后的老街找到一封来自未来的信…')} rows={3} required />
+            <div className="wf-create-footer"><label>{t('目标时长')}<select value={newDuration} onChange={event => setNewDuration(Number(event.target.value))}><option value={15}>{t('{seconds} 秒', { seconds: 15 })}</option><option value={30}>{t('{seconds} 秒', { seconds: 30 })}</option><option value={60}>{t('{seconds} 秒', { seconds: 60 })}</option><option value={90}>{t('{seconds} 秒', { seconds: 90 })}</option></select></label><button type="submit" className="workflow-action-primary" disabled={!newIdea.trim()}><Plus size={17} />{t('创建短片')}</button></div>
           </form>
           
           {projects.length > 0 && (
             <div className="workflow-project-list">
-              <h3>我的短片</h3>
+              <h3>{t('我的短片')}</h3>
               {projects.map(project => (
                 <div key={project.id} className="workflow-project-card">
                   <div className="workflow-project-info">
                     <h4>{project.title}</h4>
                     <p>{STAGE_LABELS[project.stage]}</p>
                     <span className="workflow-project-time">
-                      {new Date(project.updatedAt).toLocaleString('zh-CN')}
+                      {new Date(project.updatedAt).toLocaleString(intlLocale())}
                     </span>
                   </div>
                   <div className="workflow-project-actions">
                     <button onClick={() => setCurrentProject(project)}>
-                      继续
+                      {t('继续')}
                     </button>
-                    <button aria-label={`删除项目：${project.title}`} onClick={() => void handleDeleteProject(project.id).catch(() => onError('删除项目失败，请重试。'))}>
+                    <button aria-label={t('删除项目：{title}', { title: project.title })} onClick={() => void handleDeleteProject(project.id).catch(() => onError(t('删除项目失败，请重试。')))}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -817,10 +818,10 @@ export default function VideoWorkflowWorkspace({
       <div className="workflow-header">
         <button disabled={loading} onClick={() => setCurrentProject(null)} className="workflow-back">
           <ChevronLeft size={20} />
-          返回列表
+          {t('返回列表')}
         </button>
         <h2>{currentProject.title}</h2>
-        <div className="wf-project-meta"><p className="workflow-stage">{STAGE_LABELS[currentProject.stage]}</p><span role="status">{saveState === 'saving' ? '保存中…' : saveState === 'failed' ? '保存失败' : '已自动保存'}</span>{saveState === 'failed' && <button className="wf-small-button" onClick={() => saveBoard(currentProject)}>重试保存</button>}</div>
+        <div className="wf-project-meta"><p className="workflow-stage">{STAGE_LABELS[currentProject.stage]}</p><span role="status">{saveState === 'saving' ? t('保存中…') : saveState === 'failed' ? t('保存失败') : t('已自动保存')}</span>{saveState === 'failed' && <button className="wf-small-button" onClick={() => saveBoard(currentProject)}>{t('重试保存')}</button>}</div>
       </div>
       
       {loading && (
@@ -828,7 +829,7 @@ export default function VideoWorkflowWorkspace({
           <div className="workflow-loading-spinner" />
           <p>{loadingMessage}</p>
           <button onClick={handleCancel} className="workflow-cancel">
-            取消
+            {t('取消')}
           </button>
         </div>
       )}
@@ -838,44 +839,44 @@ export default function VideoWorkflowWorkspace({
           <WorkflowBoard key={currentProject.id} project={currentProject} onChange={saveBoard} />
           {currentProject.stage === 'init' && (
             <div className="workflow-stage-init">
-              <h3>创意</h3>
+              <h3>{t('创意')}</h3>
               <p>{currentProject.idea}</p>
-              <p>目标时长：{currentProject.targetLength} 秒</p>
+              <p>{t('目标时长：{seconds} 秒', { seconds: currentProject.targetLength ?? '' })}</p>
               <button onClick={generateScript} className="workflow-action-primary">
-                开始创作 - 生成脚本
+                {t('开始创作 - 生成脚本')}
               </button>
             </div>
           )}
           
           {currentProject.stage === 'script' && currentProject.script && currentProject.styleBible && (
             <div className="workflow-stage-script">
-              <h3>脚本</h3>
+              <h3>{t('脚本')}</h3>
               <div className="workflow-script-content">
                 <p>{currentProject.script}</p>
               </div>
-              
-              <h3>风格圣经</h3>
+
+              <h3>{t('风格圣经')}</h3>
               <div className="workflow-style-bible">
-                <div><strong>角色外观：</strong>{currentProject.styleBible.appearance}</div>
-                <div><strong>服装：</strong>{currentProject.styleBible.wardrobe}</div>
-                <div><strong>美术风格：</strong>{currentProject.styleBible.artStyle}</div>
-                <div><strong>色调：</strong>{currentProject.styleBible.palette}</div>
+                <div><strong>{t('角色外观：')}</strong>{currentProject.styleBible.appearance}</div>
+                <div><strong>{t('服装：')}</strong>{currentProject.styleBible.wardrobe}</div>
+                <div><strong>{t('美术风格：')}</strong>{currentProject.styleBible.artStyle}</div>
+                <div><strong>{t('色调：')}</strong>{currentProject.styleBible.palette}</div>
               </div>
-              
+
               <button onClick={generateShotList} className="workflow-action-primary">
-                下一步 - 生成分镜
+                {t('下一步 - 生成分镜')}
               </button>
             </div>
           )}
           
           {currentProject.stage === 'shotlist' && currentProject.shots && (
             <div className="workflow-stage-shotlist">
-              <h3>准备生成画面</h3>
+              <h3>{t('准备生成画面')}</h3>
               <p>
-                共 {currentProject.shots.length} 个镜头，总时长 {calculateTotalDuration(currentProject.shots)} 秒
+                {t('共 {count} 个镜头，总时长 {duration} 秒', { count: currentProject.shots.length, duration: calculateTotalDuration(currentProject.shots) })}
                 {isOmni && AI_VIDEO_OMNI_ASYNC && (
                   <span className="workflow-note-inline">
-                    （连续镜头每段固定 {OMNI_SEGMENT_DURATION} 秒）
+                    {t('（连续镜头每段固定 {seconds} 秒）', { seconds: OMNI_SEGMENT_DURATION })}
                   </span>
                 )}
               </p>
@@ -888,38 +889,38 @@ export default function VideoWorkflowWorkspace({
                     onChange={(e) => saveBoard({ ...currentProject, useContinuousShot: e.target.checked })}
                   />
                   <span>
-                    连续长镜头模式（最多 {AI_VIDEO_EXTEND_MAX_SECONDS} 秒，使用 extend_from 保持连续性）
+                    {t('连续长镜头模式（最多 {seconds} 秒，使用 extend_from 保持连续性）', { seconds: AI_VIDEO_EXTEND_MAX_SECONDS })}
                   </span>
                 </label>
               )}
               
               <div className="workflow-actions">
                 <button disabled={!currentProject.shots.length || currentProject.shots.some(shot => !shot.sceneDescription.trim())} onClick={() => generateKeyframes()} className="workflow-action-primary">
-                  下一步 - 生成关键帧（{pending.keyframes} 个）
+                  {t('下一步 - 生成关键帧（{count} 个）', { count: pending.keyframes })}
                 </button>
               </div>
-              {(!currentProject.shots.length || currentProject.shots.some(shot => !shot.sceneDescription.trim())) && <p className="wf-hint">添加镜头并填写每个镜头的画面描述后，即可生成关键帧。</p>}
+              {(!currentProject.shots.length || currentProject.shots.some(shot => !shot.sceneDescription.trim())) && <p className="wf-hint">{t('添加镜头并填写每个镜头的画面描述后，即可生成关键帧。')}</p>}
             </div>
           )}
           
           {currentProject.stage === 'keyframes' && currentProject.shots && (
             <div className="workflow-stage-keyframes">
-              <h3>关键帧</h3>
-              
+              <h3>{t('关键帧')}</h3>
+
               <div className="workflow-keyframes">
                 {currentProject.shots.map((shot, i) => (
                   <div key={shot.id} className="workflow-keyframe-card">
-                    <h4>镜头 {shot.number} ({shot.duration}秒)</h4>
+                    <h4>{t('镜头 {number} ({duration}秒)', { number: shot.number, duration: shot.duration })}</h4>
                     {shot.keyframeUrl && shot.keyframeStatus === 'completed' && (
-                      <img src={shot.keyframeUrl} alt={`镜头 ${i + 1} 关键帧`} />
+                      <img src={shot.keyframeUrl} alt={t('镜头 {number} 关键帧', { number: i + 1 })} />
                     )}
-                    {shot.keyframeStatus === 'pending' && <p>生成中...</p>}
+                    {shot.keyframeStatus === 'pending' && <p>{t('生成中...')}</p>}
                     {shot.keyframeStatus === 'failed' && (
                       <div className="workflow-error">
                         <AlertCircle size={16} />
                         <div>
                           <p>{shot.keyframeError}</p>
-                          <button onClick={() => generateKeyframes(shot.id)}>重新生成</button>
+                          <button onClick={() => generateKeyframes(shot.id)}>{t('重新生成')}</button>
                         </div>
                       </div>
                     )}
@@ -930,22 +931,22 @@ export default function VideoWorkflowWorkspace({
               
               <div className="workflow-actions">
                 <button onClick={() => generateKeyframes()}>
-                  重新生成失败的关键帧
+                  {t('重新生成失败的关键帧')}
                 </button>
                 <button onClick={() => generateVideos()} className="workflow-action-primary">
-                  下一步 - 生成视频
+                  {t('下一步 - 生成视频')}
                   {currentProject.useContinuousShot && continuousGenerations > 0 && (
-                    <span> ({continuousGenerations} 次生成)</span>
+                    <span> {t('({count} 次生成)', { count: continuousGenerations })}</span>
                   )}
                   {!currentProject.useContinuousShot && pending.videos > 0 && (
-                    <span> ({pending.videos} 个)</span>
+                    <span> {t('({count} 个)', { count: pending.videos })}</span>
                   )}
                 </button>
               </div>
-              
+
               {isOmni && generationLimit <= 5 && (
                 <p className="workflow-warning">
-                  ⚠️ Omni 每日额度有限（约 3-5 次），请谨慎使用。当前剩余额度：{generationLimit}
+                  {t('⚠️ Omni 每日额度有限（约 3-5 次），请谨慎使用。当前剩余额度：{remaining}', { remaining: generationLimit })}
                 </p>
               )}
             </div>
@@ -953,44 +954,44 @@ export default function VideoWorkflowWorkspace({
           
           {currentProject.stage === 'videos' && currentProject.shots && (
             <div className="workflow-stage-videos">
-              <h3>镜头视频</h3>
-              
+              <h3>{t('镜头视频')}</h3>
+
               <div className="workflow-videos">
                 {currentProject.shots.map((shot) => (
                   <div key={shot.id} className="workflow-video-card">
-                    <h4>镜头 {shot.number} ({shot.duration}秒)</h4>
+                    <h4>{t('镜头 {number} ({duration}秒)', { number: shot.number, duration: shot.duration })}</h4>
                     {shot.videoUrl && shot.videoStatus === 'completed' && (
                       <button
                         type="button"
                         className="workflow-play-media"
-                        onClick={() => { setIsVideoExpanded(true); play({ id: `wf-${currentProject.id}-${shot.id}`, kind: 'video', src: shot.videoUrl!, title: `镜头 ${shot.number} · ${currentProject.title}` }); }}
+                        onClick={() => { setIsVideoExpanded(true); play({ id: `wf-${currentProject.id}-${shot.id}`, kind: 'video', src: shot.videoUrl!, title: t('镜头 {number} · {title}', { number: shot.number, title: currentProject.title }) }); }}
                       >
-                        <Play size={16} />播放镜头视频
+                        <Play size={16} />{t('播放镜头视频')}
                       </button>
                     )}
-                    {shot.videoStatus === 'pending' && <p>生成中...</p>}
+                    {shot.videoStatus === 'pending' && <p>{t('生成中...')}</p>}
                     {shot.videoStatus === 'failed' && (
                       <div className="workflow-error">
                         <AlertCircle size={16} />
                         <div>
                           <p>{shot.videoError}</p>
-                          <button onClick={() => generateVideos(shot.id)}>重新生成</button>
+                          <button onClick={() => generateVideos(shot.id)}>{t('重新生成')}</button>
                         </div>
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-              
+
               <div className="workflow-actions">
                 <button onClick={() => generateVideos()}>
-                  重新生成失败的视频
+                  {t('重新生成失败的视频')}
                 </button>
                 <button onClick={generateMusicTrack} className="workflow-action-primary">
-                  添加配乐（可选）
+                  {t('添加配乐（可选）')}
                 </button>
                 <button onClick={() => assembleFinal(false)}>
-                  跳过配乐，开始合成
+                  {t('跳过配乐，开始合成')}
                 </button>
               </div>
             </div>
@@ -998,36 +999,38 @@ export default function VideoWorkflowWorkspace({
           
           {(currentProject.stage === 'music' || currentProject.stage === 'assembly') && (
             <div className="workflow-stage-assembly">
-              <h3>合成成片</h3>
-              
+              <h3>{t('合成成片')}</h3>
+
               {currentProject.musicUrl && (
                 <div className="workflow-music">
-                  <h4>背景音乐</h4>
+                  <h4>{t('背景音乐')}</h4>
                   <button
                     type="button"
                     className="workflow-play-media"
-                    onClick={() => play({ id: `wf-music-${currentProject.id}`, kind: 'audio', src: currentProject.musicUrl!, title: `背景音乐 · ${currentProject.title}` })}
+                    onClick={() => play({ id: `wf-music-${currentProject.id}`, kind: 'audio', src: currentProject.musicUrl!, title: t('背景音乐 · {title}', { title: currentProject.title }) })}
                   >
-                    <Play size={16} />播放背景音乐
+                    <Play size={16} />{t('播放背景音乐')}
                   </button>
                 </div>
               )}
-              
+
               <p>
-                准备合成 {currentProject.shots?.filter(s => s.videoStatus === 'completed').length} 个镜头
-                {currentProject.musicUrl && '和背景音乐'}
+                {t('准备合成 {count} 个镜头{music}', {
+                  count: currentProject.shots?.filter(s => s.videoStatus === 'completed').length ?? 0,
+                  music: currentProject.musicUrl ? t('和背景音乐') : '',
+                })}
               </p>
-              
+
               <div className="workflow-actions">
                 <button onClick={() => assembleFinal(false)} className="workflow-action-primary">
-                  合成视频（无字幕）
+                  {t('合成视频（无字幕）')}
                 </button>
                 <button onClick={() => assembleFinal(true)} className="workflow-action-primary">
-                  合成视频（含字幕）
+                  {t('合成视频（含字幕）')}
                 </button>
                 {currentProject.shots && (
                   <button onClick={() => exportSRT(currentProject.shots!, currentProject.title)}>
-                    导出 SRT 字幕
+                    {t('导出 SRT 字幕')}
                   </button>
                 )}
               </div>
@@ -1036,21 +1039,21 @@ export default function VideoWorkflowWorkspace({
           
           {currentProject.stage === 'complete' && (
             <div className="workflow-stage-complete">
-              <h3>🎉 工作流完成</h3>
-              
+              <h3>{t('🎉 工作流完成')}</h3>
+
               {currentProject.finalVideoUrl && currentProject.finalVideoStatus === 'completed' && (
                 <div className="workflow-final-video">
-                  <h4>成片</h4>
+                  <h4>{t('成片')}</h4>
                   <button
                     type="button"
                     className="workflow-play-media"
-                    onClick={() => { setIsVideoExpanded(true); play({ id: `wf-final-${currentProject.id}`, kind: 'video', src: currentProject.finalVideoUrl!, title: `成片 · ${currentProject.title}` }); }}
+                    onClick={() => { setIsVideoExpanded(true); play({ id: `wf-final-${currentProject.id}`, kind: 'video', src: currentProject.finalVideoUrl!, title: t('成片 · {title}', { title: currentProject.title }) }); }}
                   >
-                    <Play size={16} />播放成片
+                    <Play size={16} />{t('播放成片')}
                   </button>
                   <button onClick={downloadFinalVideo} className="workflow-download">
                     <Download size={16} />
-                    下载成片
+                    {t('下载成片')}
                   </button>
                 </div>
               )}
@@ -1063,17 +1066,17 @@ export default function VideoWorkflowWorkspace({
               )}
               
               <div className="workflow-final-shots">
-                <h4>所有镜头</h4>
+                <h4>{t('所有镜头')}</h4>
                 {currentProject.shots?.map((shot, i) => (
                   <div key={shot.id} className="workflow-final-shot">
-                    <span>镜头 {i + 1}</span>
+                    <span>{t('镜头 {number}', { number: i + 1 })}</span>
                     {shot.videoUrl && (
                       <button
                         type="button"
                         className="workflow-play-media"
-                        onClick={() => { setIsVideoExpanded(true); play({ id: `wf-final-shot-${currentProject.id}-${shot.id}`, kind: 'video', src: shot.videoUrl!, title: `镜头 ${i + 1} · ${currentProject.title}` }); }}
+                        onClick={() => { setIsVideoExpanded(true); play({ id: `wf-final-shot-${currentProject.id}-${shot.id}`, kind: 'video', src: shot.videoUrl!, title: t('镜头 {number} · {title}', { number: i + 1, title: currentProject.title }) }); }}
                       >
-                        <Play size={15} />播放
+                        <Play size={15} />{t('播放')}
                       </button>
                     )}
                   </div>

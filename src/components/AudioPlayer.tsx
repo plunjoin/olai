@@ -14,6 +14,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
+import { t } from '../lib/i18n';
 import { downloadLrcBlob, generateLrcFromPrompt, parseLRC, type LyricLine } from '../lib/lrc';
 
 export interface AudioPlayerProps {
@@ -27,7 +28,7 @@ export interface AudioPlayerProps {
 
 export default function AudioPlayer({
   src,
-  title = 'AI 原创音频',
+  title = t('AI 原创音频'),
   prompt = '',
   lrc,
   onLrcChange,
@@ -202,19 +203,19 @@ export default function AudioPlayer({
             type="button"
             className={`tab-btn ${viewMode === 'disc' ? 'active' : ''}`}
             onClick={() => setViewMode('disc')}
-            title="黑胶唱片模式"
+            title={t('黑胶唱片模式')}
           >
             <Disc3 size={15} />
-            <span>唱片</span>
+            <span>{t('唱片')}</span>
           </button>
           <button
             type="button"
             className={`tab-btn ${viewMode === 'lyrics' ? 'active' : ''}`}
             onClick={() => setViewMode('lyrics')}
-            title="动态歌词模式"
+            title={t('动态歌词模式')}
           >
             <FileText size={15} />
-            <span>歌词 (LRC)</span>
+            <span>{t('歌词 (LRC)')}</span>
           </button>
         </div>
       </div>
@@ -259,7 +260,7 @@ export default function AudioPlayer({
                       ref={isActive ? activeLyricRef : null}
                       className={`lyric-line ${isActive ? 'active' : ''}`}
                       onClick={() => seekToLyric(item.time)}
-                      title={`点击跳转到 ${formatTime(item.time)}`}
+                      title={t('点击跳转到 {time}', { time: formatTime(item.time) })}
                     >
                       <span className="lyric-time">{formatTime(item.time)}</span>
                       <span className="lyric-text">{item.text}</span>
@@ -270,11 +271,11 @@ export default function AudioPlayer({
             ) : (
               <div className="lyrics-empty">
                 <FileText size={32} />
-                <p>暂无对齐歌词数据</p>
+                <p>{t('暂无对齐歌词数据')}</p>
                 {prompt && (
                   <button type="button" className="secondary-button small" onClick={handleRegenerateLrc}>
                     <Sparkles size={14} />
-                    智能生成 LRC 歌词
+                    {t('智能生成 LRC 歌词')}
                   </button>
                 )}
               </div>
@@ -306,28 +307,28 @@ export default function AudioPlayer({
       {/* 控制操作栏 */}
       <div className="player-controls-bar">
         <div className="controls-left">
-          <button type="button" className="control-icon-btn" onClick={changeRate} title="播放速度">
+          <button type="button" className="control-icon-btn" onClick={changeRate} title={t('播放速度')}>
             <span className="speed-tag">{playbackRate}x</span>
           </button>
-          <button type="button" className="control-icon-btn" onClick={toggleMute} title={isMuted ? '取消静音' : '静音'}>
+          <button type="button" className="control-icon-btn" onClick={toggleMute} title={isMuted ? t('取消静音') : t('静音')}>
             {isMuted ? <VolumeX size={17} /> : <Volume2 size={17} />}
           </button>
         </div>
 
         {/* 核心播放控制 */}
         <div className="controls-center">
-          <button type="button" className="control-icon-btn" onClick={() => jump(-5)} title="后退 5 秒">
+          <button type="button" className="control-icon-btn" onClick={() => jump(-5)} title={t('后退 5 秒')}>
             <RotateCcw size={17} />
           </button>
           <button
             type="button"
             className="play-pause-circle-btn"
             onClick={togglePlay}
-            aria-label={isPlaying ? '暂停' : '播放'}
+            aria-label={isPlaying ? t('暂停') : t('播放')}
           >
             {isPlaying ? <Pause size={20} /> : <Play size={20} className="play-icon-offset" />}
           </button>
-          <button type="button" className="control-icon-btn" onClick={() => jump(5)} title="快进 5 秒">
+          <button type="button" className="control-icon-btn" onClick={() => jump(5)} title={t('快进 5 秒')}>
             <RotateCw size={17} />
           </button>
         </div>
@@ -340,7 +341,7 @@ export default function AudioPlayer({
                 type="button"
                 className="control-icon-btn"
                 onClick={handleCopyLrc}
-                title={copied ? '已复制歌词' : '复制 LRC 歌词'}
+                title={copied ? t('已复制歌词') : t('复制 LRC 歌词')}
               >
                 {copied ? <Check size={16} color="var(--accent-lime, #b6ff3e)" /> : <Copy size={16} />}
               </button>
@@ -348,7 +349,7 @@ export default function AudioPlayer({
                 type="button"
                 className="control-icon-btn"
                 onClick={handleDownloadLrc}
-                title="导出并下载 .LRC 歌词文件"
+                title={t('导出并下载 .LRC 歌词文件')}
               >
                 <Download size={16} />
               </button>

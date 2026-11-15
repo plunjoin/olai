@@ -1,6 +1,8 @@
+import { t } from './i18n';
+
 /**
  * 视频工作流 / 短片工坊
- * 
+ *
  * 从一句想法生成完整的多镜头短视频，分阶段进行：
  * 1. 编剧：生成脚本、人物和风格
  * 2. 导演/分镜：生成镜头列表
@@ -37,7 +39,7 @@ export interface WorkflowElement {
 }
 
 export const ELEMENT_LABELS: Record<WorkflowElementKind, string> = {
-  character: '人物', scene: '场景', prop: '道具',
+  character: t('人物'), scene: t('场景'), prop: t('道具'),
 };
 
 export interface Shot {
@@ -104,26 +106,26 @@ export interface VideoWorkflowProject {
  */
 export function validateShotList(data: any, elements: WorkflowElement[] = []): Shot[] {
   if (!Array.isArray(data)) {
-    throw new Error('镜头列表必须是数组');
+    throw new Error(t('镜头列表必须是数组'));
   }
-  
+
   if (data.length === 0) {
-    throw new Error('镜头列表不能为空');
+    throw new Error(t('镜头列表不能为空'));
   }
-  
+
   const shots: Shot[] = [];
   for (let i = 0; i < data.length; i++) {
     const shot = data[i];
     if (!shot || typeof shot !== 'object') {
-      throw new Error(`镜头 ${i + 1} 格式无效`);
+      throw new Error(t('镜头 {number} 格式无效', { number: i + 1 }));
     }
-    
+
     if (typeof shot.duration !== 'number' || shot.duration <= 0 || shot.duration > 30) {
-      throw new Error(`镜头 ${i + 1} 的时长必须在 0-30 秒之间`);
+      throw new Error(t('镜头 {number} 的时长必须在 0-30 秒之间', { number: i + 1 }));
     }
-    
+
     if (!shot.sceneDescription || typeof shot.sceneDescription !== 'string') {
-      throw new Error(`镜头 ${i + 1} 缺少场景描述`);
+      throw new Error(t('镜头 {number} 缺少场景描述', { number: i + 1 }));
     }
     
     shots.push({

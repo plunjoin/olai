@@ -28,7 +28,9 @@
   justify-content: space-between;
   gap: 1.25rem;
   flex-wrap: wrap;
-  margin-bottom: 1.6rem;
+  margin-bottom: 1.7rem;
+  padding-bottom: 1.15rem;
+  border-bottom: 1px solid var(--border-subtle);
 }
 .gallery-toolbar .filter-tabs { flex-wrap: wrap; }
 .gallery-toolbar-actions { display: flex; align-items: center; gap: 0.65rem; }
@@ -36,13 +38,15 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0.5rem 0.85rem;
+  padding: 0.5rem 0.9rem;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.83rem;
   font-weight: 500;
+  box-shadow: var(--shadow-xs);
+  transition: border-color .18s, color .18s, background .18s, box-shadow .18s;
 }
 .gallery-favorite-filter em {
   font-style: normal;
@@ -54,11 +58,12 @@
 }
 .gallery-favorite-filter:hover { border-color: var(--border-medium); color: var(--text-primary); }
 .gallery-favorite-filter.active {
-  background: var(--accent-lime-subtle);
-  border-color: var(--accent-lime-border);
-  color: var(--accent-lime);
+  background: var(--accent-lime);
+  border-color: var(--accent-lime);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
 }
-.gallery-favorite-filter.active em { background: var(--accent-lime); color: #fff; }
+.gallery-favorite-filter.active em { background: rgba(255, 255, 255, 0.22); color: #fff; }
 
 .gallery-masonry { columns: 4 250px; column-gap: 1.1rem; }
 .gallery-card { break-inside: avoid; margin: 0 0 1.1rem; position: relative; }
@@ -249,16 +254,16 @@
 }
 .gallery-card-caption-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gallery-card-caption-text strong {
-  font-size: 0.84rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--text-primary);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-.gallery-card-caption-text span { font-size: 0.7rem; color: var(--text-muted); letter-spacing: 0.02em; }
+.gallery-card-caption-text span { font-size: 0.75rem; color: var(--text-muted); letter-spacing: 0.01em; }
 .gallery-card-caption-action { position: relative; z-index: 5; flex-shrink: 0; display: flex; }
 .gallery-card-caption-action .more-trigger {
   width: 28px;

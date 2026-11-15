@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bookmark, CircleAlert, Download, Image as ImageIcon, Music2, SlidersHorizontal, Video, Volume2, VolumeX } from 'lucide-react';
 import type { Asset } from '../lib/types';
 import { galleryKindLabel, galleryTitle } from '../lib/galleryDetail';
+import { intlLocale, t } from '../lib/i18n';
 import { usePlayer } from '../lib/playerContext';
 import { useAssetURL } from './AssetCard';
 import ThinkingOrbSvg from './svg/ThinkingOrbSvg';
@@ -39,8 +40,8 @@ export default function GalleryCard({
   const pending = asset.status === 'pending';
   const failed = asset.status === 'failed';
   const completed = asset.status === 'completed';
-  const statusLabel = pending ? '生成中' : failed ? '生成未完成' : kindLabel;
-  const date = new Date(asset.createdAt).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+  const statusLabel = pending ? t('生成中') : failed ? t('生成未完成') : kindLabel;
+  const date = new Date(asset.createdAt).toLocaleDateString(intlLocale(), { month: 'short', day: 'numeric' });
   // Reserve the real shape before the (possibly slow) media request finishes.
   const mediaRatio = asset.kind === 'image'
     ? asset.imageWidth && asset.imageHeight
@@ -82,9 +83,9 @@ export default function GalleryCard({
   };
   let media: ReactNode;
   if (pending) {
-    media = <div className="gallery-card-placeholder is-pending"><ThinkingOrbSvg size={34} label="正在生成作品" /><span>正在生成…</span></div>;
+    media = <div className="gallery-card-placeholder is-pending"><ThinkingOrbSvg size={34} label={t('正在生成作品')} /><span>{t('正在生成…')}</span></div>;
   } else if (failed) {
-    media = <div className="gallery-card-placeholder is-failed"><CircleAlert size={26} /><span>生成未完成</span></div>;
+    media = <div className="gallery-card-placeholder is-failed"><CircleAlert size={26} /><span>{t('生成未完成')}</span></div>;
   } else if (asset.kind === 'image') {
     media = imageSrc && !imageFailed
       ? <img
@@ -97,19 +98,19 @@ export default function GalleryCard({
           }}
           onError={() => setImageFailed(true)}
         />
-      : <div className="gallery-card-placeholder"><ImageIcon size={26} /><span>图片暂不可用</span></div>;
+      : <div className="gallery-card-placeholder"><ImageIcon size={26} /><span>{t('图片暂不可用')}</span></div>;
   } else if (asset.kind === 'video') {
     media = url
       ? <div className={`gallery-video-poster ${cover ? 'has-cover' : ''}`} aria-hidden="true">
           {cover
             ? <img src={cover} alt="" loading="lazy" onError={() => setCoverFailed(true)} />
-            : <span className="gallery-video-poster-glow" />}
+            : <span className="gallery-video-poster-glow"><Video size={32} strokeWidth={1.25} /></span>}
         </div>
-      : <div className="gallery-card-placeholder"><Video size={26} /><span>视频暂不可用</span></div>;
+      : <div className="gallery-card-placeholder"><Video size={26} /><span>{t('视频暂不可用')}</span></div>;
   } else {
     media = <div className="gallery-music-media">
       {cover
-        ? <img src={cover} alt={`${title}封面`} loading="lazy" onError={() => setCoverFailed(true)} />
+        ? <img src={cover} alt={t('{title}封面', { title })} loading="lazy" onError={() => setCoverFailed(true)} />
         : <div className="gallery-music-art"><Music2 size={30} /><span>{title}</span></div>}
     </div>;
   }
@@ -130,9 +131,9 @@ export default function GalleryCard({
           {previewing && <button
             type="button"
             className={`gallery-video-preview-sound ${videoPreviewMuted ? '' : 'is-on'}`}
-            aria-label={videoPreviewMuted ? '开启预览声音' : '关闭预览声音'}
+            aria-label={videoPreviewMuted ? t('开启预览声音') : t('关闭预览声音')}
             aria-pressed={!videoPreviewMuted}
-            title={videoPreviewMuted ? '开启声音' : '关闭声音'}
+            title={videoPreviewMuted ? t('开启声音') : t('关闭声音')}
             onClick={() => setVideoPreviewMuted(!videoPreviewMuted)}
           >
             {videoPreviewMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
@@ -141,9 +142,9 @@ export default function GalleryCard({
           <button
             type="button"
             className={`gallery-card-bookmark ${favorite ? 'is-favorite' : ''}`}
-            aria-label={favorite ? `取消收藏：${title}` : `收藏作品：${title}`}
+            aria-label={favorite ? t('取消收藏：{title}', { title }) : t('收藏作品：{title}', { title })}
             aria-pressed={favorite}
-            title={favorite ? '取消收藏' : '收藏'}
+            title={favorite ? t('取消收藏') : t('收藏')}
             onClick={() => onToggleFavorite(asset)}
           >
             <Bookmark size={16} fill={favorite ? 'currentColor' : 'none'} />
@@ -152,10 +153,10 @@ export default function GalleryCard({
           <div className="gallery-card-hover">
             <span className="gallery-kind-pill"><Icon size={13} />{kindLabel}</span>
             <div className="gallery-card-actions">
-              <button type="button" aria-label="查看作品参数" title="查看作品参数" onClick={open}>
+              <button type="button" aria-label={t('查看作品参数')} title={t('查看作品参数')} onClick={open}>
                 <SlidersHorizontal size={16} />
               </button>
-              <button type="button" aria-label="下载作品" title={completed ? '下载作品' : '生成完成后可下载'} disabled={!completed} onClick={() => onDownload(asset)}>
+              <button type="button" aria-label={t('下载作品')} title={completed ? t('下载作品') : t('生成完成后可下载')} disabled={!completed} onClick={() => onDownload(asset)}>
                 <Download size={16} />
               </button>
             </div>
@@ -168,7 +169,7 @@ export default function GalleryCard({
           </div>
           {captionAction && <span className="gallery-card-caption-action">{captionAction}</span>}
         </div>
-        <button type="button" className="gallery-card-open" aria-label={`查看作品：${title}`} onClick={open} />
+        <button type="button" className="gallery-card-open" aria-label={t('查看作品：{title}', { title })} onClick={open} />
       </div>
     </article>
   );

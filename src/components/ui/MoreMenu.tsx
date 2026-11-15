@@ -1,8 +1,9 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { MoreHorizontal } from 'lucide-react';
+import { t } from '../../lib/i18n';
 type Item = { label: string; icon: ReactNode; onClick: () => void; danger?: boolean; disabled?: boolean };
-export default function MoreMenu({ label = '更多操作', items, triggerIcon, className = '', disabled = false }: { label?: string; items: Item[]; triggerIcon?: ReactNode; className?: string; disabled?: boolean }) {
+export default function MoreMenu({ label = t('更多操作'), items, triggerIcon, className = '', disabled = false }: { label?: string; items: Item[]; triggerIcon?: ReactNode; className?: string; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0 });
   const trigger = useRef<HTMLButtonElement>(null);

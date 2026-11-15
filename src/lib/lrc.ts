@@ -1,6 +1,7 @@
 /**
  * LRC 歌词处理与智能时间轴对齐工具库
  */
+import { t } from './i18n';
 
 export interface LyricLine {
   time: number; // 秒数，如 14.5
@@ -117,7 +118,7 @@ export function generateLrcFromPrompt(
   }
 
   if (cleanLines.length === 0) {
-    cleanLines = ['(纯音乐演奏 - 请享受旋律)'];
+    cleanLines = [t('(纯音乐演奏 - 请享受旋律)')];
   }
 
   // 3. 计算时间分布（前导 2.5 秒留白，尾部留白 3 秒）

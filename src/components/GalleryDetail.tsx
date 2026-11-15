@@ -22,6 +22,7 @@ import {
 import type { Asset } from '../lib/types';
 import { publicServiceError } from '../lib/api';
 import { galleryKindLabel, galleryParameters, galleryPublishedAt, galleryTitle } from '../lib/galleryDetail';
+import { t } from '../lib/i18n';
 import { usePlayer } from '../lib/playerContext';
 import { lockBodyScroll } from '../lib/scrollLock';
 import { useAssetURL } from './AssetCard';
@@ -94,11 +95,11 @@ export default function GalleryDetail({
   const videoActive = asset.kind === 'video' && activeMedia?.id === asset.id;
   const videoInline = videoActive && videoDocked;
   const progress = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
-  const reuseLabel = asset.kind === 'image' ? '生成图片' : asset.kind === 'video' ? '生成视频' : '生成音乐';
+  const reuseLabel = asset.kind === 'image' ? t('生成图片') : asset.kind === 'video' ? t('生成视频') : t('生成音乐');
   const pending = asset.status === 'pending';
   const failed = asset.status === 'failed';
   const completed = asset.status === 'completed';
-  const statusLabel = pending ? '生成中' : failed ? '未完成' : galleryPublishedAt(asset.createdAt);
+  const statusLabel = pending ? t('生成中') : failed ? t('未完成') : galleryPublishedAt(asset.createdAt);
 
   const close = useCallback(() => {
     if (closing.current) return;
@@ -229,27 +230,27 @@ export default function GalleryDetail({
   };
 
   return (
-    <div className={`gallery-detail ${isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-label={`${kindLabel}作品详情：${title}`}>
-      <button type="button" className="gallery-detail-backdrop" aria-label="关闭作品详情" onClick={close} />
+    <div className={`gallery-detail ${isClosing ? 'is-closing' : ''}`} role="dialog" aria-modal="true" aria-label={t('{kind}作品详情：{title}', { kind: kindLabel, title })}>
+      <button type="button" className="gallery-detail-backdrop" aria-label={t('关闭作品详情')} onClick={close} />
       <div className="gallery-detail-panel" ref={panel}>
-        <section className="gallery-detail-stage" aria-label="作品展示">
+        <section className="gallery-detail-stage" aria-label={t('作品展示')}>
           {pending ? (
             <div className="gallery-detail-missing is-pending">
-              <ThinkingOrbSvg size={62} label="正在生成作品" />
-              <strong>正在生成这件作品</strong>
-              <span>完成后会自动更新，可以稍后回来查看。</span>
+              <ThinkingOrbSvg size={62} label={t('正在生成作品')} />
+              <strong>{t('正在生成这件作品')}</strong>
+              <span>{t('完成后会自动更新，可以稍后回来查看。')}</span>
             </div>
           ) : failed ? (
             <div className="gallery-detail-missing is-failed">
               <CircleAlert size={38} />
-              <strong>生成未完成</strong>
-              <span>{publicServiceError(asset.error || '这次生成没有完成，可以重试一次。')}</span>
-              {onRetry && <button type="button" className="secondary-button" onClick={() => onRetry(asset)}><RefreshCw size={15} />重试生成</button>}
+              <strong>{t('生成未完成')}</strong>
+              <span>{t(publicServiceError(asset.error || t('这次生成没有完成，可以重试一次。')))}</span>
+              {onRetry && <button type="button" className="secondary-button" onClick={() => onRetry(asset)}><RefreshCw size={15} />{t('重试生成')}</button>}
             </div>
           ) : asset.kind === 'image' ? (
             url && !imageFailed
               ? <img className="gallery-detail-image" src={url} alt={title} onError={() => setImageFailed(true)} />
-              : <div className="gallery-detail-missing"><ImageIcon size={30} /><strong>图片暂不可用</strong><span>作品信息仍保留，可稍后再试。</span></div>
+              : <div className="gallery-detail-missing"><ImageIcon size={30} /><strong>{t('图片暂不可用')}</strong><span>{t('作品信息仍保留，可稍后再试。')}</span></div>
           ) : asset.kind === 'video' ? (
             url
               ? <div className={`gallery-detail-video-card ${videoActive ? 'is-video-active' : ''}`}>
@@ -265,23 +266,23 @@ export default function GalleryDetail({
                     <>
                       <button type="button" className="gallery-detail-video-play" onClick={togglePlay}>
                         <Play size={21} className="play-icon-offset" />
-                        播放视频
+                        {t('播放视频')}
                       </button>
-                      <span className="gallery-detail-video-hint">在详情中播放 · 可切换小窗或大屏观看</span>
+                      <span className="gallery-detail-video-hint">{t('在详情中播放 · 可切换小窗或大屏观看')}</span>
                     </>
                   )}
                   {videoActive && !videoDocked && (
                     <>
-                      <span className="gallery-detail-video-away">正在小窗播放</span>
+                      <span className="gallery-detail-video-away">{t('正在小窗播放')}</span>
                       <button type="button" className="gallery-detail-video-play" onClick={() => setVideoDocked(true)}>
                         <Maximize2 size={18} />
-                        回到详情播放
+                        {t('回到详情播放')}
                       </button>
                     </>
                   )}
                   {videoInline && (
                     <>
-                      <button type="button" className="gallery-detail-video-tap" aria-label={playing ? '暂停播放' : '播放视频'} onClick={togglePlay} />
+                      <button type="button" className="gallery-detail-video-tap" aria-label={playing ? t('暂停播放') : t('播放视频')} onClick={togglePlay} />
                       {!playing && (
                         <span className="gallery-detail-video-center" aria-hidden="true">
                           <Play size={26} className="play-icon-offset" />
@@ -296,27 +297,27 @@ export default function GalleryDetail({
                           value={Math.min(currentTime, duration || 100)}
                           onChange={event => seek(parseFloat(event.target.value))}
                           className="video-progress-slider gallery-detail-video-progress"
-                          aria-label="播放进度"
+                          aria-label={t('播放进度')}
                           style={{ background: `linear-gradient(to right, #fff ${progress}%, rgba(255, 255, 255, 0.28) ${progress}%)` }}
                         />
                         <div className="gallery-detail-video-controls-row">
-                          <button type="button" onClick={togglePlay} aria-label={playing ? '暂停' : '播放'} title={playing ? '暂停' : '播放'}>
+                          <button type="button" onClick={togglePlay} aria-label={playing ? t('暂停') : t('播放')} title={playing ? t('暂停') : t('播放')}>
                             {playing ? <Pause size={15} /> : <Play size={15} className="play-icon-offset" />}
                           </button>
                           <span className="gallery-detail-video-time">{formatTime(currentTime)} / {formatTime(duration)}</span>
                           <span className="gallery-detail-video-controls-spacer" />
-                          <button type="button" onClick={toggleMute} aria-label={isMuted ? '取消静音' : '静音'} title={isMuted ? '取消静音' : '静音'}>
+                          <button type="button" onClick={toggleMute} aria-label={isMuted ? t('取消静音') : t('静音')} title={isMuted ? t('取消静音') : t('静音')}>
                             {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
                           </button>
                           <button
                             type="button"
                             onClick={() => { setVideoDocked(false); setVideoInlineHost(null); }}
-                            aria-label="小窗播放"
-                            title="小窗播放"
+                            aria-label={t('小窗播放')}
+                            title={t('小窗播放')}
                           >
                             <Minimize2 size={15} />
                           </button>
-                          <button type="button" onClick={() => setIsVideoExpanded(true)} aria-label="大屏观看" title="大屏观看">
+                          <button type="button" onClick={() => setIsVideoExpanded(true)} aria-label={t('大屏观看')} title={t('大屏观看')}>
                             <Maximize2 size={15} />
                           </button>
                         </div>
@@ -324,20 +325,20 @@ export default function GalleryDetail({
                     </>
                   )}
                 </div>
-              : <div className="gallery-detail-missing"><LoaderCircle size={30} /><strong>视频暂不可用</strong><span>作品信息仍保留，可稍后再试。</span></div>
+              : <div className="gallery-detail-missing"><LoaderCircle size={30} /><strong>{t('视频暂不可用')}</strong><span>{t('作品信息仍保留，可稍后再试。')}</span></div>
           ) : (
             <div className="gallery-detail-music">
               <div className="gallery-detail-cover">
                 {asset.coverUrl
-                  ? <img src={asset.coverUrl} alt={`${title}封面`} />
+                  ? <img src={asset.coverUrl} alt={t('{title}封面', { title })} />
                   : <div className="gallery-detail-cover-fallback"><Music2 size={54} /><span>{title}</span></div>}
-                <button type="button" className="gallery-detail-play" onClick={togglePlay} disabled={!url} aria-label={playing ? '暂停' : '播放'}>
+                <button type="button" className="gallery-detail-play" onClick={togglePlay} disabled={!url} aria-label={playing ? t('暂停') : t('播放')}>
                   {playing ? <Pause size={24} /> : <Play size={24} className="play-icon-offset" />}
                 </button>
               </div>
               <div className="gallery-detail-music-meta">
                 <strong>{asset.song?.title || title}</strong>
-                <span>{asset.song?.style || '原创音乐'}</span>
+                <span>{asset.song?.style || t('原创音乐')}</span>
               </div>
             </div>
           )}
@@ -346,12 +347,12 @@ export default function GalleryDetail({
         <aside className="gallery-detail-side">
           <header className="gallery-detail-head">
             <div className="gallery-detail-heading">
-              <span className="gallery-detail-kicker">{kindLabel}作品 · {statusLabel}</span>
+              <span className="gallery-detail-kicker">{t('{kind}作品 · {status}', { kind: kindLabel, status: statusLabel })}</span>
               <h2>{title}</h2>
             </div>
             <div className="gallery-detail-head-actions">
               {actions}
-              <button ref={closeButton} type="button" className="gallery-detail-close" aria-label="关闭详情" onClick={close}>
+              <button ref={closeButton} type="button" className="gallery-detail-close" aria-label={t('关闭详情')} onClick={close}>
                 <X size={18} />
               </button>
             </div>
@@ -360,26 +361,26 @@ export default function GalleryDetail({
           <div className="gallery-detail-scroll">
             <section className="gallery-detail-block">
               <div className="gallery-detail-block-head">
-                <span>提示词</span>
+                <span>{t('提示词')}</span>
                 <button type="button" className="gallery-detail-copy" onClick={() => void copyPrompt()}>
                   {copyState === 'copied' ? <Check size={13} /> : <Copy size={13} />}
-                  {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败' : '复制'}
+                  {copyState === 'copied' ? t('已复制') : copyState === 'failed' ? t('复制失败') : t('复制')}
                 </button>
               </div>
               <textarea
                 ref={promptRef}
                 className="gallery-detail-prompt"
-                aria-label="提示词，可编辑"
+                aria-label={t('提示词，可编辑')}
                 value={promptDraft}
                 rows={4}
                 spellCheck={false}
                 onChange={event => setPromptDraft(event.target.value)}
               />
-              <p className="gallery-detail-edit-hint">可直接修改；点击下方按钮会用这段提示词生成。</p>
+              <p className="gallery-detail-edit-hint">{t('可直接修改；点击下方按钮会用这段提示词生成。')}</p>
             </section>
 
             <section className="gallery-detail-block">
-              <div className="gallery-detail-block-head"><span>作品参数</span></div>
+              <div className="gallery-detail-block-head"><span>{t('作品参数')}</span></div>
               <dl className="gallery-detail-params">
                 {parameters.map(parameter => (
                   <div key={parameter.label}>
@@ -395,17 +396,17 @@ export default function GalleryDetail({
             <div className="gallery-detail-secondary">
               <button type="button" className={favorite ? 'is-favorite' : ''} aria-pressed={favorite} onClick={() => onToggleFavorite(asset)}>
                 <Bookmark size={15} fill={favorite ? 'currentColor' : 'none'} />
-                {favorite ? '已收藏' : '收藏'}
+                {favorite ? t('已收藏') : t('收藏')}
               </button>
               {completed ? (
                 <button type="button" onClick={() => onDownload(asset)}>
                   <Download size={15} />
-                  下载作品
+                  {t('下载作品')}
                 </button>
               ) : (
                 <button type="button" onClick={() => onRetry?.(asset)} disabled={pending || !onRetry}>
                   {pending ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />}
-                  {pending ? '正在生成…' : '重试生成'}
+                  {pending ? t('正在生成…') : t('重试生成')}
                 </button>
               )}
             </div>
@@ -416,7 +417,7 @@ export default function GalleryDetail({
               </button>
             )}
             <p className="gallery-detail-hint">
-              {pending ? '生成完成后可以下载，并沿用参数继续创作。' : '沿用这件作品的提示词与参数，打开创作台继续生成。'}
+              {pending ? t('生成完成后可以下载，并沿用参数继续创作。') : t('沿用这件作品的提示词与参数，打开创作台继续生成。')}
             </p>
           </footer>
         </aside>

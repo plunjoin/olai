@@ -2,25 +2,40 @@
 import Studio from '../components/Studio';
 import type { ImageEngineMode } from '../lib/types';
 import { serviceReady, videoMode } from '../lib/server/aiConfig';
+import { refreshSettings, setting } from '../lib/server/settings';
+import { localeFromAcceptLanguage } from '../lib/i18n';
 import '../styles/global.css';
 import '../styles/brand.css';
 import '../styles/gallery.css';
 import '../styles/player.css';
-const configuredImageMode = process.env.AI_IMAGE_API_MODE || import.meta.env.AI_IMAGE_API_MODE;
+import '../styles/workspace.css';
+await refreshSettings();
+const configuredImageMode = setting('AI_IMAGE_API_MODE');
 const imageEngineMode: ImageEngineMode | undefined = ['auto', 'native', 'upstream', 'interactions'].includes(configuredImageMode) ? configuredImageMode as ImageEngineMode : undefined;
 const videoEngineMode = videoMode();
 // 短片工坊为封闭内测，默认关闭；只有显式配置 AI_SHORT_FILM=true 的部署才开放入口。
-const shortFilm = (process.env.AI_SHORT_FILM || import.meta.env.AI_SHORT_FILM) === 'true';
+const shortFilm = setting('AI_SHORT_FILM') === 'true';
+// 页面外壳的静态文案按 Accept-Language 选择；界面内文案由客户端 i18n 处理。
+const locale = localeFromAcceptLanguage(Astro.request.headers.get('accept-language'));
+const copy = locale === 'en'
+  ? {
+      description: 'Olai (Online AI Chat Companion): your AI companion and all-in-one creative space. Warm conversations and inspiration, plus image, video and music generation. Saves locally as a guest, syncs across devices once you sign in.',
+      noscript: 'Please enable JavaScript to use Olai.',
+    }
+  : {
+      description: 'Olai（Online AI Chat Companion）：你的在线 AI 伴侣与全能创意空间。温暖对话、激发灵感，支持图像、视频与音乐生成，游客本地保存，登录后跨设备查看创作记录。',
+      noscript: '请启用 JavaScript 以使用 Olai。',
+    };
 ---
 <!doctype html>
-<html lang="zh-CN">
+<html lang={locale}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f6f8fc" />
-    <meta name="description" content="Olai（Online AI Chat Companion）：你的在线 AI 伴侣与全能创意空间。温暖对话、激发灵感，支持图像、视频与音乐生成，游客本地保存，登录后跨设备查看创作记录。" />
+    <meta name="description" content={copy.description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Olai · Online AI Companion</title>
   </head>
-  <body><Studio client:only="react" serviceReady={serviceReady()} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} shortFilm={shortFilm} /><noscript>请启用 JavaScript 以使用 Olai。</noscript></body>
+  <body><Studio client:only="react" serviceReady={serviceReady()} imageEngineMode={imageEngineMode} videoEngineMode={videoEngineMode} shortFilm={shortFilm} /><noscript>{copy.noscript}</noscript></body>
 </html>

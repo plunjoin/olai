@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Bookmark, Image as ImageIcon, Music2, RefreshCw, Search, Video } from 'lucide-react';
 import { getGallery } from '../lib/gallery';
+import { t, tIn } from '../lib/i18n';
 import { readGalleryFavorites, toggleFavoriteId, writeGalleryFavorites } from '../lib/galleryFavorites';
 import type { Asset, View } from '../lib/types';
 import GalleryCard from './GalleryCard';
@@ -42,7 +43,7 @@ export default function Gallery({ onNavigate, onDownload, onReuse }: Props) {
       setAssets(previous => [...new Map([...previous, ...page.records].map(asset => [asset.id, asset])).values()]);
       setNextOffset(page.nextOffset);
     } catch {
-      if (!current.signal.aborted) setError('作品广场暂时无法读取，请稍后重试。');
+      if (!current.signal.aborted) setError(t('作品广场暂时无法读取，请稍后重试。'));
     } finally {
       if (controller.current === current) {
         busy.current = false;
@@ -66,10 +67,10 @@ export default function Gallery({ onNavigate, onDownload, onReuse }: Props) {
   };
   const visible = assets.filter(matches);
   const tabs: { key: Filter; label: string }[] = [
-    { key: 'all', label: '全部作品' },
-    { key: 'image', label: '图像' },
-    { key: 'video', label: '视频' },
-    { key: 'music', label: '音乐' },
+    { key: 'all', label: t('全部作品') },
+    { key: 'image', label: tIn('gallery', '图像') },
+    { key: 'video', label: tIn('gallery', '视频') },
+    { key: 'music', label: tIn('gallery', '音乐') },
   ];
   const countFor = (key: Filter) => assets.filter(asset => key === 'all' || asset.kind === key).length;
   const resetFilters = () => { setSearch(''); setFilter('all'); setFavoritesOnly(false); };
@@ -78,14 +79,14 @@ export default function Gallery({ onNavigate, onDownload, onReuse }: Props) {
     <div className="page-intro gallery-intro">
       <div>
         <span className="eyebrow">EXPLORE THE COMMUNITY</span>
-        <h1>作品广场</h1>
-        <p>浏览大家已完成的图像、视频与音乐，无需登录。</p>
+        <h1>{t('作品广场')}</h1>
+        <p>{t('浏览大家已完成的图像、视频与音乐，无需登录。')}</p>
       </div>
-      <span className="library-total">{assets.length}<small>件已加载创作</small></span>
+      <span className="library-total">{assets.length}<small>{t('件已加载创作')}</small></span>
     </div>
 
     <div className="gallery-toolbar">
-      <div className="filter-tabs" role="group" aria-label="作品类型">
+      <div className="filter-tabs" role="group" aria-label={t('作品类型')}>
         {tabs.map(tab => <button
           type="button"
           className={filter === tab.key ? 'active' : ''}
@@ -100,20 +101,20 @@ export default function Gallery({ onNavigate, onDownload, onReuse }: Props) {
           className={`gallery-favorite-filter ${favoritesOnly ? 'active' : ''}`}
           aria-pressed={favoritesOnly}
           onClick={() => setFavoritesOnly(value => !value)}
-          title={favoritesOnly ? '显示全部作品' : '只看我收藏的作品'}
+          title={favoritesOnly ? t('显示全部作品') : t('只看我收藏的作品')}
         >
           <Bookmark size={15} fill={favoritesOnly ? 'currentColor' : 'none'} />
-          <span>收藏</span>
+          <span>{t('收藏')}</span>
           <em>{favorites.length}</em>
         </button>
-        <div className="search-input"><Search size={16} /><input aria-label="搜索作品" placeholder="搜索灵感关键词…" value={search} onChange={event => setSearch(event.target.value)} /></div>
+        <div className="search-input"><Search size={16} /><input aria-label={t('搜索作品')} placeholder={t('搜索灵感关键词…')} value={search} onChange={event => setSearch(event.target.value)} /></div>
       </div>
     </div>
 
     {loading && !assets.length ? (
       <div className="gallery-masonry gallery-skeletons" aria-live="polite" aria-busy="true">
         {[0, 1, 2, 3, 4, 5, 6, 7].map(index => <div className={`gallery-skeleton skeleton-${index % 4}`} key={index}><span /><i /><b /></div>)}
-        <span className="visually-hidden">正在加载公开作品…</span>
+        <span className="visually-hidden">{t('正在加载公开作品…')}</span>
       </div>
     ) : visible.length ? (
       <div className="gallery-masonry">
@@ -129,20 +130,20 @@ export default function Gallery({ onNavigate, onDownload, onReuse }: Props) {
     ) : (
       <div className="library-empty gallery-empty">
         {!assets.length && error
-          ? <><RefreshCw size={28} /><h2>作品广场暂时走神了</h2><p>{error}</p><button type="button" className="secondary-button empty-reset" onClick={() => void load(0)}>重新加载</button></>
+          ? <><RefreshCw size={28} /><h2>{t('作品广场暂时走神了')}</h2><p>{error}</p><button type="button" className="secondary-button empty-reset" onClick={() => void load(0)}>{t('重新加载')}</button></>
           : assets.length
-            ? <><div className="empty-orbit"><Companion size={130} /></div><h2>{favoritesOnly ? '还没有收藏的作品' : '还没有匹配的作品'}</h2><p>{favoritesOnly ? '在作品卡片右上角点一下书签，就会收藏在这里。' : '试试其他关键词，或切换作品类型。'}</p><button type="button" className="secondary-button empty-reset" onClick={resetFilters}>查看全部作品</button></>
-            : <><div className="empty-orbit"><Companion size={150} /></div><h2>作品广场还没有作品</h2><p>账号中已完成的创作会出现在这里。来创作第一件作品吧。</p><div className="empty-library-actions">{([{ view: 'image', icon: ImageIcon, title: '生成图像' }, { view: 'video', icon: Video, title: '生成视频' }, { view: 'music', icon: Music2, title: '生成音乐' }] as const).map(({ view, icon: Icon, title }) => <button type="button" className="secondary-button" key={view} onClick={() => onNavigate(view)}><Icon size={16} />{title}<ArrowUpRight size={14} /></button>)}</div></>}
+            ? <><div className="empty-orbit"><Companion size={130} /></div><h2>{favoritesOnly ? t('还没有收藏的作品') : t('还没有匹配的作品')}</h2><p>{favoritesOnly ? t('在作品卡片右上角点一下书签，就会收藏在这里。') : t('试试其他关键词，或切换作品类型。')}</p><button type="button" className="secondary-button empty-reset" onClick={resetFilters}>{t('查看全部作品')}</button></>
+            : <><div className="empty-orbit"><Companion size={150} /></div><h2>{t('作品广场还没有作品')}</h2><p>{t('账号中已完成的创作会出现在这里。来创作第一件作品吧。')}</p><div className="empty-library-actions">{([{ view: 'image', icon: ImageIcon, title: t('生成图像') }, { view: 'video', icon: Video, title: t('生成视频') }, { view: 'music', icon: Music2, title: t('生成音乐') }] as const).map(({ view, icon: Icon, title }) => <button type="button" className="secondary-button" key={view} onClick={() => onNavigate(view)}><Icon size={16} />{title}<ArrowUpRight size={14} /></button>)}</div></>}
       </div>
     )}
 
     <div className="gallery-pagination" aria-live="polite">
-      {loading && assets.length > 0 && <p role="status">正在加载更多公开作品…</p>}
+      {loading && assets.length > 0 && <p role="status">{t('正在加载更多公开作品…')}</p>}
       {error && assets.length > 0 && <p role="alert">{error}</p>}
-      {!loading && nextOffset !== null && assets.length > 0 && <button type="button" className="secondary-button" onClick={() => void load(nextOffset)}>{error ? '重试加载' : '加载更多作品'}</button>}
-      {!loading && !error && assets.length > 0 && nextOffset === null && <p>已经看到全部公开作品了。</p>}
+      {!loading && nextOffset !== null && assets.length > 0 && <button type="button" className="secondary-button" onClick={() => void load(nextOffset)}>{error ? t('重试加载') : t('加载更多作品')}</button>}
+      {!loading && !error && assets.length > 0 && nextOffset === null && <p>{t('已经看到全部公开作品了。')}</p>}
     </div>
-    <p className="library-footnote">公开作品仅供浏览与下载 · 收藏保存在当前浏览器</p>
+    <p className="library-footnote">{t('公开作品仅供浏览与下载 · 收藏保存在当前浏览器')}</p>
 
     {active && <GalleryDetail
       asset={active.asset}
