@@ -6,10 +6,10 @@
   <p>让蓝紫色星球伙伴「小o」陪你，把想法变成作品。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Astro-5-BC52EE?logo=astro&logoColor=white" alt="Astro 5" />
-    <img src="https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white" alt="React 19" />
-    <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-    <img src="https://img.shields.io/badge/SQLite-libSQL-6366F1" alt="SQLite / libSQL" />
+    <img src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white" alt="Go 1.27" />
+    <img src="https://img.shields.io/badge/Vue-3-42B883?logo=vue.js&logoColor=white" alt="Vue 3" />
+    <img src="https://img.shields.io/badge/webfront-0.1.6-4F5EE0" alt="webfront" />
+    <img src="https://img.shields.io/badge/SQLite-PostgreSQL-6366F1" alt="SQLite / PostgreSQL" />
   </p>
 
   <p>
@@ -25,7 +25,7 @@
 
 ## 功能概览
 
-Olai 将 AI 对话与媒体创作放在同一个工作台。首页直接进入对话，点击输入框下方的「+」即可选择图片、音乐或视频；描述、参数和生成结果都在当前对话中完成。
+Olai 将 AI 对话与媒体创作放在同一个工作台。首页是作品广场，浏览社区已完成的图像、视频与音乐；从左侧导航进入创作台后，点击输入框下方的「+」即可选择图片、音乐或视频，描述、参数和生成结果都在当前对话中完成。
 
 | 创作方式 | 可以做什么 |
 | --- | --- |
@@ -35,19 +35,22 @@ Olai 将 AI 对话与媒体创作放在同一个工作台。首页直接进入�
 | 🎬 视频创作 | 设置时长、比例与画质，播放、下载并保存生成的视频 |
 | 🎞️ 短片工坊 | 从一句话创意生成完整多镜头短视频，分阶段创作与编辑（封闭内测，默认关闭） |
 | 🗂️ 作品库 | 收藏创作结果，从已有歌曲继续编辑并生成新版本 |
+| 🧠 长期记忆 | 保存称呼与偏好，让之后的对话更懂你；可在设置里管理 |
 | ☁️ 账号同步 | 登录后同步游客记录，在其他设备读取账号作品 |
 
-侧边栏提供「作品广场」和「我的库」：游客和登录用户均可在 `/gallery` 浏览所有账号已完成的图像、视频与音乐，支持预览、播放、下载及分页加载；`/library` 登录后只读取当前账号生成的作品。游客自己的创作仍保存在当前浏览器，登录后自动同步。云端已完成的作品（包括已有作品）会自动出现在广场；聊天记录、未完成/失败作品和短片工作流草稿不会公开，公开浏览不能修改或删除他人的作品。
+首页和 `/gallery` 都是作品广场：游客和登录用户可浏览所有账号已完成的图像、视频与音乐，支持搜索、按类型筛选、预览、播放、下载和滚动加载；点击作品会在当前滚动位置以共享元素动画展开详情：详情作为独立版块占据左侧版面（左为作品，右为作者、操作与评论），右侧继续显示广场作品，滚动位置不会被带回顶部；浏览器后退或关闭按钮即可回到原处。窄屏下详情改为整页展示，关闭时回到原来的滚动位置。左侧导航同时提供「我的库」，登录后只读取当前账号生成的作品。游客自己的创作仍保存在当前浏览器，登录后自动同步。云端已完成的作品（包括已有作品）会自动出现在广场；聊天记录、未完成/失败作品和短片工作流草稿不会公开，公开浏览不能修改或删除他人的作品。
+
+登录用户的收藏保存在账号数据库中，跨设备同步；旧版本只存在浏览器里的本机收藏会在登录后自动导入。作品卡片显示热度（浏览 1 分、下载 2 分、收藏 3 分），可按「最新 / 最热」排序；浏览与下载按访客去重限频，避免刷新刷热度。作品详情展示作者、评论数与创作信息，登录后可收藏、评论（每条最多 500 字，按小时限频）或提交举报（不当内容、侵权、垃圾内容或其他）；后台「举报」页可标记已处理、忽略，或直接隐藏/恢复作品；被隐藏的作品会同时从广场列表、收藏列表、评论接口和公开媒体接口消失。
 
 广场媒体通过只读接口提供，不会放开原私有附件接口。OSS 附件与不超过 32 MiB 的内联媒体可直接预览；未迁移的外部/浏览器临时链接、超过上限的内联文件只展示作品信息，需由作品所属账号登录后同步迁移附件。缺失或过期的原文件可能无法播放。
 
-原 `/home`、`#home` 入口兼容为对话页，媒体路径直接打开对应创作模式。用户界面隐藏模型名称，默认使用指定创作引擎。
+原 `/home` 入口会重定向到作品广场，媒体路径直接打开对应创作模式。用户界面隐藏模型名称，默认使用指定创作引擎。
 
 ### 小o与交互体验
 
 品牌插画和字标位于 [`public/brand`](public/brand)，保留原始品牌形象；小尺寸标识和 favicon 为 SVG。待机小o使用原图底层和独立 SVG 眼睛，随机眨眼、平滑跟随鼠标，离开窗口后回正；减少动态效果时关闭这些动作，触摸设备不追踪视线。
 
-品牌样式集中在 [`src/styles/brand.css`](src/styles/brand.css)，公共弹窗和更多菜单位于 [`src/components/ui`](src/components/ui)，支持键盘操作、焦点恢复及减少动态效果偏好。确认删除与会话重命名使用站内弹窗。
+品牌样式集中在 [`web/portal/src/styles/brand.css`](web/portal/src/styles/brand.css)，公共弹窗位于 [`web/portal/src/components`](web/portal/src/components)，支持键盘操作、焦点恢复及减少动态效果偏好。确认删除与会话重命名使用站内弹窗。
 
 创作参数使用右侧边栏，由对话区右上角的侧栏按钮控制展开和收起，并保留参数与本次访问的展开偏好。桌面展开时主内容与输入框一起缩窄，参数独立滚动；窄屏默认收起，展开为右侧抽屉，支持点击遮罩或按 Escape 关闭。进入歌曲段落编辑时自动展开，参数校验提示在结果区域显示。
 
@@ -55,18 +58,20 @@ Olai 将 AI 对话与媒体创作放在同一个工作台。首页直接进入�
 
 界面支持简体中文与英文，默认跟随设备语言（`navigator.languages`），也可以在「创作设置 → 语言」中固定某一种；选择保存在 `localStorage` 的 `olai.locale`，切换后自动刷新页面。服务端按 `Accept-Language` 渲染 `<html lang>` 与页面描述，首屏语言与浏览器一致。
 
-文案体系位于 [`src/lib/i18n`](src/lib/i18n)：以简体中文原文作为 key（gettext 风格），英文词典按模块拆分，缺失译文自动回落到中文，因此新增文案不会出现空白。组件里用 `t('中文原文')` 取译文，支持 `{name}` 占位符；同一句中文在不同模块含义不同时（例如「关闭」既是关闭面板也是开关关闭）用 `tIn('shell' | 'create' | 'gallery' | 'workflow' | 'admin' | 'errors', …)` 指定模块译法。日期与数字使用 `intlLocale()` 格式化。
+文案体系位于 [`web/portal/src/lib/i18n`](web/portal/src/lib/i18n)；管理后台有同一份词典副本 [`web/admin/src/lib/i18n`](web/admin/src/lib/i18n)：以简体中文原文作为 key（gettext 风格），英文词典按模块拆分，缺失译文自动回落到中文，因此新增文案不会出现空白。组件里用 `t('中文原文')` 取译文，支持 `{name}` 占位符；同一句中文在不同模块含义不同时（例如「关闭」既是关闭面板也是开关关闭）用 `tIn('shell' | 'create' | 'gallery' | 'workflow' | 'admin' | 'errors', …)` 指定模块译法。日期与数字使用 `intlLocale()` 格式化。
 
-新增或修改文案后运行 `npx vitest run src/lib/__tests__/i18nCoverage.test.ts`：它会扫描源码中的 `t('…')` 字面量，确保每个 key 都有英文译文、译文不含中文，也不会引用原文没有的占位符。需要人工校对时可用 `node scripts/i18n-scan.mjs` 列出仍未包裹 `t()` 的中文文案。
+修改文案时同步更新英文词典文件；缺失译文会自动回落到中文原文，不会出现空白。
 
 ## 快速开始
 
+服务端是 Go，前端是 Vue 3，由 webfront 在 Go 进程内编译；**构建和运行都不需要 Node.js**。
+
 ### 1. 安装依赖
 
-使用 Node.js 22.9 或更新版本。
+需要 Go 1.27 或更新版本。
 
 ```bash
-npm install
+go mod download
 ```
 
 ### 2. 配置服务
@@ -78,17 +83,30 @@ AI_API_BASE_URL=https://example.com/v1
 AI_API_KEY=你的上游服务密钥
 ```
 
-默认配置为 web2api 在线版本（v0.3.0）。客户端仅获取公开的服务状态和额度，不提供 `/models` 上游目录透传；上游模型名称、连接密钥、系统与功能预设提示词均由服务端管理，不通过前端设置或生成响应公开。用户自己输入的描述、歌词和创作内容正常保留。
+默认配置为 web2api 在线版本。客户端仅获取公开的服务状态和额度，不提供 `/models` 上游目录透传；上游模型名称、连接密钥、系统与功能预设提示词均由服务端管理，不通过前端设置或生成响应公开。用户自己输入的描述、歌词和创作内容正常保留。
 
-### 3. 启动开发服务器
+### 3. 构建两个前端
+
+`web/` 下共用一份 `package.json` / `package-lock.json` / `wf_modules`，两个前端各自有源码与产物：
+
+- `web/portal`：公开站点与创作工作台；`/`、`/download` 由 Go 做 SSR，工作台路由由 SPA 外壳接管。
+- `web/admin`：管理后台 SPA，与门户完全隔离，自带独立登录页；默认入口 `/admin`（登录页 `/admin/login`），固定从 `/admin/assets/` 加载资源，入口路径可在后台改。
 
 ```bash
-npm run dev
+go tool wf install ./web
+go tool wf build -modules ../wf_modules ./web/portal
+go tool wf build -mode spa -base /admin -modules ../wf_modules ./web/admin
 ```
 
-打开 [http://localhost:4321](http://localhost:4321)，开始对话或选择创作模式。
+> Git Bash 会把 `-base /admin` 误当成 Windows 路径；在该环境下给最后一条命令加 `MSYS_NO_PATHCONV=1`。Linux / macOS 不需要。
 
-> 开发数据库会在开发服务器重启时重建。需要持久保存账号和作品时，请使用下方的[部署流程](#部署指南)。
+### 4. 启动
+
+```bash
+go run .
+```
+
+打开 [http://localhost:4321](http://localhost:4321)，开始对话或选择创作模式。产物已通过 `//go:embed` 打进二进制，部署时只需要 `go build` 出的可执行文件、`.env` 与可写的 `data/` 目录。
 
 ## 创作说明
 
@@ -111,6 +129,8 @@ npm run dev
 初始 LRC 按实际音频时长估算，不能保证与演唱对齐。在作品卡片或播放器点击「校准歌词」，会把实际音频（转换为单声道 WAV）和逐句歌词提交给默认 3.8 文本引擎，通过 `input_audio` 获取开始与结束时间，保留前奏和间奏留白。
 
 服务需要支持音频输入和理解；只校验结果的完整性与时间范围，实际同步效果需试听检查。成功后同步更新播放器、下载文件及本地保存；失败保留已有时间轴并显示原因。
+
+自动校准后仍有偏差时，可在播放器歌词面板点击「手动校对」逐句校正：左侧显示音频波形和各句起点标记，点击或拖动波形可定位，播放时选中一行点「打点」（或按 `T`）把该句起点设为当前播放位置，并自动跳到下一句；也可用 ±0.1s / ±1s 微调单句、整体平移全部时间轴，`←` / `→`（或 `[` / `]`、`-` / `=`）微调 0.1 秒（按住 Shift 为 1 秒）。点击歌词行的时间可直接输入 `01:23.45` 或秒数；开启「联动后续」（`L`）后，微调或修改时间会同步平移该句之后的所有句子，适合修正从某一句开始的整体漂移。双击歌词行可修改文字，支持 `Ctrl+Z` / `Ctrl+Shift+Z`（或 `Ctrl+Y`）撤销重做，播放倍速可降到 0.5x。保存会保留原 LRC 的 `[ti:]`、`[ar:]`、`[al:]` 等头部信息和自定义标签（校对后的时间戳已是最终时间，不再保留 `[offset:]`），写入 `manual` 时间轴，与音频校准一样视为已校对，并随作品保存、同步和导出。
 
 ### 图片尺寸与画质
 
@@ -170,7 +190,7 @@ npm run dev
 
 ### 注册与登录
 
-点击侧边栏或顶部的「登录 / 注册」会进入独立的登录页 `/login`，可使用邮箱和 **8–128 位密码**注册。注册后会向该邮箱发送验证链接，验证通过后才能登录。已登录用户点击「我的账号」进入账号中心 `/account`，可查看积分、每日额度、邀请码与价目，同步本地数据或退出登录。账号中心在服务端校验登录态，未登录访问会带 `next=/account` 转到登录页。
+点击侧边栏或顶部的「登录 / 注册」会进入独立的登录页 `/login`，可使用邮箱和 **8–128 位密码**注册。注册后会向该邮箱发送验证链接，验证通过后才能登录。已登录用户点击「我的账号」进入账号中心 `/account`，可查看积分、每日额度、邀请码与价目，同步本地数据或退出登录；点击资料卡上的「编辑资料」可以修改昵称、选择预设头像，或上传 PNG / JPG / WebP 图片作为头像（上传会把图片居中裁剪为 256×256，并保存到私有媒体存储，需启用 OSS）；修改后工作台与账号中心会同步显示。账号中心在服务端校验登录态，未登录访问会带 `next=/account` 转到登录页。
 
 密码使用 scrypt 加盐散列，登录凭证通过 HttpOnly / SameSite Cookie 保存，数据库仅保存凭证散列，有效期 30 天。登录页提供密码重置：输入邮箱后会收到重置链接，30 分钟内有效。验证邮件和重置邮件由 `MAIL_*` 配置通过 SMTP 发送（`.env` 或管理后台「系统设置 → 出站邮件」），发件地址为 `MAIL_FROM`（默认 `noreply@olai.cc`）。已有账号在升级后视为已验证，不受影响。GitHub 登录仍使用已验证的 GitHub 邮箱，无需再走邮件验证。退出登录会撤销当前登录凭证并回到工作台。
 
@@ -182,19 +202,29 @@ npm run dev
 
 在 GitHub → Settings → Developer settings → OAuth Apps 新建应用并填写回调地址即可；本地开发的回调地址为 `http://localhost:4321/api/auth/github/callback`。授权使用一次性 state Cookie 校验来源，回调后立即删除。
 
-若服务器所在网络无法直连 `github.com`（表现为终端日志 `GitHub login failed: fetch failed`，而浏览器能打开 GitHub），通常是因为浏览器走了系统代理而 Node 服务端不走。此时在 `.env` 设置 `GITHUB_PROXY` 指向该代理（例如 `GITHUB_PROXY=http://127.0.0.1:7890`）即可，GitHub 的令牌和用户信息请求都会经过它；未设置时也会读取 `HTTPS_PROXY` / `https_proxy`。没有代理时可用 `GITHUB_RESOLVE_IP` 指定一个可访问的 github.com 地址作为备选。两者都只影响服务端请求，不修改系统 hosts，也不会关闭证书校验；网络恢复后建议留空。
+若服务器所在网络无法直连 `github.com`（表现为终端日志 `GitHub login failed: fetch failed`，而浏览器能打开 GitHub），通常是因为浏览器走了系统代理而 Go 服务端不走。此时在 `.env` 设置 `GITHUB_PROXY` 指向该代理（例如 `GITHUB_PROXY=http://127.0.0.1:7890`）即可，GitHub 的令牌和用户信息请求都会经过它；未设置时也会读取 `HTTPS_PROXY` / `https_proxy`。没有代理时可用 `GITHUB_RESOLVE_IP` 指定一个可访问的 github.com 地址作为备选。两者都只影响服务端请求，不修改系统 hosts，也不会关闭证书校验；网络恢复后建议留空。
 
 ### 管理后台
 
-在 `.env` 配置 `ADMIN_EMAILS`（逗号分隔的邮箱，大小写不敏感），用其中任一邮箱登录后访问 `/admin`。非管理员访问会被重定向到首页；后台页面与每个 `/api/admin/*` 接口都会在服务端重新校验登录态和邮箱白名单，隐藏入口不能替代权限校验。
+后台与门户使用**两套完全独立的登录体系**：后台账号保存在 `admin_accounts`，后台会话使用自己的 HttpOnly Cookie（默认 12 小时有效），门户登录不会获得后台权限，后台登录也不会登录门户。门户不显示任何后台入口或入口提示，后台页面也不链接回门户。后台默认入口是 `/admin`，登录页是入口下的 `/login`（默认 `/admin/login`）；入口可在“系统设置”中改成自定义路径（例如 `/console-x7k2`），修改后原入口立即失效，`/admin/assets/` 保持固定。
 
-后台包含：概览（账号、流通/消耗积分、近 14 天消耗、最新账号）、用户搜索与详情、积分加减（写入积分流水和审计日志，扣减不会产生负余额）、账号停用与恢复（停用会立即注销该账号所有会话并阻止再次登录）、邀请排行榜与明细、生成消耗与作品记录、媒体对象浏览与删除（同时删除对象存储中的文件）、系统设置和操作日志。
+全新部署在 `/setup` 创建第一个**后台管理员账号**，完成后直接跳转到后台登录页；该账号不会自动创建或登录门户账号。存量部署首次启动时，会把 `ADMIN_EMAILS`（逗号分隔，大小写不敏感）中已在门户注册且使用密码登录的邮箱一次性迁移为独立后台账号，初始密码沿用原门户密码，请登录后台后立即修改；只有 GitHub 登录、没有门户密码的邮箱无法自动迁移，需要用下面的命令设置后台密码。门户之后修改密码不会影响后台账号，反之亦然。
 
-**“系统设置”可以把 `.env` 里的运行期配置集中到后台管理**：AI 网关与模型、每日额度与限流、积分单价与邀请奖励、GitHub 登录、私有 OSS、站点地址等。数据库中的值优先于同名环境变量，保存后本进程立即生效，多实例部署最多 10 秒同步。密钥类配置只显示“是否已配置”，不会回传到浏览器或写入日志；留空保存表示保持原值，“恢复默认”会回到 `.env` 或内置默认值。端口、数据库地址以及首次进入后台所需的管理员白名单仍只从 `.env` 读取。
+忘记后台密码或需要新增管理员时，在服务器上运行（留空 `-password` 会生成随机密码并打印一次）：
 
-**“模型与定价”支持按模型逐一计价。** 点击“同步网关”会从 `${AI_API_BASE_URL}/models`（OpenAI 兼容格式）拉取模型列表，新模型自动按名称猜测为对话、图像、视频或音乐并在后台显示；也可以手动填写上游模型 ID 添加。每个模型可以单独设置显示别名、启用状态和积分价格：图像按 1K/2K/4K 档位、视频按分辨率每秒、音乐按每分钟、对话按每条消息。保存后用户端立即出现这些模型供选择，并按所选模型的价格扣积分。
+```bash
+go run ./cmd/admin-passwd -email admin@example.com
+```
 
-浏览器只会拿到模型的不透明公开 ID、别名和积分价格；上游模型 ID 仅保存在服务端，不会出现在 `/api/models` 响应、页面源码或日志中。停用的模型不再出现在选择列表，但仍保留价格配置。未选择模型（或模型目录为空）时继续使用 `.env` / 系统设置中的默认模型与全局档位价。
+后台页面本身不含业务数据，能否使用由 `/api/admin/session` 与每个 `/api/admin/*` 接口在服务端重新校验后台会话决定；未登录时后台显示自己的登录页，不会跳回门户。后台还提供“修改密码”，修改后会注销该账号在其他设备上的后台会话。
+
+后台包含：概览（账号、流通/消耗积分、近 14 天消耗、最新账号、待处理举报）、用户搜索与详情、积分加减（写入积分流水和审计日志，扣减不会产生负余额）、账号停用与恢复（停用会立即注销该账号所有会话并阻止再次登录）、邀请排行榜与明细、生成消耗与作品记录、作品举报处理（标记已处理/忽略、隐藏/恢复作品）、媒体对象浏览与删除（同时删除对象存储中的文件）、系统设置和操作日志。
+
+**“系统设置”是运行期配置的主入口**：AI 网关与模型、每日额度与限流、积分单价与邀请奖励、GitHub 登录、私有 OSS、站点地址等全部保存在主数据库的 `app_settings` 中（默认部署即 SQLite，PostgreSQL 部署时随主数据库保存）。首次启动会把 `.env` 里已填写的同名项一次性导入数据库（`SETTINGS_SEEDED` 标记），之后以数据库为准；保存后本进程立即生效，多实例部署最多 10 秒同步。AI 服务中的对话、图片、视频、音乐默认模型直接从“模型与定价”里已启用的同类模型中选择，也可选“内置默认”回到内置模型；尚未同步模型目录时仍可手动填写。密钥类配置只显示“是否已配置”，不会回传到浏览器或写入日志；留空保存表示保持原值，“恢复默认”会回到 `.env` 或内置默认值。只有 `HOST`、`PORT`、`DATABASE_URL`、`SETUP_TOKEN` 等启动参数仍只从 `.env` 读取。当前版本未使用 Redis，会话与限流保存在主数据库；SQLite / PostgreSQL 由启动前的 `DATABASE_URL` 选择。
+
+**“模型与定价”支持按模型逐一计价。** 列表可以按类型筛选并搜索别名或上游模型 ID。点击“同步网关”会从 `${AI_API_BASE_URL}/models`（OpenAI 兼容格式）拉取模型列表，并**严格以网关返回的列表为准**：新模型自动按名称猜测为对话、图像、视频或音乐并加入后台，网关中已不存在的模型（包括手动添加的）会被删除；仍然存在的模型只更新上游 `display_name`，保留已配置的别名、类型、启用状态和价格。也可以手动填写上游模型 ID 添加，但在下次同步时若网关未返回该模型就会被移除。每个模型可以单独设置显示别名、启用状态、支持的档位和积分价格：图像可选 1K/2K/4K，视频可选 360p/720p/1080p/4K，音乐按每分钟、对话按每条消息计价。只有勾选的档位会出现在用户端的画质/分辨率选择里，价格输入框也只显示这些档位。保存后用户端立即出现这些模型供选择，并按所选模型的价格扣积分。
+
+浏览器只会拿到模型的不透明公开 ID、别名、支持的档位和积分价格；上游模型 ID 仅保存在服务端，不会出现在 `/api/models` 响应、页面源码或日志中。停用的模型不再出现在选择列表，但仍保留价格配置。未选择模型（或模型目录为空）时继续使用 `.env` / 系统设置中的默认模型与全局档位价。
 
 ### 本地保存与账号同步
 
@@ -213,6 +243,14 @@ npm run dev
 退出后可继续创建新的游客记录。浏览器只保存允许的创作偏好，不保存连接密钥、上游模型或预设提示词；旧版浏览器密钥与设置会自动清理。记录读写和游客导入会递归移除旧版私有配置字段，保留用户描述、歌词、正文和媒体。账号记录接口逐次验证登录身份和记录归属；账号过期或云端保存失败时会提示错误，请下载重要内容备份。
 
 新建异步视频任务使用不透明任务编号；旧版仍在等待中的任务可能需要重新生成，已保存的成品不受影响。
+
+### 长期记忆
+
+登录用户可在「创作设置 → 长期记忆」中保存称呼、语言与语气偏好、长期目标等短句。每条记忆 1–280 个字符，每个账号最多 50 条，保存在账号数据库中，可随时编辑、单条删除或清空；删除账号时会一并删除。
+
+- 「在对话中使用记忆」默认开启。开启时，普通对话会在服务端系统提示词末尾附上已保存的记忆，让回答更贴合用户；关闭后记忆仍会保留，但不再加入对话。
+- 「自动记住对话中的偏好」默认关闭。开启后，每轮成功回答会额外调用一次默认对话模型，从最近的对话中提取最多 3 条值得长期保留的信息，并标记为「自动记录」。提取失败不会影响对话中的回答。
+- 记忆只作用于当前账号的普通对话，不会注入歌曲整理、歌词校准、短片脚本或每日灵感等其他 AI 请求。记忆由服务端读取并拼入系统提示词，浏览器请求不能直接修改系统提示词。
 
 ### 每日生成额度
 
@@ -252,7 +290,7 @@ npm run dev
 
 ## 环境配置
 
-完整示例见 [`.env.example`](.env.example)。构建按 Astro 规则加载环境文件；启动通过 Node 自带的环境文件功能加载 `.env` 和 `.env.production`（后者优先），部署平台已提供的变量优先。数据库连接在运行时读取，已移除应用的 dotenv 依赖。
+完整示例见 [`.env.example`](.env.example)。Go 启动时依次加载 `.env.production` 和 `.env`，部署平台已经提供的环境变量优先；修改 `.env` 后需重启进程。数据库连接在运行时读取。
 
 | 环境变量 | 默认值 / 行为 | 用途 |
 | --- | --- | --- |
@@ -282,13 +320,13 @@ npm run dev
 | `POINT_CHAT` | `0` | 每条对话积分，0 表示对话不计积分 |
 | `POINT_INVITE_REWARD` / `POINT_INVITE_BONUS` | `30` / `20` | 邀请人与被邀请人获得的奖励积分 |
 | `POINT_INVITE_DAILY_LIMIT` | `5` | 每个邀请人每天最多发放奖励次数，0 暂停发放 |
-| `DATABASE_URL` | 生产默认 `data/olai.db` | 本地文件路径、`file:` URL 或远程 libSQL 地址 |
-| `DATABASE_AUTH_TOKEN` | 本地无需配置 | 远程数据库提供的访问令牌 |
-| `ASTRO_DB_REMOTE_URL` / `ASTRO_DB_APP_TOKEN` | 兼容旧部署 | 未配置新的对应变量时继续读取旧变量 |
+| `DATABASE_URL` | 默认 `data/olai.db` | SQLite 文件路径 / `file:` URL，或 `postgres://` 连接串；须在启动前确定 |
 | `HOST` | `0.0.0.0` | 服务监听地址 |
 | `PORT` | `4321` | 服务监听端口 |
-| `SITE_ORIGIN` | 本地访问无需设置 | 反向代理部署时的公开站点 origin；GitHub 登录回调也依赖它 |
-| `ADMIN_EMAILS` | 留空 | 管理后台邮箱白名单，逗号分隔；首次必须在这里配置 |
+| `SETUP_TOKEN` | 留空 | 可选：首次初始化 `/setup` 需要携带的安装令牌；留空则只依赖同源校验与限流 |
+| `SITE_ORIGIN` | 本地访问无需设置 | 反向代理部署时的公开站点 origin；首次初始化时可一并填写，GitHub 登录回调也依赖它 |
+| `ADMIN_EMAILS` | 留空 | 旧版管理员邮箱白名单；仅用于升级时一次性迁移独立后台账号，不再参与登录鉴权。全新部署请在 `/setup` 创建后台账号 |
+| `ADMIN_PATH` | `/admin` | 后台入口路径；可在后台改为自定义路径，修改后原入口立即失效 |
 | `MAIL_HOST` | `mail.bllii.com` | 出站 SMTP 主机；也可在管理后台覆盖 |
 | `MAIL_PORT` | `465` | SMTP 端口，默认 465 隐式 TLS；也可在管理后台覆盖 |
 | `MAIL_SECURE` | `true` | `false` 时改用 STARTTLS（例如 587）；也可在管理后台覆盖 |
@@ -300,22 +338,78 @@ npm run dev
 | `GITHUB_RESOLVE_IP` | 留空 | 无代理时可访问的 github.com IP，作为直连备选 |
 | `TRUST_PROXY` | `false` | 是否信任代理提供的客户端 IP |
 
+除 `HOST`、`PORT`、`DATABASE_URL`、`SETUP_TOKEN` 外，上表配置在首次启动时会一次性写入主数据库（默认 SQLite）；之后修改 `.env` 不会覆盖数据库中的值，请在后台“系统设置”中调整，或使用“恢复默认”重新回落到 `.env` / 内置默认值。
+
 若网关使用不同的模型 ID，由部署者通过上述服务端变量配置实际别名。所有 `AI_*` 变量仅在服务端读取，不能通过前端设置、浏览器存储或请求中的模型/系统提示词字段覆盖。歌曲整理、歌词校准、封面与短片工作流的预设提示词也只在服务端组装；客户端只提交创作意图、内容和允许的参数。
 
 ## 部署指南
 
+### 首次部署初始化
+
+全新部署（数据库中没有账号，且未写入 `SETUP_COMPLETED`）第一次访问任何页面都会跳转到 `/setup`，其他页面与 API 分别返回 302 / `428 setup_required`。在向导中需要：
+
+1. 创建第一个后台管理员账号（邮箱 + 密码，可选昵称；与门户账号相互独立）；
+2. 可选填写公开站点 origin；
+3. 如设置了 `SETUP_TOKEN`，填写安装令牌。公开部署请务必设置该变量，否则第一个访问者就能完成初始化并成为管理员。
+
+页面会显示当前数据库类型，并明确列出运行环境：配置与账号保存在当前主数据库（默认 SQLite），数据库类型需在启动前通过 `DATABASE_URL` 选择，当前版本不使用 Redis（会话与限流在主数据库）。初始化完成后不会登录门户，而是跳转到后台登录页（默认 `/admin/login`），使用刚创建的账号登录后台。
+
+已有账号或已迁移数据的部署会在启动时自动写入 `SETUP_COMPLETED`，不会出现初始化向导。
+
+若忘记自定义后台入口：它保存在 `app_settings` 表的 `ADMIN_PATH` 行。停止服务后删除该行并重启，入口会回落到 `.env` 或默认 `/admin`。SQLite 示例：
+
+```bash
+sqlite3 data/olai.db "DELETE FROM app_settings WHERE key='ADMIN_PATH';"
+```
+
+PostgreSQL 部署请对同一张表执行等价 SQL。
+
 ### 本地持久化数据库
 
 ```bash
-npm run build
-npm start
+go build -o olai .
+./olai
 ```
 
-数据库环境变量可全部留空。`npm start` 直接启动 `dist/server/entry.mjs`，服务在首次接口请求时自动创建 `data/olai.db` 及所需表，持久保存账号、会话和额度；`npm run preview` 使用相同启动入口。构建不连接数据库，数据库地址仅在运行时读取，修改地址后重启即可。
+数据库环境变量可全部留空。服务在首次连接时自动创建 `data/olai.db` 及所需表，持久保存账号、会话、额度，以及 `app_settings` 中的基础配置与站点配置。构建不连接数据库，数据库地址仅在运行时读取；SQLite / PostgreSQL 只能在启动前通过 `DATABASE_URL` 选择，运行中不能在后台切换。
 
-需要指定文件时，设置 `DATABASE_URL=data/olai.db`，普通路径和 `file:./data/olai.db` 均可。本地数据库不需要令牌。旧 `ASTRO_DB_REMOTE_URL` / `ASTRO_DB_APP_TOKEN` 配置继续兼容，本地令牌会被忽略；已有 Astro DB 文件直接沿用，自动初始化只添加缺少的表和索引，不删除账号或作品。
+需要指定文件时，设置 `DATABASE_URL=data/olai.db`，普通路径和 `file:./data/olai.db` 均可。也可以使用 PostgreSQL：
+
+```dotenv
+DATABASE_URL=postgres://user:password@localhost:5432/olai?sslmode=disable
+```
+
+两种数据库共用同一套 Go 查询层与初始化逻辑，自动建表只添加缺少的表和索引，不删除账号或作品。
 
 部署时保留 `data` 目录并提供写入权限，容器部署将其挂载到持久化卷。服务默认监听 4321 端口，可通过 `HOST`、`PORT` 配置。
+
+### 从旧 Astro 版本迁移数据
+
+旧 Astro 版本使用 PascalCase 表（`User`、`StudioRecord`、`MediaObject` 等），新版本使用 snake_case 表（`users`、`studio_records`、`media_objects` 等）。启动新服务只会建表，不会自动复制旧数据；需要执行一次回填。
+
+**务必先完成回填，再启动新版服务。** 新版首次启动会把 `.env` 写入 `app_settings` 并写入 `SETTINGS_SEEDED` 标记；若此时新表还没有旧数据，之后回填时旧 `AppSetting` 会被 `ON CONFLICT DO NOTHING` 跳过。同样，在新版服务上完成 `/setup` 会创建新的管理员账号，导致旧账号回填时出现邮箱冲突。已经有旧数据要迁移时，请按“停止旧版 → 备份 → 回填 → 启动新版”的顺序操作。
+
+```bash
+go run ./cmd/migrate-legacy
+```
+
+默认是试运行：全部写入和校验都在一个事务内完成，最后回滚，不改变数据库。输出会逐表列出旧表行数、将新增行数、缺失行数和列值不一致数，并检查外键、完整性、作品 JSON、模型价格、积分余额与作品 key。确认无误后正式执行：
+
+```bash
+go run ./cmd/migrate-legacy -apply
+```
+
+回填前请停止旧 Astro 与新 Go 两个进程，并做包含 WAL 的一致性备份，例如：
+
+```bash
+sqlite3 "file:data/olai.db?mode=ro" ".backup 'data/olai.db.pre-backfill.bak'"
+```
+
+备份文件包含密码哈希、AI 密钥和邮件密码等敏感数据，请限制访问权限，并在验收后按保留策略删除。
+
+回填是幂等的：已存在的行按主键跳过，重复执行时加 `-force`。旧 PascalCase 表不会被修改，可保留用于回滚或验收比对。该命令只支持 SQLite；若 `DATABASE_URL` 指向 PostgreSQL 会拒绝执行（旧 Astro 数据本身在 SQLite 中）。
+
+迁移会保留账号密码哈希、会话、积分、作品记录、媒体元数据、模型目录和运行期设置。邮箱验证状态按原值迁移：旧版中未验证的账号迁移后仍需完成验证才能用密码登录（与旧版行为一致），GitHub 登录不受影响。注意：旧 `AppSetting` 中的 AI 密钥、邮件密码等会覆盖新 `.env` 中的同名配置；旧游客媒体的所有者哈希算法与新版本不同，迁移后原游客设备无法再认领这 6 条元数据（账号媒体不受影响）。媒体文件本体在 OSS，不在数据库中。
 
 ### 私有 OSS 与媒体中转
 
@@ -332,7 +426,7 @@ OSS_ACCESS_KEY_SECRET=轮换后的RAM访问密钥Secret
 
 `/opt/olai` 在这里是 OSS 对象前缀 `opt/olai/`，不是 Linux 挂载目录。对象 key 为 `opt/olai/{userid}/{UTC时间}/{uuid}-{附件id}.{格式}`：登录用账号 ID，游客用服务端 IP + 随机 HttpOnly 设备 Cookie 的组合哈希，不在对象路径暴露原始 IP。游客附件在同设备、同 IP 登录后通过数据库归属认领；已有对象 key 不重写。
 
-生成接口在 OSS 上传成功并写入 `MediaObject` 后才返回本站媒体链接，绝不返回桶域名、对象 key 或签名直链。预览与下载由 Node 服务流式中转，按账号 / 游客设备校验所有权，支持音视频 Range / HEAD，并使用同源来源校验、CORP、私有不缓存、nosniff 和流量限制防盗链。TXT / LRC / JSON / SRT 强制下载，禁止 SVG / HTML。此机制阻止未授权读取与站外嵌入，不能阻止已获授权的用户保存或再次传播内容。
+生成接口在 OSS 上传成功并写入 `MediaObject` 后才返回本站媒体链接，绝不返回桶域名、对象 key 或签名直链。预览与下载由 Go 服务流式中转，按账号 / 游客设备校验所有权，支持音视频 Range / HEAD，并使用同源来源校验、CORP、私有不缓存、nosniff 和流量限制防盗链。TXT / LRC / JSON / SRT 强制下载，禁止 SVG / HTML。此机制阻止未授权读取与站外嵌入，不能阻止已获授权的用户保存或再次传播内容。
 
 游客标识包含 IP；清理 Cookie 或更换网络后，原游客私有链接无法直接访问，建议及时登录同步。已登录账号不绑定当前 IP，但仍按 IP 共享流量上限。
 
@@ -342,37 +436,29 @@ OSS_ACCESS_KEY_SECRET=轮换后的RAM访问密钥Secret
 
 删除作品记录不会立即物理删除所有历史 OSS 对象（避免并发引用或迁移误删）；上传失败产生的本次对象会尽力清理。可按运维保留策略处理孤儿对象，不要直接按账号目录批量删除仍被引用的文件。
 
-### 远程 libSQL / Turso
+### PostgreSQL
 
-在 `.env` 或部署平台设置远程连接：
+在 `.env` 或部署平台设置连接串：
 
 ```dotenv
-DATABASE_URL=libsql://your-db.turso.io
-DATABASE_AUTH_TOKEN=数据库提供的访问令牌
+DATABASE_URL=postgres://user:password@db.example.com:5432/olai?sslmode=require
 ```
 
-使用相同构建和启动命令：
-
-```bash
-npm run build
-npm start
-```
-
-服务自动初始化表。数据库直接通过 libSQL 客户端和 Drizzle 访问，已移除 Astro DB 集成。表定义位于 [`db/schema.ts`](db/schema.ts)，兼容现有数据库的初始化 SQL 位于 [`db/runtime.mjs`](db/runtime.mjs)。
+使用相同的构建和启动命令。服务启动时自动创建缺少的表和索引。SQLite 与 PostgreSQL 的查询由 `internal/store` 统一处理。
 
 ### 开发与生产数据库
 
 | 运行方式 | 数据库 | 持久化行为 |
 | --- | --- | --- |
-| `npm run dev` | `.astro/olai-dev.db` | 开发重启保留记录，与默认生产数据库分开 |
-| `npm run build` + `npm start` | `data/olai.db` | 重启、重新构建保留记录 |
-| 远程数据库部署 | 配置的 libSQL 数据库 | 由远程数据库持久保存 |
+| `go run .` | `data/olai.db` | 重启保留记录 |
+| `go build` + `./olai` | `data/olai.db` | 重启、重新构建保留记录 |
+| PostgreSQL 部署 | 配置的 PostgreSQL | 由远程数据库持久保存 |
 
-配置了数据库地址时，开发和生产均使用该地址。请从项目根目录启动服务，相对数据库路径以启动目录为准。部署需要 Node 服务及生产依赖；仅部署 `dist/client` 静态目录无法运行账号与生成接口。
+配置了数据库地址时，开发和生产均使用该地址。请从项目根目录启动服务，相对数据库路径以启动目录为准。部署只需要 Go 可执行文件；前端已嵌入，不需要额外的静态目录或 Node 进程。
 
 ### Docker 部署
 
-仓库提供 [`Dockerfile`](Dockerfile)，构建阶段安装构建依赖，运行阶段单独安装生产依赖和当前 Linux 平台的 SQLite 原生驱动：
+仓库提供 [`Dockerfile`](Dockerfile)：构建阶段用 Go 工具链安装前端依赖并编译两个前端，运行阶段只包含静态链接的 Go 二进制，不使用 Node：
 
 ```bash
 docker build -t olai .
@@ -381,19 +467,13 @@ docker run -d --name olai -p 4321:4321 --env-file .env -v olai-data:/app/data ol
 
 `.env` 中配置公开站点的 `SITE_ORIGIN` 和上游服务。数据库默认使用持久化卷内的 `/app/data/olai.db`。镜像不包含本地 `.env`、数据库或 Windows 的 `node_modules`。
 
-使用自己的容器构建流程时，运行镜像也需要 `package.json` 和在该镜像内安装的生产依赖：
-
-```bash
-npm install --omit=dev --include=optional
-```
-
-只从构建阶段复制 `dist` 会遗漏 SQLite 驱动和其他外部依赖。构建产物已内置 Drizzle，环境文件由 Node 原生读取，原生 SQLite 驱动仍由生产依赖提供。
+使用自己的容器构建流程时，运行镜像只需要 `olai` 二进制、`.env` 和可写的 `data/` 目录。前端产物在 `go build` 时嵌入，SQLite 驱动是纯 Go 实现，不需要任何 Node 依赖或共享库。
 
 ### 反向代理与来源校验
 
 本地访问无需设置 `SITE_ORIGIN`，服务按请求的实际 Host（含端口）与协议校验 Origin，支持 `localhost:4321`、`127.0.0.1:4321` 和局域网地址，拒绝不同来源。
 
-通过反向代理部署时，设置 `SITE_ORIGIN` 为公开站点的完整 origin，不含路径和末尾斜杠（例如 `https://olai.example.com`）。应用自行校验所有变更请求的 `Origin`（[`src/middleware.ts`](src/middleware.ts) 与各接口路由），因此无需在构建时写入域名；Astro 内置的来源校验已关闭，它在反向代理后会把 `Origin` 与适配器归一化后的 `localhost` 地址比较，从而误拒正常请求。
+通过反向代理部署时，设置 `SITE_ORIGIN` 为公开站点的完整 origin，不含路径和末尾斜杠（例如 `https://olai.example.com`）。应用自行校验所有变更请求的 `Origin`（`internal/server` 的 `sameOrigin` 与各接口处理器），因此无需在构建时写入域名。
 
 仅当可信代理覆盖 `X-Forwarded-For`、且外部不能直接连接应用时，启用 `TRUST_PROXY=true`。默认拒绝带有未受信任转发 IP 标头的游客生成及登录请求，避免伪造 IP 改变额度。
 
@@ -407,7 +487,7 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 ## 上游接口与模型
 
-以下为部署者的服务端接入说明，不代表浏览器可读取这些配置。接入依据：[web2api 文档](https://example.com/v1/docs)，适配版本 v0.3.0。默认服务地址为 `https://example.com/v1`，服务端使用 Bearer API Key；公开 API 只提供服务状态和创作结果，不透传 `/models`、密钥、模型元数据或预设提示词。
+以下为部署者的服务端接入说明，不代表浏览器可读取这些配置。接入依据：[web2api 文档](https://example.com/v1/docs)，适配版本 v0.3.0。默认服务地址为 `https://example.com/v1`，服务端使用 Bearer API Key；公开 API 只提供服务状态、首页灵感卡片和创作结果，不透传 `/models`、密钥、模型元数据或预设提示词。首页灵感卡片由默认对话模型每天生成一次（按北京时间），生成失败的日期回退到内置文案池。
 
 **当前配置说明：**
 - **对话**：`gemini-3.5-flash` 或 `gemini-flash-latest` 通过 /v1/chat/completions
@@ -474,57 +554,47 @@ Omni 与 Veo 两种路由共用视频生成额度。上游视频服务返回 HTM
 
 | 命令 | 用途 |
 | --- | --- |
-| `npm run dev` | 启动开发服务器 |
-| `npm run check` | Astro / TypeScript 检查 |
-| `npm test` | 运行单元测试 |
-| `npm run build` | 构建，不连接数据库 |
-| `npm start` / `npm run preview` | 直接启动 Node 构建产物，接口自动初始化数据库 |
+| `go run .` | 启动开发服务（读取 `.env`，SQLite 默认 `data/olai.db`） |
+| `go build ./...` | 编译服务端并检查前端嵌入 |
+| `go test ./...` | 运行 Go 单元测试 |
+| `go tool wf install ./web` | 安装 / 更新两个前端共用的依赖 |
+| `go tool wf build -modules ../wf_modules ./web/portal` | 构建 portal（SSR + SPA 外壳） |
+| `go tool wf build -mode spa -base /admin -modules ../wf_modules ./web/admin` | 构建 admin SPA |
 
-基础验证：
-
-```bash
-npm test
-npm run build
-```
+修改 `web/portal/src` 或 `web/admin/src` 后重新构建对应前端；只改 Go 代码时 `go run .` 即可。`web/portal/dist` 与 `web/admin/dist` 必须存在（仓库保留 `.gitkeep`），否则 `//go:embed` 会在编译期失败。Git Bash 下构建 admin 时加 `MSYS_NO_PATHCONV=1`，避免 `-base /admin` 被改写成 Windows 路径。
 
 ### 浏览器检查
 
-浏览器检查需要 Playwright Chromium，首次使用可运行：
+启动服务后访问 `http://localhost:4321`：
 
-```bash
-npx playwright install chromium
-```
-
-| 命令 | 主要覆盖内容 | 截图目录 |
-| --- | --- | --- |
-| `node scripts/verify-studio.mjs` | 音乐编辑与保存、歌词下载、默认引擎、媒体参数、隐藏模型名称、移动端布局 | `.qa` |
-| `node scripts/verify-brand.mjs` | 桌面 / 手机 / 平板布局、SVG ID、菜单键盘操作、重命名与删除弹窗、焦点与滚动恢复、对话、减少动态效果 | `.qa/brand` |
-| `node scripts/verify-music.mjs` | 连续灵感生成、段落编辑与新灵感覆盖、音频校准请求、播放器更新、失败回退、LRC 下载与持久化、封面生成 / 重试 / 显示 / 下载、作品库编辑、手机布局 | `.qa/music` |
-
-三个 `scripts/verify-*.mjs` 检查需先启动开发服务器，可用 `STUDIO_URL` 指定地址。工作台与品牌检查默认使用端口 4322，音乐检查默认使用端口 4323。使用默认开发端口 4321 时，PowerShell 示例：
-
-```powershell
-$env:STUDIO_URL = "http://localhost:4321"
-node scripts/verify-studio.mjs
-node scripts/verify-brand.mjs
-node scripts/verify-music.mjs
-```
+- `/`、`/gallery`、`/download` 由 portal 的 goja SSR 输出，带 `__WF_DATA__`，客户端执行 hydration。
+- `/chat`、`/image`、`/video`、`/music`、`/library`、`/workflow`、`/login`、`/account` 使用 portal 的 SPA 外壳，避免在服务端访问浏览器存储。
+- 后台有独立登录页：默认 `/admin/login`（自定义入口时为 `{入口}/login`）。后台账号与门户账号、会话互不相通；门户任何位置都不显示后台入口，后台也不链接回门户。
+- 全新数据库首次访问会跳转到 `/setup` 创建第一个后台管理员账号，完成后进入后台登录页；已有数据的数据库不会出现该向导。
 
 ### 项目结构
 
 ```text
 .
-├── db/schema.ts             # 账号、记录与额度的 Drizzle 表定义
-├── db/runtime.mjs           # 运行时数据库配置与自动建表
-├── Dockerfile               # 构建并安装运行镜像的生产依赖
-├── public/brand/            # 小o插画与品牌字标
-├── scripts/                 # 品牌资源处理、工作台与音乐浏览器检查
-├── src/
-│   ├── components/          # 对话、媒体创作、作品库、播放器与弹窗
-│   ├── lib/                 # 创作逻辑、本地保存、账号与上游服务
-│   ├── pages/api/           # AI 转发、账号与记录接口
-│   ├── middleware.ts        # API 错误处理
-│   └── styles/              # 全局与品牌样式
+├── main.go                  # 启动、嵌入 public、装配两个前端运行时
+├── cmd/
+│   ├── admin-passwd/        # 创建/重置独立后台管理员账号
+│   └── migrate-legacy/      # 旧 Astro 数据迁移工具
+├── internal/                # Go 服务：路由、认证、配额、媒体、管理接口
+├── web/
+│   ├── embed.go             # 嵌入 portal/dist 与 admin/dist
+│   ├── package.json         # 两个前端共用的依赖与 lockfile
+│   ├── wf_modules/          # webfront 依赖 store（不进版本库）
+│   ├── portal/              # 公开站点 + 创作工作台（Vue SSR / SPA 混合）
+│   │   ├── src/entry-server.vue.ts
+│   │   ├── src/entry-client.ts
+│   │   └── dist/
+│   └── admin/               # 管理后台（Vue SPA，资源固定在 /admin/assets）
+│       ├── src/main.ts
+│       └── dist/
+├── public/                  # 品牌图、favicon 等原样静态资源
+├── migrations/              # SQLite / PostgreSQL 初始化 SQL
+├── Dockerfile               # 纯 Go 多阶段构建
 └── .env.example             # 环境配置示例
 ```
 
@@ -532,21 +602,19 @@ node scripts/verify-music.mjs
 
 ### 登录接口返回 HTML，而不是 JSON
 
-`GET /api/auth/me` 应返回 `application/json`。未登录时返回 `{"user":null,"generationLimit":1}`（次数取自环境配置）。出现包含「请启用 JavaScript 以使用 Olai」的 HTML 表示接口落入页面或服务器错误页；请确保 `/api/*` 转发到 Node 服务，而不是静态首页。API 中间件会将应用初始化错误转换为 JSON，具体异常输出到服务端日志。
+`GET /api/auth/me` 应返回 `application/json`。未登录时返回 `{"user":null,"generationLimit":1}`。返回 HTML 通常表示请求没有匹配到 `/api/*` 路由：检查反向代理是否把接口转发给 Go 服务，以及前端路由是否先拦截了该路径。Go 服务内部注册 `/api/` 兜底，未知接口会返回 JSON 404。
 
 ### 服务初始化失败
 
-日志出现 `ERR_MODULE_NOT_FOUND` / `Cannot find package` 表示运行镜像缺少依赖，接口模块尚未执行。使用仓库 Dockerfile，或在运行镜像中执行 `npm install --omit=dev --include=optional`；原生 SQLite 驱动需要与服务器的操作系统和架构匹配。接口会用 `DEPENDENCY_MISSING` 区分此问题。
+先运行 `go build ./...`，确认服务端和两个前端的 `dist` 都能嵌入；若报 `pattern all:web/portal/dist: no matching files found`，说明前端尚未构建或 `.gitkeep` 丢失。启动日志会记录数据库初始化、端口占用或上游 / OSS / 邮件配置错误。SQLite 需要 `data/` 可写；PostgreSQL 检查 `DATABASE_URL`、网络与账号权限。修改 `.env` 后必须重启进程。
 
-本地数据库无需远程地址或访问令牌，首次接口请求自动创建 `data/olai.db` 和表。检查服务日志中的文件权限或连接错误，确保启动目录正确、数据库及其所在目录可写；容器部署需要保留持久化卷。修改数据库环境变量后重启即可，不需要重新构建。数据库初始化失败时，接口返回 JSON 错误，服务端日志记录具体原因。
+### 开发服务器重启后，账号记录消失
+
+默认数据库是 `data/olai.db`，正常重启会保留账号与作品；删除 `data/` 会删除数据库。部署时保留该目录或改用 PostgreSQL。生产环境先运行前端构建，再 `go build -o olai .`，启动 `./olai`。
 
 ### 选择 4K 后，实际输出没有达到 4K
 
 默认聊天兼容协议将画质作为提示词偏好，无法保证精确输出。图片可在上游启用官方后端后使用 `interactions` 模式；视频输出仍取决于上游模型支持。
-
-### 开发服务器重启后，账号记录消失
-
-默认开发数据库为 `.astro/olai-dev.db`，重启不会清空；删除 `.astro` 会删除该开发文件。生产运行 `npm run build` 和 `npm start`，并保留 `data` 目录，或配置远程 libSQL 数据库。
 
 ## 后续计划
 
