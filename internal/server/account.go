@@ -87,7 +87,11 @@ func validPassword(value string) bool {
 }
 
 func (s *Server) githubLoginEnabled() bool {
-	return s.Settings.Get("GITHUB_CLIENT_ID") != "" && s.Settings.Get("GITHUB_CLIENT_SECRET") != ""
+	return s.oauthEnabled(githubProvider())
+}
+
+func (s *Server) googleLoginEnabled() bool {
+	return s.oauthEnabled(googleProvider())
 }
 
 func (s *Server) accountSummary(ctx context.Context, userID string) (int64, string, error) {
@@ -120,6 +124,7 @@ func (s *Server) accountState(ctx context.Context, w http.ResponseWriter, status
 		"mediaStorage":    s.mediaStorage(),
 		"shortFilm":       s.Settings.Get("AI_SHORT_FILM") == "true",
 		"githubLogin":     s.githubLoginEnabled(),
+		"googleLogin":     s.googleLoginEnabled(),
 	}
 	writeJSON(w, status, result)
 }
@@ -293,8 +298,8 @@ func (s *Server) handleAuthAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "账号服务暂不可用，请稍后重试。")
 			return
 		}
-		if strings.HasPrefix(user.PasswordHash, "oauth:") {
-			writeError(w, http.StatusBadRequest, "此账号使用 GitHub 登录，请继续用 GitHub 登录。")
+		if store.IsOAuthPasswordHash(user.PasswordHash) {
+			writeError(w, http.StatusBadRequest, oauthLoginHint(user.PasswordHash))
 			return
 		}
 		if banned, err := s.DB.IsBanned(ctx, user.ID); err != nil {
@@ -364,7 +369,7 @@ func (s *Server) handleAuthAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if action == "forgot" {
-			if strings.HasPrefix(user.PasswordHash, "oauth:") {
+			if store.IsOAuthPasswordHash(user.PasswordHash) {
 				silent()
 				return
 			}

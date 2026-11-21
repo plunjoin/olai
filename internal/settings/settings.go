@@ -18,32 +18,36 @@ import (
 	"time"
 
 	"olai/internal/store"
+	appversion "olai/internal/version"
 )
 
 type Type string
 
 const (
-	TypeInt    Type = "int"
-	TypeBool   Type = "bool"
-	TypeText   Type = "text"
-	TypeCSV    Type = "csv"
-	TypeURL    Type = "url"
-	TypeEnum   Type = "enum"
-	TypeSecret Type = "secret"
+	TypeInt     Type = "int"
+	TypeBool    Type = "bool"
+	TypeText    Type = "text"
+	TypeCSV     Type = "csv"
+	TypeURL     Type = "url"
+	TypeEnum    Type = "enum"
+	TypeSecret  Type = "secret"
+	TypeLink    Type = "link"
+	TypeVersion Type = "version"
 )
 
 type Def struct {
-	Key     string   `json:"key"`
-	Group   string   `json:"group"`
-	Label   string   `json:"label"`
-	Help    string   `json:"help,omitempty"`
-	Type    Type     `json:"type"`
-	Default string   `json:"default"`
-	Min     *int     `json:"min,omitempty"`
-	Max     *int     `json:"max,omitempty"`
-	Choices []string `json:"choices,omitempty"`
-	Secret  bool     `json:"secret,omitempty"`
-	Restart bool     `json:"restart,omitempty"`
+	Key       string   `json:"key"`
+	Group     string   `json:"group"`
+	Label     string   `json:"label"`
+	Help      string   `json:"help,omitempty"`
+	Type      Type     `json:"type"`
+	Default   string   `json:"default"`
+	Min       *int     `json:"min,omitempty"`
+	Max       *int     `json:"max,omitempty"`
+	Choices   []string `json:"choices,omitempty"`
+	Secret    bool     `json:"secret,omitempty"`
+	Restart   bool     `json:"restart,omitempty"`
+	Multiline bool     `json:"multiline,omitempty"`
 }
 
 const (
@@ -67,7 +71,7 @@ var Defs = []Def{
 	// AI 服务
 	{Key: "AI_API_BASE_URL", Group: "AI 服务", Label: "网关地址", Type: TypeURL, Default: "", Help: "OpenAI 兼容接口地址，例如 https://example.com/v1。仅服务端使用。"},
 	{Key: "AI_API_KEY", Group: "AI 服务", Label: "网关密钥", Type: TypeSecret, Default: "", Secret: true},
-	{Key: "AI_SYSTEM_PROMPT", Group: "AI 服务", Label: "对话系统提示词", Type: TypeText, Default: "", Max: intp(8000), Help: "留空使用内置的小o默认人格。"},
+	{Key: "AI_SYSTEM_PROMPT", Group: "AI 服务", Label: "对话系统提示词", Type: TypeText, Default: "", Max: intp(8000), Multiline: true, Help: "留空使用内置的小o默认人格。"},
 	{Key: "AI_CHAT_MODEL", Group: "AI 服务", Label: "对话模型", Type: TypeText, Default: "", Max: intp(200), Help: AI_MODEL_HELP},
 	{Key: "AI_IMAGE_MODEL", Group: "AI 服务", Label: "图片模型", Type: TypeText, Default: "", Max: intp(200), Help: AI_MODEL_HELP},
 	{Key: "AI_VIDEO_MODEL", Group: "AI 服务", Label: "视频模型", Type: TypeText, Default: "", Max: intp(200), Help: AI_MODEL_HELP},
@@ -106,6 +110,11 @@ var Defs = []Def{
 	{Key: "GITHUB_PROXY", Group: "GitHub 登录", Label: "GitHub 请求代理", Type: TypeText, Default: "", Max: intp(500), Help: "例如 http://127.0.0.1:7890。留空时读取 HTTPS_PROXY。"},
 	{Key: "GITHUB_RESOLVE_IP", Group: "GitHub 登录", Label: "GitHub 固定 IP", Type: TypeText, Default: "", Max: intp(100), Help: "没有代理时的备选方案；网络恢复后请留空。"},
 
+	// Google 登录
+	{Key: "GOOGLE_CLIENT_ID", Group: "Google 登录", Label: "Client ID", Type: TypeText, Default: "", Max: intp(200)},
+	{Key: "GOOGLE_CLIENT_SECRET", Group: "Google 登录", Label: "Client Secret", Type: TypeSecret, Default: "", Secret: true},
+	{Key: "GOOGLE_PROXY", Group: "Google 登录", Label: "Google 请求代理", Type: TypeSecret, Default: "", Secret: true, Help: "例如 http://127.0.0.1:7890。留空时读取 HTTPS_PROXY。"},
+
 	// 出站邮件
 	{Key: "MAIL_HOST", Group: "出站邮件", Label: "SMTP 主机", Type: TypeText, Default: "", Max: intp(253), Help: "例如 mail.bllii.com。留空时回退到 .env。"},
 	{Key: "MAIL_PORT", Group: "出站邮件", Label: "SMTP 端口", Type: TypeInt, Default: "465", Min: intp(1), Max: intp(65535), Help: "常用 465（隐式 TLS）或 587（STARTTLS）。"},
@@ -127,9 +136,20 @@ var Defs = []Def{
 	{Key: "OSS_MEDIA_DAILY_BYTES", Group: "私有 OSS", Label: "每日上传字节", Type: TypeInt, Default: "1073741824", Min: intp(1), Max: intp(107374182400), Help: BYTES_HELP},
 	{Key: "OSS_MEDIA_READ_RATE_LIMIT", Group: "私有 OSS", Label: "浏览每分钟次数", Type: TypeInt, Default: "60", Min: intp(0), Max: intp(1000000)},
 	{Key: "OSS_MEDIA_READ_DAILY_BYTES", Group: "私有 OSS", Label: "浏览每日字节", Type: TypeInt, Default: "1073741824", Min: intp(1), Max: intp(107374182400), Help: BYTES_HELP},
+
+	// 客户端版本与更新
+	{Key: "APP_UPDATE_ENABLED", Group: "版本与更新", Label: "启用客户端更新检查", Type: TypeBool, Default: "false", Help: "开启后，客户端可通过 GET /api/app/update 获取更新策略；关闭后接口仍可读取，但不会要求更新。"},
+	{Key: "APP_UPDATE_FORCE", Group: "版本与更新", Label: "强制旧版本更新", Type: TypeBool, Default: "false", Help: "仅对低于最新版本的客户端生效；低于最低支持版本时始终强制更新。"},
+	{Key: "APP_UPDATE_NOTES", Group: "版本与更新", Label: "更新说明", Type: TypeText, Default: "", Max: intp(2000), Multiline: true, Help: "显示在下载页和客户端更新提示中，支持多行。"},
+	{Key: "APP_IOS_LATEST_VERSION", Group: "版本与更新", Label: "iOS 最新版本", Type: TypeVersion, Default: "", Max: intp(40), Help: "语义化版本，例如 1.4.0；留空表示不检查 iOS 更新。"},
+	{Key: "APP_IOS_MIN_VERSION", Group: "版本与更新", Label: "iOS 最低支持版本", Type: TypeVersion, Default: "", Max: intp(40), Help: "低于此版本的 iOS 客户端必须更新；留空表示不强制。"},
+	{Key: "APP_IOS_DOWNLOAD_URL", Group: "版本与更新", Label: "iOS 下载地址", Type: TypeLink, Default: "", Max: intp(500), Help: "App Store 应用地址；留空时下载页显示即将上架。"},
+	{Key: "APP_ANDROID_LATEST_VERSION", Group: "版本与更新", Label: "Android 最新版本", Type: TypeVersion, Default: "", Max: intp(40), Help: "语义化版本，例如 1.4.0；留空表示不检查 Android 更新。"},
+	{Key: "APP_ANDROID_MIN_VERSION", Group: "版本与更新", Label: "Android 最低支持版本", Type: TypeVersion, Default: "", Max: intp(40), Help: "低于此版本的 Android 客户端必须更新；留空表示不强制。"},
+	{Key: "APP_ANDROID_DOWNLOAD_URL", Group: "版本与更新", Label: "Android 下载地址", Type: TypeLink, Default: "", Max: intp(500), Help: "Google Play 或 APK 下载地址；留空时下载页显示即将上架。"},
 }
 
-var Groups = []string{"站点", "AI 服务", "额度与限流", "积分与邀请", "GitHub 登录", "出站邮件", "私有 OSS"}
+var Groups = []string{"站点", "AI 服务", "额度与限流", "积分与邀请", "GitHub 登录", "Google 登录", "出站邮件", "私有 OSS", "版本与更新"}
 
 var defsByKey = func() map[string]Def {
 	out := make(map[string]Def, len(Defs))
@@ -475,6 +495,37 @@ func validate(def Def, raw string) (string, error) {
 			return "", invalid("%s只能是 true 或 false。", def.Label)
 		}
 		return value, nil
+	case TypeVersion:
+		maxLen := 40
+		if def.Max != nil {
+			maxLen = *def.Max
+		}
+		if len(value) > maxLen {
+			return "", invalid("%s内容过长。", def.Label)
+		}
+		normalized, ok := appversion.Normalize(value)
+		if !ok {
+			return "", invalid("%s必须是版本号，例如 1.4.0。", def.Label)
+		}
+		return normalized, nil
+	case TypeLink:
+		maxLen := 500
+		if def.Max != nil {
+			maxLen = *def.Max
+		}
+		if len(value) > maxLen {
+			return "", invalid("%s内容过长。", def.Label)
+		}
+		parsed, err := url.Parse(value)
+		if err != nil {
+			return "", invalid("%s必须是完整的 http(s) 地址。", def.Label)
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if !parsed.IsAbs() || parsed.Host == "" || parsed.User != nil ||
+			(scheme != "http" && scheme != "https") {
+			return "", invalid("%s必须是完整的 http(s) 地址。", def.Label)
+		}
+		return value, nil
 	case TypeEnum:
 		for _, choice := range def.Choices {
 			if choice == value {
@@ -566,6 +617,9 @@ func (m *Manager) Save(ctx context.Context, values map[string]any, reset []any, 
 		}
 		removals = append(removals, key)
 	}
+	if err := m.validateReleasePairs(writes, removals); err != nil {
+		return nil, err
+	}
 	if len(writes) == 0 && len(removals) == 0 {
 		return []string{}, nil
 	}
@@ -587,4 +641,45 @@ func (m *Manager) Save(ctx context.Context, values map[string]any, reset []any, 
 	}
 	changed = append(changed, removals...)
 	return changed, nil
+}
+
+// validateReleasePairs rejects a minimum version above the matching latest
+// version. It evaluates the values that would be effective after this save,
+// including resets back to .env or built-in defaults.
+func (m *Manager) validateReleasePairs(writes map[string]string, removals []string) error {
+	removed := make(map[string]bool, len(removals))
+	for _, key := range removals {
+		removed[key] = true
+	}
+	effective := func(key string) string {
+		if value, ok := writes[key]; ok {
+			return value
+		}
+		if removed[key] {
+			if env := os.Getenv(key); env != "" {
+				return env
+			}
+			if def, ok := defsByKey[key]; ok {
+				return def.Default
+			}
+			return ""
+		}
+		return m.Get(key)
+	}
+	pairs := [][2]string{
+		{"APP_IOS_MIN_VERSION", "APP_IOS_LATEST_VERSION"},
+		{"APP_ANDROID_MIN_VERSION", "APP_ANDROID_LATEST_VERSION"},
+	}
+	for _, pair := range pairs {
+		minimum, latest := effective(pair[0]), effective(pair[1])
+		if minimum == "" || latest == "" {
+			continue
+		}
+		cmp, ok := appversion.Compare(minimum, latest)
+		if !ok || cmp <= 0 {
+			continue
+		}
+		return invalid("%s不能高于%s。", defsByKey[pair[0]].Label, defsByKey[pair[1]].Label)
+	}
+	return nil
 }

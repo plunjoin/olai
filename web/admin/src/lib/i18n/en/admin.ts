@@ -175,6 +175,7 @@ const dict: Record<string, string> = {
   '邀请关系': 'Invites',
   '已发放 {n}': '{n} rewarded',
   '媒体对象': 'Media objects',
+  '服务端当前版本': 'Current server version',
   '近 14 天积分消耗': 'Credit spend, last 14 days',
   '柱高表示当日生成消耗的积分；游客生成不计入积分账本。': 'Bar height shows credits spent on generations that day. Guest generations are not counted in the credit ledger.',
   '作品记录 {n}': 'Works {n}',
@@ -319,8 +320,10 @@ const dict: Record<string, string> = {
   '额度与限流': 'Quota & rate limits',
   '积分与邀请': 'Credits & invites',
   'GitHub 登录': 'GitHub sign-in',
+  'Google 登录': 'Google sign-in',
   '出站邮件': 'Outbound mail',
   '私有 OSS': 'Private OSS',
+  '版本与更新': 'Version & updates',
 
   // Settings labels
   '公开站点地址': 'Public site origin',
@@ -359,6 +362,7 @@ const dict: Record<string, string> = {
   '邀请奖励每日上限': 'Daily invite reward limit',
   'GitHub 请求代理': 'GitHub request proxy',
   'GitHub 固定 IP': 'GitHub fixed IP',
+  'Google 请求代理': 'Google request proxy',
   'SMTP 主机': 'SMTP host',
   'SMTP 端口': 'SMTP port',
   '隐式 TLS': 'Implicit TLS',
@@ -373,6 +377,15 @@ const dict: Record<string, string> = {
   '每日上传字节': 'Daily upload bytes',
   '浏览每分钟次数': 'Reads per minute',
   '每日浏览字节': 'Daily read bytes',
+  '启用客户端更新检查': 'Enable client update checks',
+  '强制旧版本更新': 'Require updates for older versions',
+  '更新说明': 'Release notes',
+  'iOS 最新版本': 'iOS latest version',
+  'iOS 最低支持版本': 'iOS minimum supported version',
+  'iOS 下载地址': 'iOS download URL',
+  'Android 最新版本': 'Android latest version',
+  'Android 最低支持版本': 'Android minimum supported version',
+  'Android 下载地址': 'Android download URL',
 
   // Settings help
   '留空使用内置默认模型。': 'Leave blank to use the built-in default model.',
@@ -397,6 +410,15 @@ const dict: Record<string, string> = {
   '端口 465 请开启；端口 587 请关闭，改用 STARTTLS。': 'Turn on for port 465; turn off for port 587 to use STARTTLS.',
   'SMTP 登录账号，例如 admin@bllii.com。留空时回退到 .env。': 'SMTP login, e.g. admin@bllii.com. Leave blank to fall back to .env.',
   '对外显示的发件人，例如 noreply@olai.cc。': 'The From address recipients see, e.g. noreply@olai.cc.',
+  '开启后，客户端可通过 GET /api/app/update 获取更新策略；关闭后接口仍可读取，但不会要求更新。': 'When enabled, clients can read the update policy from GET /api/app/update. When disabled, the endpoint still responds but never requires an update.',
+  '仅对低于最新版本的客户端生效；低于最低支持版本时始终强制更新。': 'Applies only to clients below the latest version; clients below the minimum version are always required to update.',
+  '显示在下载页和客户端更新提示中，支持多行。': 'Shown on the download page and in the client update prompt. Multiple lines are supported.',
+  '语义化版本，例如 1.4.0；留空表示不检查 iOS 更新。': 'A semantic version such as 1.4.0; leave blank to skip iOS update checks.',
+  '低于此版本的 iOS 客户端必须更新；留空表示不强制。': 'iOS clients below this version must update; leave blank to disable the requirement.',
+  'App Store 应用地址；留空时下载页显示即将上架。': 'App Store URL; the download page shows “coming soon” when blank.',
+  '语义化版本，例如 1.4.0；留空表示不检查 Android 更新。': 'A semantic version such as 1.4.0; leave blank to skip Android update checks.',
+  '低于此版本的 Android 客户端必须更新；留空表示不强制。': 'Android clients below this version must update; leave blank to disable the requirement.',
+  'Google Play 或 APK 下载地址；留空时下载页显示即将上架。': 'Google Play or APK download URL; the download page shows “coming soon” when blank.',
 
   // Audit log
   '搜索操作、管理员或目标': 'Search actions, admins or targets',

@@ -13,6 +13,7 @@ import (
 	"olai/internal/secure"
 	"olai/internal/settings"
 	"olai/internal/store"
+	appversion "olai/internal/version"
 )
 
 func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
@@ -623,6 +624,7 @@ func (s *Server) handleAdminSession(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"admin": map[string]any{"id": admin.ID, "email": admin.Email, "name": admin.Name},
+		"build": appversion.Current(),
 	})
 }
 

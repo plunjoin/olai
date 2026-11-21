@@ -88,6 +88,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/setup", s.handleSetup)
 	// Creation proxy
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/version", s.handleVersion)
+	mux.HandleFunc("GET /api/app/update", s.handleAppUpdate)
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
 	mux.HandleFunc("POST /api/chat/completions", s.handleProxy)
 	mux.HandleFunc("POST /api/generate/{kind}", s.handleProxy)
@@ -96,8 +98,10 @@ func (s *Server) routes() *http.ServeMux {
 	// Account
 	mux.HandleFunc("GET /api/auth/me", s.handleMe)
 	mux.HandleFunc("POST /api/auth/{action}", s.handleAuthAction)
-	mux.HandleFunc("GET /api/auth/github", s.handleGitHubStart)
-	mux.HandleFunc("GET /api/auth/github/callback", s.handleGitHubCallback)
+	mux.HandleFunc("GET /api/auth/github", s.handleOAuthStart("github"))
+	mux.HandleFunc("GET /api/auth/github/callback", s.handleOAuthCallback("github"))
+	mux.HandleFunc("GET /api/auth/google", s.handleOAuthStart("google"))
+	mux.HandleFunc("GET /api/auth/google/callback", s.handleOAuthCallback("google"))
 	mux.HandleFunc("GET /api/models", s.handleModels)
 	mux.HandleFunc("GET /api/points", s.handlePoints)
 	// Long-term memory (account-scoped; used by chat system prompts)
@@ -385,7 +389,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	user, _ := s.Auth.CurrentUser(r.Context(), r)
 	if r.URL.Path == "/login" && user != nil {
 		params := r.URL.Query()
-		if !params.Has("verify") && !params.Has("reset") && !params.Has("github_error") {
+		if !params.Has("verify") && !params.Has("reset") && !params.Has("github_error") && !params.Has("google_error") {
 			http.Redirect(w, r, safeNextPath(params.Get("next")), http.StatusFound)
 			return
 		}
@@ -489,15 +493,15 @@ func (s *Server) writePage(w http.ResponseWriter, shell []byte, title, descripti
 	}
 	s.setPageHeaders(w)
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(injectBootstrap(pageDocument(shell, title, description, lang, noindex, bodyClass), lang, s.githubLoginEnabled()))
+	_, _ = w.Write(injectBootstrap(pageDocument(shell, title, description, lang, noindex, bodyClass), lang, s.githubLoginEnabled(), s.googleLoginEnabled()))
 }
 
 // injectBootstrap embeds the small public bootstrap payload the SPA shell reads
-// before its first render (locale + whether GitHub login is available), so the
-// login card renders in its final layout instead of shifting a frame later.
+// before its first render (locale + which third-party logins are available), so
+// the login card renders in its final layout instead of shifting a frame later.
 // It is inert JSON, so the page CSP still only allows same-origin scripts.
-func injectBootstrap(doc []byte, locale string, githubLogin bool) []byte {
-	payload, err := json.Marshal(map[string]any{"locale": locale, "githubLogin": githubLogin})
+func injectBootstrap(doc []byte, locale string, githubLogin, googleLogin bool) []byte {
+	payload, err := json.Marshal(map[string]any{"locale": locale, "githubLogin": githubLogin, "googleLogin": googleLogin})
 	if err != nil {
 		return doc
 	}
@@ -513,7 +517,7 @@ func injectBootstrap(doc []byte, locale string, githubLogin bool) []byte {
 // adds the same metadata the SPA shell gets. Render errors are logged without
 // request bodies or provider details and shown to the user as a plain 500.
 func (s *Server) writePortalSSR(w http.ResponseWriter, r *http.Request, title, description, locale string, noindex bool, user *store.SessionUser) {
-	doc, err := s.Frontends.RenderPortal(r.URL.Path, locale, title, description, user, s.githubLoginEnabled())
+	doc, err := s.Frontends.RenderPortal(r.URL.Path, locale, title, description, user, s.githubLoginEnabled(), s.googleLoginEnabled())
 	if err != nil {
 		log.Printf("portal SSR %s 渲染失败：%v", r.URL.Path, err)
 		http.Error(w, "页面渲染失败，请稍后重试。", http.StatusInternalServerError)

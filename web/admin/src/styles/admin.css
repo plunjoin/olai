@@ -13,6 +13,10 @@
 }
 .adm-brand small { display: block; font-size: 11px; font-weight: 500; color: var(--text-muted); letter-spacing: .4px; }
 .adm-header-right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--text-secondary); }
+.adm-build {
+  padding: 2px 8px; border-radius: 999px; background: var(--accent-lime-subtle);
+  color: var(--accent-lime); font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+}
 .adm-link { color: var(--accent-lime); font-weight: 600; }
 .adm-link:hover { color: var(--accent-lime-hover); text-decoration: underline; }
 .adm-tabs {

@@ -49,7 +49,7 @@
               />
               <input v-else-if="item.type === 'secret' || item.secret" class="adm-input" type="password" autocomplete="new-password" :placeholder="item.configured ? t('已配置，留空表示不修改') : t('未配置')" :value="draft[item.key] ?? ''" @input="change(item.key, ($event.target as HTMLInputElement).value)" />
               <input v-else-if="item.type === 'int'" class="adm-input" type="number" :min="item.min" :max="item.max" :value="currentValue(item)" @input="change(item.key, ($event.target as HTMLInputElement).value)" />
-              <textarea v-else-if="item.key === 'AI_SYSTEM_PROMPT'" class="adm-textarea" :value="currentValue(item)" :maxlength="item.max" @input="change(item.key, ($event.target as HTMLTextAreaElement).value)" />
+              <textarea v-else-if="item.multiline" class="adm-textarea" :value="currentValue(item)" :maxlength="item.max" @input="change(item.key, ($event.target as HTMLTextAreaElement).value)" />
               <input v-else class="adm-input" :value="currentValue(item)" :maxlength="item.max" @input="change(item.key, ($event.target as HTMLInputElement).value)" />
             </div>
           </div>
@@ -76,9 +76,9 @@ import { t, tIn } from '../../lib/i18n';
 interface SettingOption { value: string; label: string }
 interface SettingItem {
   key: string; group: string; label: string; help?: string;
-  type: 'int' | 'bool' | 'text' | 'csv' | 'url' | 'enum' | 'secret';
+  type: 'int' | 'bool' | 'text' | 'csv' | 'url' | 'enum' | 'secret' | 'link' | 'version';
   default: string; min?: number; max?: number; choices?: string[];
-  secret?: boolean; restart?: boolean;
+  secret?: boolean; restart?: boolean; multiline?: boolean;
   value?: string; configured: boolean; source: 'database' | 'env' | 'default';
   options?: SettingOption[];
 }

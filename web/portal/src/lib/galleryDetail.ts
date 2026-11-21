@@ -67,10 +67,11 @@ export function galleryPublishedAt(createdAt: number): string {
   return date.toLocaleDateString(intlLocale(), { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+// Source strings are translated at render time so a locale switch is reflected.
 const EFFORT_LABELS: Record<string, string> = {
-  minimal: t('Minimal · 轻度'), medium: t('Medium · 适中'), high: t('High · 丰富'),
+  minimal: 'Minimal · 轻度', medium: 'Medium · 适中', high: 'High · 丰富',
 };
-const MUSIC_MODE_LABELS: Record<string, string> = { inspiration: t('灵感模式'), composer: 'Composer' };
+const MUSIC_MODE_LABELS: Record<string, string> = { inspiration: '灵感模式', composer: 'Composer' };
 
 /** Generation facts for the expanded detail panel. Engagement counts stay in the stats row. */
 export function galleryParameters(asset: Asset): GalleryParameter[] {
@@ -99,12 +100,12 @@ export function galleryParameters(asset: Asset): GalleryParameter[] {
 
   if (asset.kind === 'image' || asset.kind === 'video') {
     const effort = asset.options.reasoning_effort;
-    if (typeof effort === 'string' && EFFORT_LABELS[effort]) output.push({ label: t('联想等级'), value: EFFORT_LABELS[effort] });
+    if (typeof effort === 'string' && EFFORT_LABELS[effort]) output.push({ label: t('联想等级'), value: t(EFFORT_LABELS[effort]) });
   }
 
   if (asset.kind === 'music') {
     const mode = asset.options.music_mode;
-    if (typeof mode === 'string' && MUSIC_MODE_LABELS[mode]) output.push({ label: t('创作模式'), value: MUSIC_MODE_LABELS[mode] });
+    if (typeof mode === 'string' && MUSIC_MODE_LABELS[mode]) output.push({ label: t('创作模式'), value: t(MUSIC_MODE_LABELS[mode]) });
     if (asset.song?.style) output.push({ label: t('音乐风格'), value: asset.song.style });
     if (asset.song) output.push({ label: t('演唱方式'), value: asset.song.instrumental ? t('纯音乐') : t('人声歌曲') });
     const seconds = asset.audioDuration || (typeof asset.options.duration === 'number' ? asset.options.duration : 0);

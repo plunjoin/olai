@@ -38,6 +38,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"videoMode":    s.AI.VideoMode(s.AI.ServerModel("video")),
 		"shortFilm":    s.Settings.Get("AI_SHORT_FILM") == "true",
 		"githubLogin":  s.githubLoginEnabled(),
+		"googleLogin":  s.googleLoginEnabled(),
 		"mediaStorage": s.mediaStorage(),
 	})
 }

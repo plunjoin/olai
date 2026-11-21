@@ -517,6 +517,13 @@ func main() {
 		}
 		inTx = false
 		fmt.Println("\n迁移已提交。旧 PascalCase 表保持不变，可用于回滚或验收比对。")
+		// The copied studio_records rows have no created_at yet; fill it now so
+		// the newest feed is ordered correctly before the first server start.
+		backfillCtx, cancelBackfill := context.WithTimeout(context.Background(), 2*time.Minute)
+		if err := db.BackfillRecordCreatedAt(backfillCtx); err != nil {
+			fmt.Fprintf(os.Stderr, "作品创建时间回填未完成，下次启动服务时会继续：%v\n", err)
+		}
+		cancelBackfill()
 		checkpoint(ctx, conn)
 		return
 	}

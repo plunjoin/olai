@@ -1,7 +1,8 @@
 node_modules/
 wf_modules/
 dist/
-scripts/
+scripts/*
+!scripts/deploy-docker.sh
 tests/
 .qa/
 data/
@@ -22,3 +23,5 @@ web/admin/dist/*
 !web/portal/dist/.gitkeep
 !web/admin/dist/.gitkeep
 !web/package-lock.json
+.deploy/
+backups/

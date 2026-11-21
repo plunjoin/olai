@@ -57,7 +57,22 @@
 }
 
 .download-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
   margin-bottom: 28px;
+}
+
+.download-version {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--bg-subtle, #eef2f7);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .download-grid {
@@ -125,8 +140,25 @@
   color: #fff;
 }
 
+.download-notes {
+  margin: -22px 0 44px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  background: var(--bg-surface, #fff);
+  border: 1px solid rgba(34, 44, 81, 0.06);
+}
+
+.download-notes p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13.5px;
+  line-height: 1.75;
+  white-space: pre-line;
+}
+
 @media (max-width: 800px) {
   .download-page { padding: 22px 20px 32px; }
   .download-grid { grid-template-columns: 1fr; }
   .download-card { min-height: 0; }
+  .download-notes { margin-top: -14px; }
 }

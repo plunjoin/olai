@@ -80,14 +80,14 @@ func LoadFrontends(portalDist, adminDist fs.FS) (*Frontends, error) {
 	return f, nil
 }
 
-// RenderPortal renders one public page. Only title, description, locale and
-// the signed-in user's own public profile cross into the frontend; no server
-// secrets or provider details do.
-func (f *Frontends) RenderPortal(url, locale, title, description string, user *store.SessionUser, githubLogin bool) ([]byte, error) {
+// RenderPortal renders one public page. Only title, description, locale,
+// third-party login availability and the signed-in user's own public profile
+// cross into the frontend; no server secrets or provider details do.
+func (f *Frontends) RenderPortal(url, locale, title, description string, user *store.SessionUser, githubLogin, googleLogin bool) ([]byte, error) {
 	if f == nil || f.portal == nil {
 		return nil, fmt.Errorf("portal SSR 未配置")
 	}
-	props := map[string]any{"locale": locale, "githubLogin": githubLogin}
+	props := map[string]any{"locale": locale, "githubLogin": githubLogin, "googleLogin": googleLogin}
 	if user != nil {
 		props["initialUser"] = user
 	}

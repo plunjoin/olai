@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -25,7 +26,10 @@ type SessionUser struct {
 	Avatar *string `json:"avatar,omitempty"`
 }
 
-var ErrNotFound = errors.New("not found")
+var (
+	ErrNotFound           = errors.New("not found")
+	ErrOAuthAlreadyLinked = errors.New("oauth account already linked")
+)
 
 func nullableString(value sql.NullString) *string {
 	if !value.Valid {
@@ -118,6 +122,9 @@ func (d *DB) DeleteUser(ctx context.Context, id string) error {
 			`DELETE FROM email_tokens WHERE user_id = ?`,
 			`DELETE FROM invites WHERE inviter_id = ? OR invitee_id = ?`,
 			`DELETE FROM sessions WHERE user_id = ?`,
+			// An orphaned oauth identity would block the same provider account
+			// from being linked again after the user is recreated.
+			`DELETE FROM oauth_accounts WHERE user_id = ?`,
 			// Foreign-key cascades are not guaranteed on every SQLite connection,
 			// so memory rows are removed explicitly with the account.
 			`DELETE FROM user_memories WHERE user_id = ?`,
@@ -212,6 +219,16 @@ func (d *DB) ConsumeEmailToken(ctx context.Context, tokenHash, purpose string) (
 
 // ---- oauth ----
 
+// OAuthPasswordMarker is the non-login password_hash stored for accounts that
+// only use a third-party provider. auth.VerifyPassword rejects the shape.
+func OAuthPasswordMarker(provider, providerID string) string {
+	return "oauth:" + provider + ":" + providerID
+}
+
+func IsOAuthPasswordHash(hash string) bool {
+	return strings.HasPrefix(hash, "oauth:")
+}
+
 func (d *DB) OAuthUser(ctx context.Context, provider, providerID string) (*User, error) {
 	return scanUser(d.QueryRowContext(ctx, `SELECT u.id, u.email, u.password_hash, u.email_verified_at,
 		u.name, u.avatar, u.created_at, u.updated_at
@@ -219,11 +236,52 @@ func (d *DB) OAuthUser(ctx context.Context, provider, providerID string) (*User,
 		WHERE o.provider = ? AND o.provider_id = ?`, provider, providerID))
 }
 
+// LinkOAuth links a provider identity to a user. Re-linking the same pair is a
+// no-op; linking it to a different user reports ErrOAuthAlreadyLinked so the
+// caller can follow the identity that won a concurrent race.
 func (d *DB) LinkOAuth(ctx context.Context, provider, providerID, userID string) error {
-	_, err := d.ExecContext(ctx, `INSERT INTO oauth_accounts (provider, provider_id, user_id, created_at)
+	result, err := d.ExecContext(ctx, `INSERT INTO oauth_accounts (provider, provider_id, user_id, created_at)
 		VALUES (?, ?, ?, ?) ON CONFLICT (provider, provider_id) DO NOTHING`,
 		provider, providerID, userID, time.Now().UnixMilli())
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+	var existing string
+	err = d.QueryRowContext(ctx, `SELECT user_id FROM oauth_accounts WHERE provider = ? AND provider_id = ?`,
+		provider, providerID).Scan(&existing)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if existing != userID {
+		return ErrOAuthAlreadyLinked
+	}
+	return nil
+}
+
+// TakeOverOAuthUser converts an unverified local signup into an OAuth-only
+// account and signs out every existing session in the same transaction. The
+// unverified address could belong to someone else, so a password reset link
+// alone must not grant access after the provider has proven ownership.
+func (d *DB) TakeOverOAuthUser(ctx context.Context, id, passwordHash string) error {
+	return d.InTx(ctx, func(tx *Tx) error {
+		now := time.Now().UnixMilli()
+		if _, err := tx.ExecContext(ctx, `UPDATE users SET password_hash = ?, email_verified_at = ?, updated_at = ? WHERE id = ?`,
+			passwordHash, now, now, id); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, id)
+		return err
+	})
 }
 
 // ---- bans ----

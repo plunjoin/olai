@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -53,9 +54,14 @@ func Open(ctx context.Context, cfg config.Config) (*DB, error) {
 		conn.Close()
 		return nil, err
 	}
-	if err := db.BackfillRecordCreatedAt(ctx); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("回填作品创建时间失败：%w", err)
+	// Heal works created before the column existed, but never let a large
+	// backfill block or fail startup: the feed keeps working (0 sorts last) and
+	// the next startup resumes with the remaining rows.
+	backfillCtx, cancelBackfill := context.WithTimeout(context.Background(), 2*time.Minute)
+	err = db.BackfillRecordCreatedAt(backfillCtx)
+	cancelBackfill()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "作品创建时间回填未完成，稍后启动会继续重试：%v\n", err)
 	}
 	return db, nil
 }

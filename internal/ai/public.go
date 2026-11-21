@@ -340,7 +340,7 @@ func (m *Manager) PrivateValues(extra []string) []string {
 			values = append(values, parts[1])
 		}
 	}
-	for _, key := range []string{"AI_API_KEY", "MAIL_PASS", "OSS_ACCESS_KEY_SECRET", "GITHUB_CLIENT_SECRET"} {
+	for _, key := range []string{"AI_API_KEY", "MAIL_PASS", "OSS_ACCESS_KEY_SECRET", "GITHUB_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET", "GOOGLE_PROXY"} {
 		values = append(values, m.Settings.Get(key))
 	}
 	values = append(values, prompts...)

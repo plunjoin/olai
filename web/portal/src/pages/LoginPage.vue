@@ -29,8 +29,11 @@
             <p v-if="error" class="auth-error" role="alert"><CircleAlert :size="15" /><span>{{ t(error) }}</span></p>
             <p v-if="notice" class="auth-notice" role="status"><CircleCheck :size="15" /><span>{{ t(notice) }}</span></p>
 
-            <template v-if="githubLogin && (mode === 'login' || mode === 'register')">
-              <a class="auth-github" :href="githubHref"><GithubIcon :size="16" />{{ t('使用 GitHub 登录') }}</a>
+            <template v-if="(githubLogin || googleLogin) && (mode === 'login' || mode === 'register')">
+              <div class="auth-providers">
+                <a v-if="googleLogin" class="auth-google" :href="googleHref"><GoogleIcon :size="17" />{{ t('使用 Google 登录') }}</a>
+                <a v-if="githubLogin" class="auth-github" :href="githubHref"><GithubIcon :size="16" />{{ t('使用 GitHub 登录') }}</a>
+              </div>
               <div class="auth-divider">{{ t('或使用邮箱') }}</div>
             </template>
 
@@ -60,7 +63,7 @@
             </label>
 
             <template v-if="mode === 'register'">
-              <p v-if="githubLogin" class="auth-hint">{{ t('GitHub 登录会自动创建账号；该邮箱已有账号时直接关联。邀请码会一并带入。') }}</p>
+              <p v-if="githubLogin || googleLogin" class="auth-hint">{{ t('第三方登录会自动创建账号；该邮箱已有账号时直接关联。邀请码会一并带入。') }}</p>
               <p class="auth-hint">{{ t('注册后需要验证邮箱才能登录。每天按北京时间零点重置额度。歌曲封面使用图片额度。登录账号生成时按所选画质消耗积分。') }}</p>
             </template>
 
@@ -88,6 +91,7 @@ import { ArrowLeft, CircleAlert, CircleCheck, Eye, EyeOff, KeyRound, LogIn, Mail
 import AuthShowcase from '../components/AuthShowcase.vue';
 import BrandLogo from '../components/BrandLogo.vue';
 import GithubIcon from '../components/GithubIcon.vue';
+import GoogleIcon from '../components/GoogleIcon.vue';
 import { accountRequest } from '../lib/account';
 import { flushStorage } from '../lib/storage';
 import { safeNextPath } from '../lib/nextPath';
@@ -107,6 +111,18 @@ const GITHUB_ERRORS: Record<string, string> = {
   switch: t('当前已登录其他账号，请先退出后再用 GitHub 登录。'),
   failed: t('GitHub 登录失败，请重试。'),
 };
+const GOOGLE_ERRORS: Record<string, string> = {
+  config: t('Google 登录尚未配置，请使用邮箱登录。'),
+  denied: t('已取消 Google 授权。'),
+  state: t('Google 登录会话已过期，请重试。'),
+  network: t('暂时无法连接 Google，请稍后重试或联系管理员检查服务器网络代理。'),
+  token: t('Google 授权失败，请重试。'),
+  profile: t('无法读取 Google 账号信息，请重试。'),
+  email: t('Google 账号没有可用的已验证邮箱，请先在 Google 验证邮箱。'),
+  banned: t('此账号已被停用，请联系管理员。'),
+  switch: t('当前已登录其他账号，请先退出后再用 Google 登录。'),
+  failed: t('Google 登录失败，请重试。'),
+};
 
 const query = (name: string) => new URLSearchParams(window.location.search).get(name) || '';
 const nextPath = () => safeNextPath(query('next'));
@@ -115,8 +131,13 @@ const githubError = () => {
   if (!code) return '';
   return Object.hasOwn(GITHUB_ERRORS, code) ? GITHUB_ERRORS[code] : GITHUB_ERRORS.failed;
 };
+const googleError = () => {
+  const code = query('google_error');
+  if (!code) return '';
+  return Object.hasOwn(GOOGLE_ERRORS, code) ? GOOGLE_ERRORS[code] : GOOGLE_ERRORS.failed;
+};
 
-const bootstrap = inject<{ githubLogin?: boolean }>('bootstrap', {});
+const bootstrap = inject<{ githubLogin?: boolean; googleLogin?: boolean }>('bootstrap', {});
 const mode = ref<Mode>(query('reset') ? 'reset' : 'login');
 const email = ref('');
 const password = ref('');
@@ -125,9 +146,10 @@ const invite = ref(query('invite').toUpperCase());
 const resetToken = ref(query('reset'));
 const reveal = ref(false);
 const busy = ref(Boolean(query('verify')));
-const error = ref(githubError());
+const error = ref(githubError() || googleError());
 const notice = ref('');
 const githubLogin = ref(bootstrap?.githubLogin === true);
+const googleLogin = ref(bootstrap?.googleLogin === true);
 
 const title = computed(() => ({
   login: t('欢迎回来'),
@@ -146,6 +168,7 @@ const subtitle = computed(() => mode.value === 'sent'
       sent: '',
     }[mode.value]));
 const githubHref = computed(() => `/api/auth/github${mode.value === 'register' && invite.value.trim() ? `?invite=${encodeURIComponent(invite.value.trim())}` : ''}`);
+const googleHref = computed(() => `/api/auth/google${mode.value === 'register' && invite.value.trim() ? `?invite=${encodeURIComponent(invite.value.trim())}` : ''}`);
 
 function switchMode(next: Mode, message = '') {
   mode.value = next;
@@ -157,7 +180,7 @@ function switchMode(next: Mode, message = '') {
 }
 function stripAuthParams() {
   const url = new URL(window.location.href);
-  for (const name of ['github_error', 'verify', 'reset']) url.searchParams.delete(name);
+  for (const name of ['github_error', 'google_error', 'verify', 'reset']) url.searchParams.delete(name);
   window.history.replaceState(null, '', url.pathname + url.search + url.hash);
 }
 async function submit() {
@@ -220,12 +243,15 @@ async function resend() {
   }
 }
 onMounted(async () => {
-  void loadStatus().then(state => { githubLogin.value = state.githubLogin; });
+  void loadStatus().then(state => {
+    githubLogin.value = state.githubLogin;
+    googleLogin.value = state.googleLogin;
+  });
   const verifyToken = query('verify');
   const reset = query('reset');
-  const githubFailure = githubError();
-  if (githubFailure || verifyToken || reset) stripAuthParams();
-  if (githubFailure || reset) { busy.value = false; return; }
+  const authFailure = githubError() || googleError();
+  if (authFailure || verifyToken || reset) stripAuthParams();
+  if (authFailure || reset) { busy.value = false; return; }
   if (verifyToken) {
     try {
       const state = await accountRequest('verify', { token: verifyToken });

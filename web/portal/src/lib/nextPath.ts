@@ -19,9 +19,9 @@ export function safeNextPath(value: string | null | undefined, fallback = '/'): 
   }
 }
 
-/** 已登录时登录页的跳转目标；null 表示保留表单（验证/重置/GitHub 错误流程）。 */
+/** 已登录时登录页的跳转目标；null 表示保留表单（验证/重置/第三方登录错误流程）。 */
 export function loginRedirectTarget(hasUser: boolean, params: URLSearchParams): string | null {
   if (!hasUser) return null;
-  if (params.has('verify') || params.has('reset') || params.has('github_error')) return null;
+  if (params.has('verify') || params.has('reset') || params.has('github_error') || params.has('google_error')) return null;
   return safeNextPath(params.get('next'));
 }

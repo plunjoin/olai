@@ -1,0 +1,27 @@
+name: olai
+
+services:
+  olai:
+    image: ${OLAI_IMAGE:-ghcr.io/plunjoin/olai:latest}
+    container_name: olai
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4321"
+    ports:
+      - "${OLAI_BIND:-0.0.0.0}:${OLAI_PORT:-4321}:4321"
+    volumes:
+      - olai-data:/app/data
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  olai-data:
+    name: olai-data

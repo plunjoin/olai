@@ -119,8 +119,9 @@
 .auth-notice { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; padding: 10px 12px; border: 1px solid #cfe8d8; border-radius: 10px; background: #f1faf4; color: #237a4b; font-size: 12.5px; line-height: 1.55; }
 .auth-notice svg { margin-top: 1px; }
 
-.auth-github { width: 100%; min-height: 43px; display: flex; align-items: center; justify-content: center; gap: 9px; margin-top: 18px; border: 1px solid var(--border-medium); border-radius: 11px; background: #fff; font-size: 13px; font-weight: 600; color: #45526f; }
-.auth-github:hover { background: #f5f7ff; border-color: #c8d2ec; }
+.auth-providers { display: grid; gap: 9px; margin-top: 18px; }
+.auth-github, .auth-google { width: 100%; min-height: 43px; display: flex; align-items: center; justify-content: center; gap: 9px; border: 1px solid var(--border-medium); border-radius: 11px; background: #fff; font-size: 13px; font-weight: 600; color: #45526f; }
+.auth-github:hover, .auth-google:hover { background: #f5f7ff; border-color: #c8d2ec; }
 .auth-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0 2px; color: var(--text-dim); font-size: 10.5px; font-weight: 600; letter-spacing: .4px; }
 .auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: var(--border-subtle); }
 

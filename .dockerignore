@@ -1,6 +1,9 @@
 node_modules
 dist
 .git
+.github
+.deploy
+backups
 .qa
 data
 .env
@@ -8,3 +11,4 @@ data
 test-results
 playwright-report
 wf_modules
+scripts

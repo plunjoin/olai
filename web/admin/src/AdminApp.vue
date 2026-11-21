@@ -1,7 +1,7 @@
 <template>
   <div v-if="checking" class="adm-shell admin-gate"><span class="adm-spinner" /> {{ t('正在验证管理员身份…') }}</div>
   <AdminLogin v-else-if="!admin" :initial-error="error" :notice="notice" @signed-in="signedIn" />
-  <AdminPanel v-else :email="admin.email" :name="admin.name" @signed-out="signedOut" />
+  <AdminPanel v-else :email="admin.email" :name="admin.name" :version="admin.build?.version" @signed-out="signedOut" />
 </template>
 
 <script setup lang="ts">
@@ -12,7 +12,8 @@ import { t } from './lib/i18n';
 
 // The console has its own cookie and account table. A portal session is not
 // consulted here, and this app never links back into the portal.
-interface AdminSession { id: string; email: string; name?: string | null }
+interface BuildInfo { version?: string; commit?: string; builtAt?: string }
+interface AdminSession { id: string; email: string; name?: string | null; build?: BuildInfo }
 const checking = ref(true);
 const admin = ref<AdminSession | null>(null);
 const error = ref('');
@@ -33,7 +34,7 @@ async function check() {
       admin.value = null;
       return;
     }
-    admin.value = state.admin as AdminSession;
+    admin.value = { ...(state.admin as AdminSession), build: state.build as BuildInfo | undefined };
     if (/\/login\/?$/i.test(window.location.pathname)) {
       const target = window.location.pathname.replace(/\/login\/?$/i, '');
       if (target) window.history.replaceState({}, '', target + window.location.search);

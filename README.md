@@ -192,23 +192,31 @@ go run .
 
 点击侧边栏或顶部的「登录 / 注册」会进入独立的登录页 `/login`，可使用邮箱和 **8–128 位密码**注册。注册后会向该邮箱发送验证链接，验证通过后才能登录。已登录用户点击「我的账号」进入账号中心 `/account`，可查看积分、每日额度、邀请码与价目，同步本地数据或退出登录；点击资料卡上的「编辑资料」可以修改昵称、选择预设头像，或上传 PNG / JPG / WebP 图片作为头像（上传会把图片居中裁剪为 256×256，并保存到私有媒体存储，需启用 OSS）；修改后工作台与账号中心会同步显示。账号中心在服务端校验登录态，未登录访问会带 `next=/account` 转到登录页。
 
-密码使用 scrypt 加盐散列，登录凭证通过 HttpOnly / SameSite Cookie 保存，数据库仅保存凭证散列，有效期 30 天。登录页提供密码重置：输入邮箱后会收到重置链接，30 分钟内有效。验证邮件和重置邮件由 `MAIL_*` 配置通过 SMTP 发送（`.env` 或管理后台「系统设置 → 出站邮件」），发件地址为 `MAIL_FROM`（默认 `noreply@olai.cc`）。已有账号在升级后视为已验证，不受影响。GitHub 登录仍使用已验证的 GitHub 邮箱，无需再走邮件验证。退出登录会撤销当前登录凭证并回到工作台。
+密码使用 scrypt 加盐散列，登录凭证通过 HttpOnly / SameSite Cookie 保存，数据库仅保存凭证散列，有效期 30 天。登录页提供密码重置：输入邮箱后会收到重置链接，30 分钟内有效。验证邮件和重置邮件由 `MAIL_*` 配置通过 SMTP 发送（`.env` 或管理后台「系统设置 → 出站邮件」），发件地址为 `MAIL_FROM`（默认 `noreply@olai.cc`）。已有账号在升级后视为已验证，不受影响。GitHub / Google 登录仍使用各平台已验证的邮箱，无需再走邮件验证。退出登录会撤销当前登录凭证并回到工作台。
 
 #### 使用 GitHub 登录
 
 配置 `GITHUB_CLIENT_ID` 和 `GITHUB_CLIENT_SECRET` 后，登录页会显示「使用 GitHub 登录」；未配置时入口自动隐藏。GitHub 账号使用**已验证的主邮箱**创建或关联本站账号：邮箱已存在时直接登录原账号，不创建重复账号；新邮箱会创建账号，若同时带了邀请码也会记录邀请关系。授权失败会回到 `/login?github_error=…` 并显示具体原因。
 
-第三方账号没有可用密码（数据库保存不可用于登录的 `oauth:` 标记），因此只能用 GitHub 登录，不会覆盖或绕过已有密码。授权回调地址固定为 `{SITE_ORIGIN}/api/auth/github/callback`，反向代理部署时必须配置 `SITE_ORIGIN`，并与 GitHub OAuth App 后台填写的地址完全一致。
+第三方账号没有可用密码（数据库保存不可用于登录的 `oauth:` 标记），因此只能用对应的第三方方式登录，不会覆盖或绕过已有密码。授权回调地址固定为 `{SITE_ORIGIN}/api/auth/github/callback`，反向代理部署时必须配置 `SITE_ORIGIN`，并与 GitHub OAuth App 后台填写的地址完全一致。
 
 在 GitHub → Settings → Developer settings → OAuth Apps 新建应用并填写回调地址即可；本地开发的回调地址为 `http://localhost:4321/api/auth/github/callback`。授权使用一次性 state Cookie 校验来源，回调后立即删除。
 
 若服务器所在网络无法直连 `github.com`（表现为终端日志 `GitHub login failed: fetch failed`，而浏览器能打开 GitHub），通常是因为浏览器走了系统代理而 Go 服务端不走。此时在 `.env` 设置 `GITHUB_PROXY` 指向该代理（例如 `GITHUB_PROXY=http://127.0.0.1:7890`）即可，GitHub 的令牌和用户信息请求都会经过它；未设置时也会读取 `HTTPS_PROXY` / `https_proxy`。没有代理时可用 `GITHUB_RESOLVE_IP` 指定一个可访问的 github.com 地址作为备选。两者都只影响服务端请求，不修改系统 hosts，也不会关闭证书校验；网络恢复后建议留空。
 
+#### 使用 Google 登录
+
+配置 `GOOGLE_CLIENT_ID` 和 `GOOGLE_CLIENT_SECRET` 后，登录页会显示「使用 Google 登录」；未配置时入口自动隐藏。Google 账号使用稳定的 `sub` 作为身份主键，只有 `email_verified=true` 的邮箱才会用于创建或关联本站账号：邮箱已存在时登录原账号，新邮箱会创建账号，注册时携带的邀请码也会记录邀请关系。授权失败会回到 `/login?google_error=…` 并显示具体原因。
+
+在 Google Cloud Console 创建 **Web application** 类型的 OAuth 客户端：Authorized redirect URI 填 `{SITE_ORIGIN}/api/auth/google/callback`（本地开发为 `http://localhost:4321/api/auth/google/callback`），scope 只需 `openid email profile`。开发期 OAuth 同意屏可保持 Testing 并添加测试账号；正式上线前发布为 In production，并将 `SITE_ORIGIN` 配置为与 Google 后台完全一致的公开域名。登录使用一次性 state Cookie 与 PKCE（S256）校验来源，回调后立即删除。
+
+若服务器无法直连 `oauth2.googleapis.com` / `openidconnect.googleapis.com`，可设置 `GOOGLE_PROXY`（留空读取 `HTTPS_PROXY` / `https_proxy`）；该代理只影响服务端换取令牌和读取用户信息，不改变浏览器到 `accounts.google.com` 的连接。**Google 登录页在中国大陆普通网络不可访问**，因此它只能作为海外用户的可选登录方式，不能替代邮箱密码或 GitHub 登录。
+
 ### 管理后台
 
 后台与门户使用**两套完全独立的登录体系**：后台账号保存在 `admin_accounts`，后台会话使用自己的 HttpOnly Cookie（默认 12 小时有效），门户登录不会获得后台权限，后台登录也不会登录门户。门户不显示任何后台入口或入口提示，后台页面也不链接回门户。后台默认入口是 `/admin`，登录页是入口下的 `/login`（默认 `/admin/login`）；入口可在“系统设置”中改成自定义路径（例如 `/console-x7k2`），修改后原入口立即失效，`/admin/assets/` 保持固定。
 
-全新部署在 `/setup` 创建第一个**后台管理员账号**，完成后直接跳转到后台登录页；该账号不会自动创建或登录门户账号。存量部署首次启动时，会把 `ADMIN_EMAILS`（逗号分隔，大小写不敏感）中已在门户注册且使用密码登录的邮箱一次性迁移为独立后台账号，初始密码沿用原门户密码，请登录后台后立即修改；只有 GitHub 登录、没有门户密码的邮箱无法自动迁移，需要用下面的命令设置后台密码。门户之后修改密码不会影响后台账号，反之亦然。
+全新部署在 `/setup` 创建第一个**后台管理员账号**，完成后直接跳转到后台登录页；该账号不会自动创建或登录门户账号。存量部署首次启动时，会把 `ADMIN_EMAILS`（逗号分隔，大小写不敏感）中已在门户注册且使用密码登录的邮箱一次性迁移为独立后台账号，初始密码沿用原门户密码，请登录后台后立即修改；只有第三方登录（GitHub / Google）、没有门户密码的邮箱无法自动迁移，需要用下面的命令设置后台密码。门户之后修改密码不会影响后台账号，反之亦然。
 
 忘记后台密码或需要新增管理员时，在服务器上运行（留空 `-password` 会生成随机密码并打印一次）：
 
@@ -220,11 +228,51 @@ go run ./cmd/admin-passwd -email admin@example.com
 
 后台包含：概览（账号、流通/消耗积分、近 14 天消耗、最新账号、待处理举报）、用户搜索与详情、积分加减（写入积分流水和审计日志，扣减不会产生负余额）、账号停用与恢复（停用会立即注销该账号所有会话并阻止再次登录）、邀请排行榜与明细、生成消耗与作品记录、作品举报处理（标记已处理/忽略、隐藏/恢复作品）、媒体对象浏览与删除（同时删除对象存储中的文件）、系统设置和操作日志。
 
-**“系统设置”是运行期配置的主入口**：AI 网关与模型、每日额度与限流、积分单价与邀请奖励、GitHub 登录、私有 OSS、站点地址等全部保存在主数据库的 `app_settings` 中（默认部署即 SQLite，PostgreSQL 部署时随主数据库保存）。首次启动会把 `.env` 里已填写的同名项一次性导入数据库（`SETTINGS_SEEDED` 标记），之后以数据库为准；保存后本进程立即生效，多实例部署最多 10 秒同步。AI 服务中的对话、图片、视频、音乐默认模型直接从“模型与定价”里已启用的同类模型中选择，也可选“内置默认”回到内置模型；尚未同步模型目录时仍可手动填写。密钥类配置只显示“是否已配置”，不会回传到浏览器或写入日志；留空保存表示保持原值，“恢复默认”会回到 `.env` 或内置默认值。只有 `HOST`、`PORT`、`DATABASE_URL`、`SETUP_TOKEN` 等启动参数仍只从 `.env` 读取。当前版本未使用 Redis，会话与限流保存在主数据库；SQLite / PostgreSQL 由启动前的 `DATABASE_URL` 选择。
+**“系统设置”是运行期配置的主入口**：AI 网关与模型、每日额度与限流、积分单价与邀请奖励、GitHub / Google 登录、私有 OSS、站点地址等全部保存在主数据库的 `app_settings` 中（默认部署即 SQLite，PostgreSQL 部署时随主数据库保存）。首次启动会把 `.env` 里已填写的同名项一次性导入数据库（`SETTINGS_SEEDED` 标记），之后以数据库为准；保存后本进程立即生效，多实例部署最多 10 秒同步。AI 服务中的对话、图片、视频、音乐默认模型直接从“模型与定价”里已启用的同类模型中选择，也可选“内置默认”回到内置模型；尚未同步模型目录时仍可手动填写。密钥类配置只显示“是否已配置”，不会回传到浏览器或写入日志；留空保存表示保持原值，“恢复默认”会回到 `.env` 或内置默认值。只有 `HOST`、`PORT`、`DATABASE_URL`、`SETUP_TOKEN` 等启动参数仍只从 `.env` 读取。当前版本未使用 Redis，会话与限流保存在主数据库；SQLite / PostgreSQL 由启动前的 `DATABASE_URL` 选择。
 
 **“模型与定价”支持按模型逐一计价。** 列表可以按类型筛选并搜索别名或上游模型 ID。点击“同步网关”会从 `${AI_API_BASE_URL}/models`（OpenAI 兼容格式）拉取模型列表，并**严格以网关返回的列表为准**：新模型自动按名称猜测为对话、图像、视频或音乐并加入后台，网关中已不存在的模型（包括手动添加的）会被删除；仍然存在的模型只更新上游 `display_name`，保留已配置的别名、类型、启用状态和价格。也可以手动填写上游模型 ID 添加，但在下次同步时若网关未返回该模型就会被移除。每个模型可以单独设置显示别名、启用状态、支持的档位和积分价格：图像可选 1K/2K/4K，视频可选 360p/720p/1080p/4K，音乐按每分钟、对话按每条消息计价。只有勾选的档位会出现在用户端的画质/分辨率选择里，价格输入框也只显示这些档位。保存后用户端立即出现这些模型供选择，并按所选模型的价格扣积分。
 
 浏览器只会拿到模型的不透明公开 ID、别名、支持的档位和积分价格；上游模型 ID 仅保存在服务端，不会出现在 `/api/models` 响应、页面源码或日志中。停用的模型不再出现在选择列表，但仍保留价格配置。未选择模型（或模型目录为空）时继续使用 `.env` / 系统设置中的默认模型与全局档位价。
+
+### 版本与客户端更新
+
+服务端版本在构建时写入二进制：`go build` 不传参数时显示 `dev`，正式构建建议传入语义化版本：
+
+```bash
+go tool wf build -modules ../wf_modules ./web/portal
+go tool wf build -mode spa -base /admin -modules ../wf_modules ./web/admin
+go build -trimpath -ldflags="-s -w -X olai/internal/version.Version=1.4.0" -o olai .
+```
+
+Docker 构建支持 `VERSION`、`COMMIT`、`BUILT_AT` 三个 build arg；例如 `docker build --build-arg VERSION=1.4.0 -t olai:1.4.0 .`。网络无法直接访问 Go 官方模块代理时，可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。正式镜像由 Release 工作流在推送 `v*.*.*` tag 时自动构建，后台页头会显示当前服务端版本，下载页页脚也会显示。该版本号是构建产物的一部分，不能在后台修改。
+
+后台「系统设置 → 版本与更新」控制 iOS / Android 的发布信息：是否启用更新检查、是否强制旧版本更新、更新说明、最新版本、最低支持版本和下载地址。最低版本不能高于最新版本；版本格式为 `1.2.3`（也接受 `v1.2.3` 或 `1.2`）。保存后立即生效，多实例最多 10 秒同步。
+
+原生客户端启动、回到前台时调用以下接口（无需登录）：
+
+```http
+GET /api/app/update?platform=ios&version=1.2.3
+```
+
+```json
+{
+  "enabled": true,
+  "platform": "ios",
+  "currentVersion": "1.2.3",
+  "latestVersion": "1.4.0",
+  "minimumVersion": "1.3.0",
+  "updateAvailable": true,
+  "required": true,
+  "downloadUrl": "https://apps.apple.com/app/id0000000000",
+  "notes": "修复播放问题，优化生成速度。",
+  "checkedAt": 1763800000000
+}
+```
+
+- `updateAvailable` 表示当前版本低于最新版本。
+- `required` 为 `true` 时客户端应显示不可跳过的更新页；低于最低支持版本时始终为 `true`，后台开启「强制旧版本更新」后所有低于最新版本的客户端都会强制更新。
+- `platform` 只接受 `ios` 或 `android`；缺少 `version` 时仍返回发布信息，但不会判定需要更新。
+- `GET /api/version` 返回服务端构建信息和两个平台的公开发布信息，下载页使用它展示商店链接、版本号和更新说明。
 
 ### 本地保存与账号同步
 
@@ -284,7 +332,7 @@ go run ./cmd/admin-passwd -email admin@example.com
 
 新账号注册获得 `POINT_SIGNUP_BONUS`（默认 100）积分。所有单价都由服务端计算并通过账号接口下发公开档位，浏览器拿不到上游模型 ID。
 
-每个账号在账号中心里有一个 8 位邀请码。好友使用邀请码注册并**完成首次成功生成**后，邀请人获得 `POINT_INVITE_REWARD`（默认 30）积分，好友获得 `POINT_INVITE_BONUS`（默认 20）积分；同一邀请人每天最多发放 `POINT_INVITE_DAILY_LIMIT`（默认 5）次。奖励延迟到首次生成，是为了避免注册机批量刷分；邮箱注册需要先完成邮件验证；也可使用 GitHub 登录。
+每个账号在账号中心里有一个 8 位邀请码。好友使用邀请码注册并**完成首次成功生成**后，邀请人获得 `POINT_INVITE_REWARD`（默认 30）积分，好友获得 `POINT_INVITE_BONUS`（默认 20）积分；同一邀请人每天最多发放 `POINT_INVITE_DAILY_LIMIT`（默认 5）次。奖励延迟到首次生成，是为了避免注册机批量刷分；邮箱注册需要先完成邮件验证；也可使用 GitHub / Google 登录。
 
 扣费使用数据库条件更新原子完成，余额不足返回 402 且不扣减；上游失败、请求停止会退还当日次数和积分。积分流水只追加不修改，`(reason, refId)` 唯一索引保证同一笔扣费 / 退款 / 奖励只入账一次。余额和最近流水可在账号中心与 `GET /api/points` 查看。
 
@@ -324,7 +372,7 @@ go run ./cmd/admin-passwd -email admin@example.com
 | `HOST` | `0.0.0.0` | 服务监听地址 |
 | `PORT` | `4321` | 服务监听端口 |
 | `SETUP_TOKEN` | 留空 | 可选：首次初始化 `/setup` 需要携带的安装令牌；留空则只依赖同源校验与限流 |
-| `SITE_ORIGIN` | 本地访问无需设置 | 反向代理部署时的公开站点 origin；首次初始化时可一并填写，GitHub 登录回调也依赖它 |
+| `SITE_ORIGIN` | 本地访问无需设置 | 反向代理部署时的公开站点 origin；首次初始化时可一并填写，GitHub / Google 登录回调也依赖它 |
 | `ADMIN_EMAILS` | 留空 | 旧版管理员邮箱白名单；仅用于升级时一次性迁移独立后台账号，不再参与登录鉴权。全新部署请在 `/setup` 创建后台账号 |
 | `ADMIN_PATH` | `/admin` | 后台入口路径；可在后台改为自定义路径，修改后原入口立即失效 |
 | `MAIL_HOST` | `mail.bllii.com` | 出站 SMTP 主机；也可在管理后台覆盖 |
@@ -335,6 +383,8 @@ go run ./cmd/admin-passwd -email admin@example.com
 | `MAIL_FROM` | `noreply@olai.cc` | 发件人地址；也可在管理后台覆盖 |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | 留空 | GitHub OAuth App 凭证；两项都配置后显示 GitHub 登录入口 |
 | `GITHUB_PROXY` | 留空 | 无法直连 github.com 时使用的代理；留空时读取 `HTTPS_PROXY` / `https_proxy` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 留空 | Google OAuth Web 客户端凭证；两项都配置后显示 Google 登录入口 |
+| `GOOGLE_PROXY` | 留空 | 服务端访问 Google 令牌 / 用户信息接口时的代理；留空时读取 `HTTPS_PROXY` / `https_proxy` |
 | `GITHUB_RESOLVE_IP` | 留空 | 无代理时可访问的 github.com IP，作为直连备选 |
 | `TRUST_PROXY` | `false` | 是否信任代理提供的客户端 IP |
 
@@ -469,6 +519,118 @@ docker run -d --name olai -p 4321:4321 --env-file .env -v olai-data:/app/data ol
 
 使用自己的容器构建流程时，运行镜像只需要 `olai` 二进制、`.env` 和可写的 `data/` 目录。前端产物在 `go build` 时嵌入，SQLite 驱动是纯 Go 实现，不需要任何 Node 依赖或共享库。
 
+### Docker Compose 单机部署
+
+仓库提供 [`docker-compose.yml`](docker-compose.yml)，固定使用 `olai` 容器名和 `olai-data` 数据卷；镜像内置 `/api/status` 健康检查。首次启动：
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# 编辑 .env 中的站点、数据库与上游配置
+docker compose up -d
+docker compose ps
+curl http://127.0.0.1:4321/api/status
+```
+
+容器内端口固定为 `4321`；宿主机端口和监听地址由 `.env` 中的 `OLAI_PORT`、`OLAI_BIND` 控制，默认分别是 `4321` 和 `0.0.0.0`。只允许本机反向代理访问时可设置 `OLAI_BIND=127.0.0.1`。
+
+GHCR 包为私有时，先执行 `docker login ghcr.io -u <GitHub 用户名>`；也可以在本地执行 `docker build -t olai:local .`，再用 `OLAI_IMAGE=olai:local docker compose up -d` 启动。
+
+此前按旧 README 使用 `docker run --name olai` 部署时，容器名会与 Compose 冲突。确认备份后，首次迁移执行一次：
+
+```bash
+docker stop olai
+mkdir -p backups
+docker run --rm --entrypoint tar \
+  -v olai-data:/data:ro \
+  -v "$PWD/backups:/backup" \
+  <旧镜像> -C /data -czf /backup/pre-compose.tar.gz .
+docker rm olai
+docker compose up -d
+```
+
+数据卷名应保持 `olai-data`；删除旧容器不会删除该卷。若使用 PostgreSQL，数据库不在该卷中，迁移前应单独执行 `pg_dump`。
+
+### CI/CD 与生产发布
+
+仓库包含三条 GitHub Actions 工作流：
+
+| 工作流 | 触发方式 | 作用 |
+| --- | --- | --- |
+| `CI` | Pull Request、推送 `master` | 构建两个前端，执行 `go test`、`go vet`、`go build`，构建镜像并做 HTTP 冒烟检查 |
+| `Release image` | 推送 `v*.*.*` tag | 再次测试后构建并推送 GHCR 镜像，同时生成版本 tag、`sha-*` tag 和稳定版的 `latest` |
+| `Deploy production` | 手动触发并审批 | SSH 到服务器，检出指定 tag，调用部署脚本替换容器 |
+
+镜像名格式为 `ghcr.io/plunjoin/olai:<版本>`。例如 `v1.4.0` 会生成：
+
+```text
+ghcr.io/plunjoin/olai:1.4.0
+ghcr.io/plunjoin/olai:sha-<提交短哈希>
+ghcr.io/plunjoin/olai:latest
+```
+
+预发布 tag（如 `v1.4.0-rc.1`）不会覆盖 `latest`。
+
+#### 服务器首次准备
+
+1. 安装 Git、Docker Engine、Compose v2，并把部署用户加入 `docker` 组（或使用有 Docker 权限的专用账号）。
+2. 将仓库克隆到固定目录，例如 `/opt/olai`，复制 `.env.example` 为 `.env` 并配置；`.env` 不进入镜像，也不会被 `git checkout` 删除。
+3. 如果 GHCR 包是私有的，先以具有 `read:packages` 权限的账号登录：`docker login ghcr.io -u <GitHub 用户名>`。
+4. 在 GitHub 仓库 `Settings → Environments` 新建 `production`，配置 Required reviewers，避免未经审批直接发布。
+5. 在环境或仓库 Secrets 中配置：
+
+| Secret | 必填 | 说明 |
+| --- | --- | --- |
+| `DEPLOY_HOST` | 是 | 服务器地址 |
+| `DEPLOY_USER` | 是 | SSH 用户，需能运行 Docker |
+| `DEPLOY_SSH_KEY` | 是 | 专用 SSH 私钥 |
+| `DEPLOY_PORT` | 否 | SSH 端口，默认 `22` |
+| `DEPLOY_PATH` | 是 | 仓库绝对路径，例如 `/opt/olai` |
+| `GHCR_USERNAME` | 否 | 私有 GHCR 包的用户名 |
+| `GHCR_READ_TOKEN` | 否 | 仅有 `read:packages` 权限的 PAT |
+
+如果服务器已经执行过 `docker login ghcr.io`，两个 GHCR Secret 可以留空。建议为部署单独生成无交互 SSH key，并限制其只能执行服务器账户允许的操作。
+
+#### 发布与回滚
+
+发布新版本：
+
+```bash
+git tag -a v1.4.0 -m "v1.4.0"
+git push origin v1.4.0
+```
+
+等待 `Release image` 成功后，在 Actions 中手动运行 `Deploy production`，输入 `v1.4.0` 并审批。部署脚本会读取当前容器镜像、停止容器做 SQLite 数据卷备份、拉取新镜像、替换 Compose 服务，并最多等待 180 秒健康检查。
+
+部署状态保存在：
+
+- `.deploy/current-image`：当前成功运行的镜像。
+- `.deploy/previous-image`：本次部署前的镜像。
+- `backups/olai-data-*.tar.gz`：部署前的一致性数据卷备份。
+
+新镜像启动失败或健康检查超时时，脚本会自动切回上一镜像；已经执行过的数据库迁移不会自动回退，因此使用数据库备份前应先确认版本兼容性。手动重发旧镜像仍使用同一条路径：
+
+```bash
+bash scripts/deploy-docker.sh ghcr.io/plunjoin/olai:1.3.0
+```
+
+SQLite 数据恢复会覆盖当前数据，必须在停机并再次备份后人工执行：
+
+```bash
+docker compose stop olai
+docker run --rm \
+  --entrypoint sh \
+  -v olai-data:/data \
+  -v "$PWD/backups:/backup" \
+  ghcr.io/plunjoin/olai:1.4.0 \
+  -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/<备份文件>.tar.gz -C /data'
+docker compose up -d
+```
+
+PostgreSQL 部署必须在发布前自行做 `pg_dump`，不能依赖 `olai-data` 卷备份。生产环境还应把数据卷和数据库备份复制到另一台机器或对象存储。
+
+后台「系统设置 → 版本与更新」只控制 iOS / Android 客户端的更新提示与下载地址。服务端升级不会从管理后台直接触发：生产环境运行的是编译好的静态二进制镜像，容器内没有 Go 工具链，更新由 tag → GHCR 镜像 → Compose 替换完成。
+
 ### 反向代理与来源校验
 
 本地访问无需设置 `SITE_ORIGIN`，服务按请求的实际 Host（含端口）与协议校验 Origin，支持 `localhost:4321`、`127.0.0.1:4321` 和局域网地址，拒绝不同来源。
@@ -581,6 +743,7 @@ Omni 与 Veo 两种路由共用视频生成额度。上游视频服务返回 HTM
 │   ├── admin-passwd/        # 创建/重置独立后台管理员账号
 │   └── migrate-legacy/      # 旧 Astro 数据迁移工具
 ├── internal/                # Go 服务：路由、认证、配额、媒体、管理接口
+│   └── version/             # 构建版本注入与客户端版本比较
 ├── web/
 │   ├── embed.go             # 嵌入 portal/dist 与 admin/dist
 │   ├── package.json         # 两个前端共用的依赖与 lockfile
@@ -594,6 +757,10 @@ Omni 与 Veo 两种路由共用视频生成额度。上游视频服务返回 HTM
 │       └── dist/
 ├── public/                  # 品牌图、favicon 等原样静态资源
 ├── migrations/              # SQLite / PostgreSQL 初始化 SQL
+├── .github/workflows/       # CI、GHCR 发布与生产部署
+├── scripts/
+│   └── deploy-docker.sh     # Compose 部署、备份与自动回滚
+├── docker-compose.yml       # 单机持久化部署
 ├── Dockerfile               # 纯 Go 多阶段构建
 └── .env.example             # 环境配置示例
 ```

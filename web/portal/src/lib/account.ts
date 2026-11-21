@@ -12,6 +12,7 @@ export interface AccountState {
   inviteCode?: string;
   prices?: PointPrices;
   githubLogin?: boolean;
+  googleLogin?: boolean;
   pendingVerification?: boolean;
   verified?: boolean;
   passwordReset?: boolean;
@@ -36,6 +37,7 @@ export async function accountRequest(action: AccountAction, input?: { email?: st
     || (data.inviteCode !== undefined && typeof data.inviteCode !== 'string')
     || (data.prices !== undefined && (typeof data.prices !== 'object' || data.prices === null))
     || (data.githubLogin !== undefined && typeof data.githubLogin !== 'boolean')
+    || (data.googleLogin !== undefined && typeof data.googleLogin !== 'boolean')
     || (data.pendingVerification !== undefined && typeof data.pendingVerification !== 'boolean')
     || (data.verified !== undefined && typeof data.verified !== 'boolean')
     || (data.passwordReset !== undefined && typeof data.passwordReset !== 'boolean')

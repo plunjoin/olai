@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 )
 
 func recordKey(index int) string {
@@ -116,6 +117,7 @@ func TestBackfillRecordCreatedAtUsesRecordBody(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)
 	insertUser(t, db, "u1")
+	future := time.Now().UnixMilli() + 86_400_000
 	rows := []struct {
 		key     string
 		store   string
@@ -126,6 +128,7 @@ func TestBackfillRecordCreatedAtUsesRecordBody(t *testing.T) {
 		{recordKey(1), "assets", `{"status":"completed"}`, 7},
 		{recordKey(2), "assets", `not json`, 9},
 		{recordKey(3), "chats", `{"createdAt":42}`, 11},
+		{recordKey(4), "assets", fmt.Sprintf(`{"createdAt":%d}`, future), 13},
 	}
 	for _, row := range rows {
 		if _, err := db.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, updated_at)
@@ -133,9 +136,25 @@ func TestBackfillRecordCreatedAtUsesRecordBody(t *testing.T) {
 			t.Fatalf("insert legacy row %s: %v", row.key, err)
 		}
 	}
+	// A chunked body keeps its createdAt in the chunks, and the key may be split
+	// across a chunk boundary; the backfill must still read it without loading
+	// the whole body through attachBodies.
+	chunked := recordKey(5)
+	if _, err := db.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, updated_at)
+		VALUES (?, 'u1', 'assets', 'legacy-chunked', '', 15)`, chunked); err != nil {
+		t.Fatalf("insert chunked row: %v", err)
+	}
+	for index, chunk := range []string{`{"status":"completed","createdAt":17000`, `00000456}`} {
+		if _, err := db.ExecContext(ctx, `INSERT INTO record_chunks (id, record_key, chunk_index, data)
+			VALUES (?, ?, ?, ?)`, fmt.Sprintf("chunk-%d", index), chunked, index, chunk); err != nil {
+			t.Fatalf("insert chunk %d: %v", index, err)
+		}
+	}
+	before := time.Now().UnixMilli()
 	if err := db.BackfillRecordCreatedAt(ctx); err != nil {
 		t.Fatalf("backfill: %v", err)
 	}
+	after := time.Now().UnixMilli()
 	// The body's creation time wins; rows without one fall back to updated_at.
 	// Non-gallery stores are not scanned by the backfill.
 	want := map[string]int64{
@@ -143,6 +162,7 @@ func TestBackfillRecordCreatedAtUsesRecordBody(t *testing.T) {
 		recordKey(1): 7,
 		recordKey(2): 9,
 		recordKey(3): 0,
+		recordKey(5): 1_700_000_000_456,
 	}
 	for key, expected := range want {
 		var got int64
@@ -153,8 +173,55 @@ func TestBackfillRecordCreatedAtUsesRecordBody(t *testing.T) {
 			t.Fatalf("created_at for %s = %d, want %d", key, got, expected)
 		}
 	}
+	// A creation time in the future is clamped to the backfill's clock so it
+	// cannot pin the work above genuinely newer works forever.
+	var clamped int64
+	if err := db.QueryRowContext(ctx, `SELECT created_at FROM studio_records WHERE key = ?`, recordKey(4)).Scan(&clamped); err != nil {
+		t.Fatalf("read clamped row: %v", err)
+	}
+	if clamped > after || clamped < before {
+		t.Fatalf("future created_at = %d, want clamped into [%d, %d]", clamped, before, after)
+	}
 	// A second startup is a no-op.
 	if err := db.BackfillRecordCreatedAt(ctx); err != nil {
 		t.Fatalf("second backfill: %v", err)
+	}
+}
+
+func TestSaveRecordHealsZeroCreationTime(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	insertUser(t, db, "u1")
+	// A row written by migrate-legacy (or a rolling old binary) has no
+	// creation time yet.
+	if _, err := db.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at)
+		VALUES (?, 'u1', 'assets', 'legacy', '{}', 0, 5)`, recordKey(0)); err != nil {
+		t.Fatalf("insert legacy row: %v", err)
+	}
+	record := StudioRecord{
+		Key: recordKey(0), UserID: "u1", Store: "assets", RecordID: "legacy",
+		Data: `{"id":"legacy"}`, CreatedAt: 1_710_000_000_000, UpdatedAt: 6,
+	}
+	if err := db.SaveRecord(ctx, record, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	var createdAt int64
+	if err := db.QueryRowContext(ctx, `SELECT created_at FROM studio_records WHERE key = ?`, record.Key).Scan(&createdAt); err != nil {
+		t.Fatalf("read created_at: %v", err)
+	}
+	if createdAt != 1_710_000_000_000 {
+		t.Fatalf("healed created_at = %d", createdAt)
+	}
+	// Later edits still keep the healed value.
+	record.CreatedAt = 2_000_000_000_000
+	record.UpdatedAt = 7
+	if err := db.SaveRecord(ctx, record, nil); err != nil {
+		t.Fatalf("resave: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT created_at FROM studio_records WHERE key = ?`, record.Key).Scan(&createdAt); err != nil {
+		t.Fatalf("read created_at after edit: %v", err)
+	}
+	if createdAt != 1_710_000_000_000 {
+		t.Fatalf("created_at after edit = %d, want the first healed value", createdAt)
 	}
 }

@@ -5,6 +5,7 @@ export interface StatusState {
   videoMode: 'chat' | 'task';
   shortFilm: boolean;
   githubLogin: boolean;
+  googleLogin: boolean;
   mediaStorage: 'oss' | 'local';
 }
 
@@ -18,6 +19,7 @@ export const DEFAULT_STATUS: StatusState = {
   videoMode: 'chat',
   shortFilm: false,
   githubLogin: false,
+  googleLogin: false,
   mediaStorage: 'local',
 };
 
@@ -35,6 +37,7 @@ export function loadStatus(): Promise<StatusState> {
           videoMode: body.videoMode === 'task' ? 'task' : 'chat',
           shortFilm: body.shortFilm === true,
           githubLogin: body.githubLogin === true,
+          googleLogin: body.googleLogin === true,
           mediaStorage: body.mediaStorage === 'oss' ? 'oss' : 'local',
         };
         return cached;

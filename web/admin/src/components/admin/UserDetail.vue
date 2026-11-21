@@ -16,7 +16,7 @@
           <dt>{{ t('状态') }}</dt><dd><span class="adm-badge" :data-tone="data.user.banned ? 'danger' : 'ok'">{{ data.user.banned ? t('已停用 · {reason}', { reason: data.user.banned.reason }) : t('正常') }}</span></dd>
           <dt>{{ t('累计消耗') }}</dt><dd>{{ t('{points} 积分 / {count} 次', { points: data.stats.spendPoints, count: data.stats.spendCount }) }}</dd>
           <dt>{{ t('媒体与作品') }}</dt><dd>{{ t('{media} 个对象 · {bytes} · {records} 条作品', { media: data.stats.mediaCount, bytes: adminBytes(data.stats.mediaBytes), records: data.stats.recordCount }) }}</dd>
-          <dt>{{ t('第三方绑定') }}</dt><dd>{{ data.oauth.length ? data.oauth.map(item => item.provider).join(t('、')) : t('无') }}</dd>
+          <dt>{{ t('第三方绑定') }}</dt><dd>{{ data.oauth.length ? data.oauth.map(item => providerLabel(item.provider)).join(t('、')) : t('无') }}</dd>
           <dt>{{ t('邀请人') }}</dt><dd>{{ data.invitedBy ? (data.invitedBy.rewardedAt ? t('{email}（已发放奖励）', { email: data.invitedBy.email }) : t('{email}（待发放）', { email: data.invitedBy.email })) : t('无') }}</dd>
         </dl>
         <p v-if="message" class="adm-feedback" :data-tone="message.tone" role="status">{{ message.text }}</p>
@@ -84,6 +84,7 @@ const note = ref('');
 const banReason = ref('');
 const busy = ref(false);
 const message = ref<FeedbackMessage>(null);
+const providerLabel = (provider: string) => provider === 'github' ? 'GitHub' : provider === 'google' ? 'Google' : provider;
 async function load() {
   loading.value = true;
   try { data.value = await adminApi<DetailData>(`/api/admin/users/${encodeURIComponent(props.id)}`); error.value = ''; }

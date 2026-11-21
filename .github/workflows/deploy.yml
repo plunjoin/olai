@@ -1,0 +1,101 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published Git tag, for example v1.4.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy approved image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      REQUESTED_TAG: ${{ inputs.tag }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+      GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+    steps:
+      - name: Validate deployment input
+        id: target
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag="$(printf '%s' "$REQUESTED_TAG" | tr -d '[:space:]')"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Input must be a published tag such as v1.4.0." >&2
+            exit 1
+          fi
+          if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ || "$DEPLOY_PATH" == *..* ]]; then
+            echo "DEPLOY_PATH must be an absolute path without spaces or '..'." >&2
+            exit 1
+          fi
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${tag#v}"
+          {
+            echo "tag=$tag"
+            echo "image=$image"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify image exists
+        shell: bash
+        env:
+          IMAGE: ${{ steps.target.outputs.image }}
+        run: |
+          set -Eeuo pipefail
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker manifest inspect "$IMAGE" >/dev/null
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          VERSION_TAG: ${{ steps.target.outputs.tag }}
+          OLAI_IMAGE: ${{ steps.target.outputs.image }}
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          GHCR_USERNAME: ${{ env.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ env.GHCR_READ_TOKEN }}
+        with:
+          host: ${{ env.DEPLOY_HOST }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ env.DEPLOY_SSH_KEY }}
+          port: ${{ env.DEPLOY_PORT || 22 }}
+          command_timeout: 15m
+          script_stop: true
+          envs: VERSION_TAG,OLAI_IMAGE,DEPLOY_PATH,GHCR_USERNAME,GHCR_READ_TOKEN
+          script: |
+            set -Eeuo pipefail
+            cd "$DEPLOY_PATH"
+            git fetch origin --tags --force
+            git checkout --force "$VERSION_TAG"
+            if [[ -n "${GHCR_READ_TOKEN:-}" ]]; then
+              printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:?}" --password-stdin
+            fi
+            bash scripts/deploy-docker.sh "$OLAI_IMAGE"
+            echo "Deployment finished: $OLAI_IMAGE"
+
+      - name: Write summary
+        shell: bash
+        run: |
+          {
+            echo "### Production deployment"
+            echo
+            echo "- Tag: \`${{ steps.target.outputs.tag }}\`"
+            echo "- Image: \`${{ steps.target.outputs.image }}\`"
+            echo "- Host: \`${{ env.DEPLOY_HOST }}\`"
+            echo "- Path: \`${{ env.DEPLOY_PATH }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

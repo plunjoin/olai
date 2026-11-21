@@ -21,6 +21,7 @@ import (
 	"olai/internal/server"
 	"olai/internal/settings"
 	"olai/internal/store"
+	appversion "olai/internal/version"
 	webui "olai/web"
 )
 
@@ -102,7 +103,7 @@ func main() {
 		_ = httpServer.Shutdown(shutdownCtx)
 	}()
 
-	log.Printf("Olai 已启动：http://%s（数据库：%s）", cfg.Addr(), db.Driver())
+	log.Printf("Olai %s 已启动：http://%s（数据库：%s）", appversion.Current().Version, cfg.Addr(), db.Driver())
 	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("服务启动失败：%v", err)
 	}

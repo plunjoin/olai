@@ -3,6 +3,7 @@
     <header class="adm-header">
       <div class="adm-brand"><span class="adm-brand-mark">O</span><span>{{ t('Olai 管理后台') }}<small>ADMIN CONSOLE</small></span></div>
       <div class="adm-header-right">
+        <span v-if="version" class="adm-build" :title="t('服务端当前版本')">{{ version === 'dev' ? 'dev' : `v${version}` }}</span>
         <span>{{ email }}</span>
         <button type="button" class="adm-btn adm-btn-sm" @click="passwordOpen = true">{{ t('修改密码') }}</button>
         <button type="button" class="adm-btn adm-btn-sm" :disabled="busy" @click="logout">{{ t('退出登录') }}</button>
@@ -38,7 +39,7 @@ import LogsTab from './LogsTab.vue';
 import PasswordDialog from './PasswordDialog.vue';
 import { t } from '../../lib/i18n';
 
-defineProps<{ email: string; name?: string | null }>();
+defineProps<{ email: string; name?: string | null; version?: string }>();
 const emit = defineEmits<{ signedOut: [] }>();
 type Tab = 'overview' | 'users' | 'invites' | 'content' | 'reports' | 'models' | 'settings' | 'logs';
 const TABS: [Tab, string][] = [
