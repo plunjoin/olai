@@ -1,0 +1,55 @@
+/* Compact in-house player used by the Vue client; keeps the studio light. */
+.olai-player {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 90;
+  width: min(680px, calc(100vw - 28px));
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid var(--border-subtle, #e9e3f4);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(35, 43, 74, 0.18);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+.olai-player-main { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.olai-player-audio { display: none; }
+.olai-player-cover {
+  flex: none; width: 40px; height: 40px; border-radius: 12px; border: 0; overflow: hidden;
+  display: grid; place-items: center; background: linear-gradient(135deg, #e9efff, #d9e1ff); color: #5570c9; cursor: pointer;
+}
+.olai-player-cover img { width: 100%; height: 100%; object-fit: cover; }
+.olai-player-meta { min-width: 0; flex: 1 1 150px; display: flex; flex-direction: column; gap: 2px; }
+.olai-player-meta strong { font-size: 13px; color: var(--text-primary, #27213d); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.olai-player-meta small { font-size: 11px; color: var(--text-muted, #777087); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.olai-player-button, .olai-player-close {
+  flex: none; width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer;
+  display: grid; place-items: center; background: #eef1fb; color: #35415f;
+}
+.olai-player-button:hover, .olai-player-close:hover { background: #e1e7fa; }
+.olai-player-range { flex: 1 1 90px; min-width: 60px; accent-color: #6178e8; cursor: pointer; }
+.olai-player-volume { flex: none; width: 58px; accent-color: #6178e8; cursor: pointer; }
+.olai-player-time { flex: none; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-muted, #777087); }
+.olai-player-lyrics {
+  max-height: min(46vh, 360px); overflow: auto; padding: 6px 22px 18px;
+  border-top: 1px solid var(--border-subtle, #eee9f7); text-align: center;
+}
+.olai-player-lyrics p { margin: 7px 0; color: var(--text-secondary, #686179); font-size: 13px; line-height: 1.6; transition: color .2s, transform .2s; }
+.olai-player-lyrics p.is-current { color: #4d61cc; font-weight: 600; transform: scale(1.02); }
+.olai-player-no-lyrics { white-space: pre-wrap; text-align: left; }
+@media (max-width: 640px) {
+  .olai-player { bottom: 10px; }
+  .olai-player-volume, .olai-player-time { display: none; }
+  .olai-player-main { gap: 8px; }
+}
+.olai-video-overlay {
+  position: fixed; inset: 0; z-index: 120; display: grid; place-items: center;
+  background: rgba(16, 21, 38, 0.78); padding: 18px; backdrop-filter: blur(6px);
+}
+.olai-video-shell { width: min(960px, 100%); display: flex; flex-direction: column; gap: 10px; }
+.olai-video-head { display: flex; align-items: center; justify-content: space-between; color: #fff; gap: 12px; }
+.olai-video-head strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.olai-video-head .icon-button { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.olai-video { width: 100%; max-height: 72vh; border-radius: 16px; background: #000; }
+.olai-video-prompt { color: rgba(255, 255, 255, 0.75); font-size: 12px; line-height: 1.6; margin: 0; }

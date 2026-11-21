@@ -1,0 +1,17 @@
+{
+  "name": "olai-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Shared dependencies for the Olai portal (Vue SSR) and admin (Vue SPA) frontends, compiled by webfront.",
+  "dependencies": {
+    "@vue/compiler-sfc": "3.5.13",
+    "@vue/server-renderer": "3.5.13",
+    "dompurify": "3.2.6",
+    "idb": "8.0.3",
+    "lucide-vue-next": "0.468.0",
+    "marked": "16.2.0",
+    "vue": "3.5.13",
+    "vue-router": "4.5.1"
+  }
+}

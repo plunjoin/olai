@@ -1,0 +1,330 @@
+import { t } from './i18n';
+
+/**
+ * 视频工作流 / 短片工坊
+ *
+ * 从一句想法生成完整的多镜头短视频，分阶段进行：
+ * 1. 编剧：生成脚本、人物和风格
+ * 2. 导演/分镜：生成镜头列表
+ * 3. 关键帧：为每个镜头生成静态图片
+ * 4. 镜头视频：基于关键帧生成视频
+ * 5. 配乐：可选背景音乐
+ * 6. 成片：合成最终视频
+ */
+
+export type WorkflowStage = 
+  | 'init'        // 初始化，输入创意
+  | 'script'      // 编剧阶段
+  | 'shotlist'    // 分镜阶段
+  | 'keyframes'   // 关键帧生成
+  | 'videos'      // 视频生成
+  | 'music'       // 配乐（可选）
+  | 'assembly'    // 合成
+  | 'complete';   // 完成
+
+export interface StyleBible {
+  appearance: string;      // 角色外观描述
+  wardrobe: string;        // 服装描述
+  artStyle: string;        // 美术风格
+  palette: string;         // 色调
+}
+
+export type WorkflowElementKind = 'character' | 'scene' | 'prop';
+
+export interface WorkflowElement {
+  id: string;
+  kind: WorkflowElementKind;
+  name: string;
+  description: string;
+}
+
+export const ELEMENT_LABELS: Record<WorkflowElementKind, string> = {
+  character: t('人物'), scene: t('场景'), prop: t('道具'),
+};
+
+export interface Shot {
+  id: string;
+  number: number;
+  duration: number;           // 秒
+  framing: string;            // 景别和机位
+  cameraMovement: string;     // 镜头运动
+  sceneDescription: string;   // 场景描述
+  dialogue?: string;          // 对白/旁白
+  soundNotes?: string;        // 音效备注
+  elementIds?: string[];      // 引用项目元素，跨镜头复用同一设定
+  
+  // 关键帧
+  keyframeUrl?: string;
+  keyframeBlob?: Blob;
+  keyframeStatus?: 'pending' | 'completed' | 'failed';
+  keyframeError?: string;
+  
+  // 视频
+  videoUrl?: string;
+  videoBlob?: Blob;
+  videoRemoteId?: string;     // Veo 任务 ID
+  videoStatus?: 'pending' | 'completed' | 'failed';
+  videoError?: string;
+}
+
+export interface VideoWorkflowProject {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  stage: WorkflowStage;
+  
+  // 阶段 1: 编剧
+  idea: string;                   // 用户输入的一句话创意
+  script?: string;                // 生成的脚本/logline
+  styleBible?: StyleBible;        // 风格圣经
+  
+  // 阶段 2: 分镜
+  targetLength?: number;          // 目标时长（秒），默认 30
+  shots?: Shot[];
+  elements?: WorkflowElement[];
+  useContinuousShot?: boolean;    // 是否使用连续长镜头模式（extend_from）
+  
+  // 阶段 5: 配乐
+  musicUrl?: string;
+  musicBlob?: Blob;
+  musicStatus?: 'pending' | 'completed' | 'failed';
+  musicError?: string;
+  
+  // 阶段 6: 成片
+  finalVideoUrl?: string;
+  finalVideoBlob?: Blob;
+  finalVideoStatus?: 'pending' | 'completed' | 'failed';
+  finalVideoError?: string;
+  
+  // 错误处理
+  error?: string;
+}
+
+/**
+ * 验证镜头列表 JSON 的 schema
+ */
+export function validateShotList(data: any, elements: WorkflowElement[] = []): Shot[] {
+  if (!Array.isArray(data)) {
+    throw new Error(t('镜头列表必须是数组'));
+  }
+
+  if (data.length === 0) {
+    throw new Error(t('镜头列表不能为空'));
+  }
+
+  const shots: Shot[] = [];
+  for (let i = 0; i < data.length; i++) {
+    const shot = data[i];
+    if (!shot || typeof shot !== 'object') {
+      throw new Error(t('镜头 {number} 格式无效', { number: i + 1 }));
+    }
+
+    if (typeof shot.duration !== 'number' || shot.duration <= 0 || shot.duration > 30) {
+      throw new Error(t('镜头 {number} 的时长必须在 0-30 秒之间', { number: i + 1 }));
+    }
+
+    if (!shot.sceneDescription || typeof shot.sceneDescription !== 'string') {
+      throw new Error(t('镜头 {number} 缺少场景描述', { number: i + 1 }));
+    }
+    
+    shots.push({
+      id: shot.id || `shot-${i + 1}-${Date.now()}`,
+      number: i + 1,
+      duration: shot.duration,
+      framing: shot.framing || '中景',
+      cameraMovement: shot.cameraMovement || '固定',
+      sceneDescription: shot.sceneDescription,
+      dialogue: shot.dialogue || '',
+      soundNotes: shot.soundNotes || '',
+      elementIds: Array.isArray(shot.elementIds)
+        ? [...new Set<string>(shot.elementIds.filter((id: unknown) => elements.some(element => element.id === id)))]
+        : [],
+    });
+  }
+  
+  return shots;
+}
+
+/**
+ * 计算镜头总时长
+ */
+export function calculateTotalDuration(shots: Shot[]): number {
+  return shots.reduce((sum, shot) => sum + shot.duration, 0);
+}
+
+/**
+ * 创建新的工作流项目
+ */
+export function createWorkflowProject(idea: string, targetLength: number = 30): VideoWorkflowProject {
+  const now = Date.now();
+  return {
+    id: `workflow-${now}-${Math.random().toString(36).slice(2, 9)}`,
+    title: idea.slice(0, 50),
+    createdAt: now,
+    updatedAt: now,
+    stage: 'init',
+    idea,
+    targetLength,
+    elements: [],
+  };
+}
+
+/**
+ * 创建空镜头
+ */
+export function createEmptyShot(number: number): Shot {
+  return {
+    id: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    number,
+    duration: 4,
+    framing: '中景',
+    cameraMovement: '固定',
+    sceneDescription: '',
+    dialogue: '',
+    soundNotes: '',
+  };
+}
+
+/**
+ * 更新镜头
+ */
+export function updateShot(shot: Shot, updates: Partial<Shot>): Shot {
+  return { ...shot, ...updates };
+}
+
+/**
+ * 复制镜头
+ */
+export function duplicateShot(shot: Shot, newNumber: number): Shot {
+  return {
+    ...shot,
+    id: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    number: newNumber,
+    // 清除生成的内容，需要重新生成
+    keyframeUrl: undefined,
+    keyframeBlob: undefined,
+    keyframeStatus: undefined,
+    keyframeError: undefined,
+    videoUrl: undefined,
+    videoBlob: undefined,
+    videoRemoteId: undefined,
+    videoStatus: undefined,
+    videoError: undefined,
+  };
+}
+
+/**
+ * 移除镜头
+ */
+export function removeShot(shots: Shot[], shotId: string): Shot[] {
+  const filtered = shots.filter(s => s.id !== shotId);
+  // 重新编号
+  return filtered.map((shot, index) => ({ ...shot, number: index + 1 }));
+}
+
+/**
+ * 添加镜头
+ */
+export function addShot(shots: Shot[], afterIndex: number): Shot[] {
+  const newShot = createEmptyShot(afterIndex + 2);
+  const result = [
+    ...shots.slice(0, afterIndex + 1),
+    newShot,
+    ...shots.slice(afterIndex + 1),
+  ];
+  // 重新编号
+  return result.map((shot, index) => ({ ...shot, number: index + 1 }));
+}
+
+/**
+ * 移动镜头
+ */
+export function moveShot(shots: Shot[], fromIndex: number, toIndex: number): Shot[] {
+  if (fromIndex === toIndex || fromIndex < 0 || fromIndex >= shots.length || toIndex < 0 || toIndex >= shots.length) {
+    return shots;
+  }
+  
+  const result = [...shots];
+  const [moved] = result.splice(fromIndex, 1);
+  result.splice(toIndex, 0, moved);
+  
+  // 重新编号
+  return result.map((shot, index) => ({ ...shot, number: index + 1 }));
+}
+
+/**
+ * 统计待生成的关键帧和视频数量
+ */
+export function countPendingGenerations(shots: Shot[]): { keyframes: number; videos: number } {
+  let keyframes = 0;
+  let videos = 0;
+  
+  for (const shot of shots) {
+    if (!shot.keyframeStatus || shot.keyframeStatus === 'failed') {
+      keyframes++;
+    }
+    if (!shot.videoStatus || shot.videoStatus === 'failed') {
+      videos++;
+    }
+  }
+  
+  return { keyframes, videos };
+}
+
+/**
+ * 规划连续长镜头分段
+ * Omni 每段固定 10 秒，最多延续到 30 秒（可配置到 40 秒）
+ */
+export function planContinuousShots(shots: Shot[], maxDuration: number = 30): { segments: Shot[][]; totalGenerations: number } {
+  const segments: Shot[][] = [];
+  let currentSegment: Shot[] = [];
+  let currentDuration = 0;
+  
+  for (const shot of shots) {
+    if (currentDuration + shot.duration <= maxDuration) {
+      currentSegment.push(shot);
+      currentDuration += shot.duration;
+    } else {
+      if (currentSegment.length > 0) {
+        segments.push(currentSegment);
+      }
+      currentSegment = [shot];
+      currentDuration = shot.duration;
+    }
+  }
+  
+  if (currentSegment.length > 0) {
+    segments.push(currentSegment);
+  }
+  
+  // 每个 segment 需要的生成次数 = ceil(总时长 / 10)
+  const totalGenerations = segments.reduce((sum, segment) => {
+    const segmentDuration = segment.reduce((d, s) => d + s.duration, 0);
+    return sum + Math.ceil(segmentDuration / 10);
+  }, 0);
+  
+  return { segments, totalGenerations };
+}
+
+/**
+ * 解析 Retry-After 头
+ */
+export function parseRetryAfter(retryAfter?: string | null): number | null {
+  if (!retryAfter) return null;
+  
+  // 尝试解析为秒数
+  const seconds = parseInt(retryAfter, 10);
+  if (!isNaN(seconds) && seconds > 0) return seconds;
+  
+  // 尝试解析为 HTTP 日期
+  try {
+    const date = new Date(retryAfter);
+    if (isNaN(date.getTime())) return null;
+    const now = new Date();
+    const diff = Math.max(0, Math.floor((date.getTime() - now.getTime()) / 1000));
+    return diff;
+  } catch {
+    return null;
+  }
+}
