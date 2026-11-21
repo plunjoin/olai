@@ -1,17 +1,26 @@
-FROM node:22-bookworm-slim AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --include=optional --no-audit --no-fund
+# Build the Go service and both webfront frontends without Node, then ship a
+# single static binary plus a writable data directory.
+FROM golang:1.27-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN npm run build
+RUN go tool wf install ./web \
+ && go tool wf build -modules ../wf_modules ./web/portal \
+ && go tool wf build -mode spa -base /admin -modules ../wf_modules ./web/admin \
+ && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/olai .
 
-FROM node:22-bookworm-slim AS runtime
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --create-home --uid 10001 olai \
+ && mkdir -p /app/data \
+ && chown -R olai:olai /app
 WORKDIR /app
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=4321
-COPY package*.json ./
-RUN npm install --omit=dev --include=optional --no-audit --no-fund
-COPY --from=build /app/dist ./dist
-RUN mkdir -p /app/data && chown node:node /app/data
-USER node
+COPY --from=build /out/olai /app/olai
+USER olai
+ENV HOST=0.0.0.0 PORT=4321
 EXPOSE 4321
-CMD ["node", "dist/server/entry.mjs"]
+VOLUME ["/app/data"]
+ENTRYPOINT ["/app/olai"]

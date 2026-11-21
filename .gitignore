@@ -1,9 +1,9 @@
 node_modules/
+wf_modules/
 dist/
 scripts/
 tests/
 .qa/
-.astro/
 data/
 .pnpm-store/
 .env
@@ -14,3 +14,11 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 test-results/
 playwright-report/
+# webfront frontends: keep only the placeholder so //go:embed always has a dir.
+!web/portal/dist/
+!web/admin/dist/
+web/portal/dist/*
+web/admin/dist/*
+!web/portal/dist/.gitkeep
+!web/admin/dist/.gitkeep
+!web/package-lock.json

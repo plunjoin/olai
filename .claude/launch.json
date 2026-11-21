@@ -1,6 +1,7 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "olai-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 4321 }
+    { "name": "olai-go", "runtimeExecutable": "go", "runtimeArgs": ["run", "."], "port": 4321 },
+    { "name": "olai-go-workflow", "runtimeExecutable": "C:/Program Files/Git/bin/bash.exe", "runtimeArgs": ["-lc", "export PATH=\"/c/Users/Administrator/scoop/shims:$PATH\"; AI_SHORT_FILM=true go run ."], "port": 4321 }
   ]
 }
