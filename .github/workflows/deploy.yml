@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published Git tag, for example v1.5.0"
+        description: "Published Git tag, for example v1.6.0"
         required: true
         type: string
 
@@ -38,12 +38,33 @@ jobs:
         run: |
           set -Eeuo pipefail
           tag="$(printf '%s' "$REQUESTED_TAG" | tr -d '[:space:]')"
+          if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            tag="v$tag"
+          fi
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Input must be a published tag such as v1.5.0." >&2
+            echo "::error title=Invalid deploy tag::Input must be a published tag such as v1.6.0. A leading v is added automatically if omitted." >&2
+            exit 1
+          fi
+          missing=()
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_SSH_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} )); then
+            echo "::error title=Missing deployment secrets::Set ${missing[*]} under Settings -> Environments -> production -> Environment secrets." >&2
             exit 1
           fi
           if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ || "$DEPLOY_PATH" == *..* ]]; then
-            echo "DEPLOY_PATH must be an absolute path without spaces or '..'." >&2
+            echo "::error title=Invalid DEPLOY_PATH::DEPLOY_PATH must be an absolute path without spaces or '..'." >&2
+            exit 1
+          fi
+          if [[ -n "${DEPLOY_PORT:-}" && ! "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]; then
+            echo "::error title=Invalid DEPLOY_PORT::DEPLOY_PORT must be a number when set." >&2
+            exit 1
+          fi
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error title=Tag not found::Push $tag before deploying it." >&2
             exit 1
           fi
           image="ghcr.io/${GITHUB_REPOSITORY,,}:${tag#v}"
