@@ -4,7 +4,7 @@ name: olai
 
 services:
   olai:
-    image: ${OLAI_IMAGE:-ghcr.io/plunjoin/olai:1.5.0}
+    image: ${OLAI_IMAGE:-ghcr.io/plunjoin/olai:latest}
     container_name: olai
     restart: unless-stopped
     init: true
