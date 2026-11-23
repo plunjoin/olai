@@ -94,6 +94,7 @@
           <button v-if="!readOnly && asset.kind === 'music' && asset.status === 'completed' && asset.song" class="icon-button" :aria-label="t('编辑后生成')" :title="t('编辑后生成')" @click="emit('edit', asset)"><Pencil :size="15" /></button>
           <button v-if="!readOnly && asset.kind === 'music' && asset.status === 'completed' && !asset.song?.instrumental && asset.lyrics" class="icon-button" :aria-label="t('校准歌词')" :title="t('校准歌词')" :disabled="aligning" @click="emit('align', asset)"><WandSparkles :size="15" /></button>
           <button v-if="!readOnly && asset.kind === 'music' && asset.status === 'completed' && !asset.coverUrl && asset.coverStatus !== 'failed'" class="icon-button" :aria-label="t('生成封面')" :title="t('生成封面')" :disabled="asset.coverStatus === 'pending'" @click="emit('retry-cover', asset)"><ImageIcon :size="15" /></button>
+          <button v-if="!readOnly && asset.status === 'completed'" class="icon-button" :aria-label="privateWork ? t('设为公开') : t('设为私密')" :aria-pressed="privateWork" :title="privateWork ? t('设为公开') : t('设为私密')" @click="emit('visibility', asset)"><Lock v-if="privateWork" :size="15" /><Globe v-else :size="15" /></button>
           <button v-if="!readOnly" class="icon-button asset-delete" :aria-label="t('删除作品')" :title="t('删除作品')" :disabled="asset.status === 'pending'" @click="emit('delete', asset.id)"><Trash2 :size="15" /></button>
         </div>
       </div>
@@ -103,7 +104,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { CircleAlert, Disc3, Download, FileText, Image as ImageIcon, LoaderCircle, Music2, Pause, Pencil, Play, RefreshCw, Trash2, Video, WandSparkles } from 'lucide-vue-next';
+import { CircleAlert, Disc3, Download, FileText, Globe, Image as ImageIcon, LoaderCircle, Lock, Music2, Pause, Pencil, Play, RefreshCw, Trash2, Video, WandSparkles } from 'lucide-vue-next';
 import ThinkingOrb from './ThinkingOrb.vue';
 import type { Asset } from '../lib/types';
 import { publicServiceError } from '../lib/api';
@@ -123,7 +124,9 @@ const emit = defineEmits<{
   align: [asset: Asset];
   'download-cover': [asset: Asset];
   'retry-cover': [asset: Asset];
+  visibility: [asset: Asset];
 }>();
+const privateWork = computed(() => props.asset.visibility === 'private');
 const loadError = ref(false);
 const coverError = ref(false);
 const loadedResolution = ref<ImageResolution>();

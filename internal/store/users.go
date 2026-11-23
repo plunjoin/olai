@@ -31,6 +31,19 @@ var (
 	ErrOAuthAlreadyLinked = errors.New("oauth account already linked")
 )
 
+// DisplayName is the nickname, or the mailbox name before @ when the nickname
+// was left empty. The domain is never part of it, matching the account page.
+func DisplayName(name, email string) string {
+	name = strings.TrimSpace(name)
+	if name != "" {
+		return name
+	}
+	if at := strings.IndexByte(email, '@'); at > 0 {
+		return email[:at]
+	}
+	return ""
+}
+
 func nullableString(value sql.NullString) *string {
 	if !value.Valid {
 		return nil
@@ -130,9 +143,17 @@ func (d *DB) DeleteUser(ctx context.Context, id string) error {
 			`DELETE FROM user_memories WHERE user_id = ?`,
 			`DELETE FROM user_memory_settings WHERE user_id = ?`,
 			`DELETE FROM gallery_comments WHERE user_id = ?`,
+			`DELETE FROM gallery_favorites WHERE user_id = ?`,
+			`DELETE FROM favorite_folders WHERE user_id = ?`,
+			`DELETE FROM user_follows WHERE follower_id = ? OR followee_id = ?`,
+			`DELETE FROM user_blocks WHERE blocker_id = ? OR blocked_id = ?`,
+			`DELETE FROM direct_messages WHERE sender_id = ?`,
+			`DELETE FROM direct_reads WHERE user_id = ?`,
+			`DELETE FROM direct_conversations WHERE low_user_id = ? OR high_user_id = ?`,
+			`DELETE FROM user_profiles WHERE user_id = ?`,
 		} {
 			args := []any{id}
-			if query == `DELETE FROM invites WHERE inviter_id = ? OR invitee_id = ?` {
+			if strings.Count(query, "?") == 2 {
 				args = []any{id, id}
 			}
 			if _, err := tx.ExecContext(ctx, query, args...); err != nil {

@@ -43,7 +43,11 @@
     </div>
 
     <footer class="plaza-card-meta">
-      <span class="plaza-card-author" :title="authorName">
+      <RouterLink v-if="asset.author?.id" class="plaza-card-author" :to="`/u/${asset.author.id}`" :title="authorName" @click.stop>
+        <AccountAvatar :name="authorName" :avatar="asset.author?.avatar" :size="20" />
+        <span class="plaza-card-author-name">{{ authorName }}</span>
+      </RouterLink>
+      <span v-else class="plaza-card-author" :title="authorName">
         <AccountAvatar :name="authorName" :avatar="asset.author?.avatar" :size="20" />
         <span class="plaza-card-author-name">{{ authorName }}</span>
       </span>

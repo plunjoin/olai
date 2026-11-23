@@ -16,6 +16,8 @@ export interface CreationMeta { requestId?: string; conversationId?: string; rev
 export interface Asset {
   id: string; kind: MediaKind; prompt: string; createdAt: number;
   status: 'pending' | 'completed' | 'failed'; remoteId?: string; url?: string; blob?: Blob;
+  /** Owned works only. Missing means public, which is the default. */
+  visibility?: 'public' | 'private';
   /** Links the asset to the conversation request that produced it. */
   requestId?: string;
   conversationId?: string;
@@ -45,7 +47,7 @@ export interface Asset {
   song?: SongDraft;
   lyrics?: string;
 }
-export interface GalleryAuthor { name: string; avatar?: string }
+export interface GalleryAuthor { name: string; avatar?: string; id?: string }
 export interface GalleryComment { id: string; body: string; createdAt: number; author: GalleryAuthor }
 export type SongSectionType = 'intro' | 'verse' | 'chorus' | 'bridge' | 'outro';
 export interface SongSection { id: string; type: SongSectionType; direction: string; lyrics: string }

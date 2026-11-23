@@ -27,6 +27,13 @@ export function uploadedAvatarID(value: unknown): string | null {
 }
 
 export function uploadedAvatarURL(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.startsWith(AVATAR_UPLOAD_PREFIX)) return null;
+  const rest = value.slice(AVATAR_UPLOAD_PREFIX.length);
+  // 别人的上传头像走公开作品媒体路由，/api/media 只对本人开放。
+  const published = /^gallery\.([A-Za-z0-9_-]{1,100})\.([a-f0-9-]{36})$/i.exec(rest);
+  if (published && MEDIA_UUID.test(published[2])) {
+    return `/api/gallery/avatar/${encodeURIComponent(published[1])}.${published[2].toLowerCase()}`;
+  }
   const id = uploadedAvatarID(value);
   return id ? `/api/media/${id}` : null;
 }

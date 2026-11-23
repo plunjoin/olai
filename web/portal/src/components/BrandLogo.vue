@@ -22,6 +22,10 @@
 </template>
 
 <script setup lang="ts">
+import { useId } from 'vue';
+
 withDefaults(defineProps<{ size?: number; className?: string }>(), { size: 36, className: '' });
-const uid = `ol${Math.random().toString(36).slice(2, 10)}`;
+// useId 在 SSR 与 hydrate 两端生成同一个 id，SVG 的渐变引用才能对齐；
+// Math.random() 会让服务端和客户端各生成一次，触发 hydration mismatch。
+const uid = `ol${useId()}`;
 </script>

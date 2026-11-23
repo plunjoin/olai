@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published Git tag, for example v1.4.0"
+        description: "Published Git tag, for example v1.5.0"
         required: true
         type: string
 
@@ -39,7 +39,7 @@ jobs:
           set -Eeuo pipefail
           tag="$(printf '%s' "$REQUESTED_TAG" | tr -d '[:space:]')"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Input must be a published tag such as v1.4.0." >&2
+            echo "Input must be a published tag such as v1.5.0." >&2
             exit 1
           fi
           if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ || "$DEPLOY_PATH" == *..* ]]; then

@@ -397,6 +397,14 @@ func (s *Server) saveRecord(w http.ResponseWriter, r *http.Request, user *store.
 		createdAt = int64(created)
 	}
 	record := store.StudioRecord{Key: key, UserID: user.ID, Store: storeName, RecordID: id, CreatedAt: createdAt, UpdatedAt: now}
+	if storeName == "assets" {
+		switch recordMap["visibility"] {
+		case "public":
+			record.Visibility = "public"
+		case "private":
+			record.Visibility = "private"
+		}
+	}
 	directData, chunks := splitRecord(serialized)
 	record.Data = directData
 	for i := range chunks {

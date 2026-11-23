@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"olai/internal/httpx"
 	"olai/internal/secure"
 	"olai/internal/store"
 )
@@ -176,7 +177,7 @@ func (s *Server) handleOAuthStart(name string) http.HandlerFunc {
 		}
 		invite := normalizeInviteCode(r.URL.Query().Get("invite"))
 		state := encodeState(invite)
-		secureCookie := strings.HasPrefix(base, "https:")
+		secureCookie := httpx.SecureRequest(r, s.Settings)
 		http.SetCookie(w, &http.Cookie{
 			Name: oauthStateCookieName(p, secureCookie), Value: state,
 			Path: oauthStateCookiePath(p, secureCookie), HttpOnly: true,
@@ -216,7 +217,7 @@ func (s *Server) handleOAuthCallback(name string) http.HandlerFunc {
 			return
 		}
 		base := oauthBase(s, r)
-		secureCookie := strings.HasPrefix(base, "https:")
+		secureCookie := httpx.SecureRequest(r, s.Settings)
 		stateName := oauthStateCookieName(p, secureCookie)
 		cookiePath := oauthStateCookiePath(p, secureCookie)
 		duplicate := cookieCount(r, stateName)
@@ -289,12 +290,6 @@ func (s *Server) handleOAuthCallback(name string) http.HandlerFunc {
 		if err != nil {
 			back("failed")
 			return
-		}
-		if active != nil && !s.Auth.TrustsSession(r) {
-			// HTTPS deployments only trust the __Host- session cookie. Ignore a
-			// bare cookie a sibling subdomain could have planted, so it can
-			// neither switch accounts nor block this login.
-			active = nil
 		}
 		if active != nil {
 			resolved, err := s.resolveOAuthUserID(r.Context(), p.Name, profile)

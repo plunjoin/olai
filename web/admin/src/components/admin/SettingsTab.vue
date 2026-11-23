@@ -1,4 +1,6 @@
 <template>
+  <div class="adm-stack">
+  <SiteUpdatePanel />
   <section class="adm-card">
     <div class="adm-card-head">
       <div><div class="adm-card-title">{{ t('系统设置') }}</div><div class="adm-card-sub">{{ t('配置保存在主数据库中（默认 SQLite）并立即生效；.env 只在首次启动时导入一次，之后以这里的值为准。') }}</div></div>
@@ -64,11 +66,13 @@
       </div>
     </div>
   </section>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import Select from '../ui/Select.vue';
+import SiteUpdatePanel from './SiteUpdatePanel.vue';
 import { adminApi, errorMessage, type FeedbackMessage } from '../../lib/admin';
 import { DEFAULT_ADMIN_PATH } from '../../lib/adminPath';
 import { t, tIn } from '../../lib/i18n';

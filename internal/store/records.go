@@ -11,13 +11,14 @@ import (
 )
 
 type StudioRecord struct {
-	Key       string
-	UserID    string
-	Store     string
-	RecordID  string
-	Data      string
-	CreatedAt int64
-	UpdatedAt int64
+	Key        string
+	UserID     string
+	Store      string
+	RecordID   string
+	Data       string
+	CreatedAt  int64
+	UpdatedAt  int64
+	Visibility string
 }
 
 type RecordChunk struct {
@@ -57,7 +58,7 @@ func (d *DB) RecordsFor(ctx context.Context, userID, storeName string) ([]Record
 // scanning. Bodies may be chunked; attachBodies normalizes them.
 func (d *DB) GalleryBatch(ctx context.Context, cursor string, limit int) ([]RecordWithBody, error) {
 	rows, err := d.QueryContext(ctx, `SELECT key, user_id, store, record_id, data, updated_at
-		FROM studio_records WHERE store = 'assets' AND key > ? ORDER BY key LIMIT ?`, cursor, limit)
+		FROM studio_records WHERE store = 'assets' AND visibility = 'public' AND key > ? ORDER BY key LIMIT ?`, cursor, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +86,7 @@ func (d *DB) GalleryNewBatch(ctx context.Context, cursorCreatedAt int64, cursorK
 	// (store, created_at DESC, key DESC) index; the OR form is not.
 	rows, err := d.QueryContext(ctx, `SELECT key, user_id, store, record_id, data, created_at, updated_at
 		FROM studio_records
-		WHERE store = 'assets' AND (created_at, key) < (?, ?)
+		WHERE store = 'assets' AND visibility = 'public' AND (created_at, key) < (?, ?)
 		ORDER BY created_at DESC, key DESC LIMIT ?`,
 		cursorCreatedAt, cursorKey, limit)
 	if err != nil {
@@ -337,13 +338,15 @@ func (d *DB) SaveRecord(ctx context.Context, record StudioRecord, chunks []Recor
 		// A row created before the created_at column existed (or by a rolling
 		// old binary) still reads 0; an ordinary edit must keep the original
 		// creation time, but a 0 is healed from this write.
-		if _, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at, visibility)
+			VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'public'))
 			ON CONFLICT (key) DO UPDATE SET
 				data = excluded.data,
 				updated_at = excluded.updated_at,
+				visibility = CASE WHEN ? <> '' THEN ? ELSE studio_records.visibility END,
 				created_at = CASE WHEN studio_records.created_at = 0 THEN excluded.created_at ELSE studio_records.created_at END`,
-			record.Key, record.UserID, record.Store, record.RecordID, record.Data, createdAt, record.UpdatedAt); err != nil {
+			record.Key, record.UserID, record.Store, record.RecordID, record.Data, createdAt, record.UpdatedAt,
+			record.Visibility, record.Visibility, record.Visibility); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM record_chunks WHERE record_key = ?`, record.Key); err != nil {
@@ -368,9 +371,10 @@ func (d *DB) InsertRecordIfAbsent(ctx context.Context, record StudioRecord, chun
 		if createdAt <= 0 {
 			createdAt = record.UpdatedAt
 		}
-		result, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (key) DO NOTHING`,
-			record.Key, record.UserID, record.Store, record.RecordID, record.Data, createdAt, record.UpdatedAt)
+		result, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at, visibility)
+			VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'public')) ON CONFLICT (key) DO NOTHING`,
+			record.Key, record.UserID, record.Store, record.RecordID, record.Data, createdAt, record.UpdatedAt,
+			record.Visibility)
 		if err != nil {
 			return err
 		}
@@ -438,7 +442,7 @@ func (d *DB) DeleteRecord(ctx context.Context, key, userID, storeName string) er
 }
 
 func (d *DB) RecordByKey(ctx context.Context, key string) (*RecordWithBody, error) {
-	rows, err := d.QueryContext(ctx, `SELECT key, user_id, store, record_id, data, updated_at
+	rows, err := d.QueryContext(ctx, `SELECT key, user_id, store, record_id, data, updated_at, visibility
 		FROM studio_records WHERE key = ?`, key)
 	if err != nil {
 		return nil, err
@@ -451,7 +455,7 @@ func (d *DB) RecordByKey(ctx context.Context, key string) (*RecordWithBody, erro
 		return nil, ErrNotFound
 	}
 	var record StudioRecord
-	if err := rows.Scan(&record.Key, &record.UserID, &record.Store, &record.RecordID, &record.Data, &record.UpdatedAt); err != nil {
+	if err := rows.Scan(&record.Key, &record.UserID, &record.Store, &record.RecordID, &record.Data, &record.UpdatedAt, &record.Visibility); err != nil {
 		return nil, err
 	}
 	rows.Close()

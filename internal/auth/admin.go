@@ -20,8 +20,7 @@ const (
 	AdminSessionMaxAge     = 12 * 3600
 )
 
-func AdminSessionToken(r *http.Request) string {
-	host, normal := "", ""
+func adminSessionTokens(r *http.Request) (host, normal string) {
 	for _, cookie := range r.Cookies() {
 		switch cookie.Name {
 		case HostAdminSessionCookie:
@@ -30,28 +29,40 @@ func AdminSessionToken(r *http.Request) string {
 			normal = cookie.Value
 		}
 	}
+	return host, normal
+}
+
+func AdminSessionToken(r *http.Request) string {
+	host, normal := adminSessionTokens(r)
 	if host != "" {
 		return host
 	}
 	return normal
 }
 
-func HasAmbiguousAdminSession(r *http.Request) bool {
-	hostCount, normalCount := 0, 0
-	for _, name := range CookieNames(r) {
-		switch name {
-		case HostAdminSessionCookie:
-			hostCount++
-		case AdminSessionCookie:
-			normalCount++
+func (m *Manager) adminUsableSessionToken(r *http.Request) (string, bool) {
+	host, normal := adminSessionTokens(r)
+	if m.secure(r) || host != "" {
+		if host == "" || cookieCount(r, HostAdminSessionCookie) != 1 {
+			return "", false
 		}
+		return host, true
 	}
-	return hostCount > 1 || normalCount > 1
+	if normal == "" || cookieCount(r, AdminSessionCookie) != 1 {
+		return "", false
+	}
+	return normal, true
+}
+
+// TrustsAdminSession mirrors TrustsSession for the separate admin cookie.
+func (m *Manager) TrustsAdminSession(r *http.Request) bool {
+	_, ok := m.adminUsableSessionToken(r)
+	return ok
 }
 
 func (m *Manager) CurrentAdmin(ctx context.Context, r *http.Request) (*store.AdminAccount, error) {
-	token := AdminSessionToken(r)
-	if !tokenRE.MatchString(token) {
+	token, ok := m.adminUsableSessionToken(r)
+	if !ok || !tokenRE.MatchString(token) {
 		return nil, nil
 	}
 	admin, err := m.DB.AdminSessionAccount(ctx, Hash(token))

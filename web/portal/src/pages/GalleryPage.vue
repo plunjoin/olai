@@ -30,6 +30,15 @@
             @click="changeFilter(tab.key)"
           >{{ tab.label }}<span v-if="tab.key === 'favorites' && favoriteTotal" class="plaza-tab-count">{{ favoriteTotal }}</span></button>
         </div>
+        <form v-if="pendingFolder" class="plaza-folder-picker" @submit.prevent="saveFolder">
+          <span>{{ t('收藏到') }}</span>
+          <select :aria-label="t('选择收藏分类')" @change="chooseFolder(($event.target as HTMLSelectElement).value)">
+            <option value="">{{ t('未分类') }}</option>
+            <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option>
+          </select>
+          <input v-model="folderName" maxlength="24" :aria-label="t('新分类名称')" :placeholder="t('新建分类')" />
+          <button type="submit">{{ t('创建') }}</button>
+        </form>
         <div class="plaza-sort" role="group" :aria-label="t('作品排序')">
           <button type="button" :class="{ 'is-active': sort === 'new' }" :aria-pressed="sort === 'new'" @click="changeSort('new')"><Clock3 :size="14" />{{ t('最新') }}</button>
           <button type="button" :class="{ 'is-active': sort === 'hot' }" :aria-pressed="sort === 'hot'" @click="changeSort('hot')"><Flame :size="14" />{{ t('最热') }}</button>
@@ -143,6 +152,7 @@ import {
   type GalleryMetrics, type GallerySort,
 } from '../lib/gallery';
 import { readGalleryFavorites, writeGalleryFavorites } from '../lib/galleryFavorites';
+import { createFavoriteFolder, getFavoriteFolders, placeFavorite, type FavoriteFolder } from '../lib/people';
 import { safeMediaURL } from '../lib/api';
 import { t } from '../lib/i18n';
 import { flyPlazaMedia, type PlazaMotionSource } from '../lib/plazaMotion';
@@ -169,6 +179,9 @@ const filter = ref<Filter>('all');
 const search = ref('');
 const sort = ref<GallerySort>('new');
 const favoriteTotal = ref(0);
+const folders = ref<FavoriteFolder[]>([]);
+const pendingFolder = ref<Asset | null>(null);
+const folderName = ref('');
 const active = ref<Asset | null>(null);
 const closing = ref(false);
 const detailSource = ref<{ rect: DOMRect | null; src: string }>({ rect: null, src: '' });
@@ -379,6 +392,8 @@ async function toggleFavorite(asset: Asset) {
     asset.favoriteCount = result.favoriteCount;
     asset.heat = result.heat;
     if (mutation === favoriteMutations) favoriteTotal.value = result.favoriteTotal;
+    if (result.favorite) { pendingFolder.value = asset; void ensureFolders(); }
+    else if (pendingFolder.value?.id === asset.id) pendingFolder.value = null;
     if (filter.value === 'favorites') {
       if (!result.favorite) {
         assets.value = assets.value.filter(item => item.id !== asset.id);
@@ -400,6 +415,34 @@ async function toggleFavorite(asset: Asset) {
     else notify(failure instanceof Error ? t(failure.message) : t('收藏失败，请稍后重试。'));
   } finally {
     favoriteBusy.delete(asset.id);
+  }
+}
+async function ensureFolders() {
+  if (folders.value.length) return;
+  try { folders.value = (await getFavoriteFolders()).folders; } catch { /* 分类加载失败不阻断收藏。 */ }
+}
+async function chooseFolder(folder: string) {
+  const asset = pendingFolder.value;
+  if (!asset) return;
+  try {
+    await placeFavorite(asset.id, folder);
+    pendingFolder.value = null;
+    notify(folder ? t('已放入收藏分类。') : t('已移出分类。'));
+  } catch (failure) {
+    notify(failure instanceof Error ? failure.message : t('收藏分类暂不可用，请稍后重试。'));
+  }
+}
+async function saveFolder() {
+  const name = folderName.value.trim();
+  const asset = pendingFolder.value;
+  if (!name || !asset) return;
+  try {
+    const created = await createFavoriteFolder(name);
+    folders.value = [...folders.value, created.folder];
+    folderName.value = '';
+    await chooseFolder(created.folder.id);
+  } catch (failure) {
+    notify(failure instanceof Error ? failure.message : t('收藏分类暂不可用，请稍后重试。'));
   }
 }
 

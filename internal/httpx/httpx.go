@@ -74,7 +74,7 @@ func SameOrigin(r *http.Request, s *settings.Manager) bool {
 		return false
 	}
 	if configured := strings.TrimSpace(s.SiteOrigin()); configured != "" {
-		if parsed, err := url.Parse(configured); err == nil && source.Scheme+"://"+source.Host == parsed.Scheme+"://"+parsed.Host {
+		if parsed, err := url.Parse(configured); err == nil && parsed.Hostname() != "" && source.Scheme+"://"+source.Host == parsed.Scheme+"://"+parsed.Host {
 			return true
 		}
 	}
@@ -85,9 +85,16 @@ func SameOrigin(r *http.Request, s *settings.Manager) bool {
 	if host == "" {
 		return false
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
+	scheme := requestScheme(r, s)
+	// When the configured public origin is HTTPS, a request addressed to the
+	// same host cannot legitimately come from an http:// page, even if the
+	// proxy does not expose X-Forwarded-Proto to the app.
+	if settings.SecureOrigin(s.SiteOrigin()) {
+		if configured, err := url.Parse(s.SiteOrigin()); err == nil && configured.Hostname() != "" {
+			if addressed, err := url.Parse("//" + host); err == nil && strings.EqualFold(addressed.Hostname(), configured.Hostname()) {
+				scheme = "https"
+			}
+		}
 	}
 	destination, err := url.Parse(scheme + "://" + host)
 	if err != nil || destination.Host != host || destination.User != nil {
@@ -96,21 +103,41 @@ func SameOrigin(r *http.Request, s *settings.Manager) bool {
 	return source.Scheme+"://"+source.Host == destination.Scheme+"://"+destination.Host
 }
 
+func forwardedProto(r *http.Request) string {
+	return strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]))
+}
+
+// requestScheme reports the browser-facing scheme from the transport, or from
+// X-Forwarded-Proto when TRUST_PROXY is explicitly enabled. SameOrigin and
+// RequestOrigin share it so origin checks and session cookies agree.
+func requestScheme(r *http.Request, s *settings.Manager) string {
+	if r.TLS != nil || (s.Bool("TRUST_PROXY") && forwardedProto(r) == "https") {
+		return "https"
+	}
+	return "http"
+}
+
+// SecureRequest reports whether the browser-facing request uses HTTPS. It
+// trusts X-Forwarded-Proto only when TRUST_PROXY is explicitly enabled, and
+// otherwise relies on SITE_ORIGIN or a direct TLS connection.
+func SecureRequest(r *http.Request, s *settings.Manager) bool {
+	if r.TLS != nil || settings.SecureOrigin(s.SiteOrigin()) {
+		return true
+	}
+	return s.Bool("TRUST_PROXY") && forwardedProto(r) == "https"
+}
+
 func RequestOrigin(r *http.Request, s *settings.Manager) string {
 	if configured := s.SiteOrigin(); configured != "" {
-		if parsed, err := url.Parse(configured); err == nil {
+		if parsed, err := url.Parse(configured); err == nil && parsed.Hostname() != "" {
 			return parsed.Scheme + "://" + parsed.Host
 		}
-	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
 	}
 	host := r.Header.Get("Host")
 	if host == "" {
 		host = r.Host
 	}
-	return scheme + "://" + host
+	return requestScheme(r, s) + "://" + host
 }
 
 var ErrNotFound = errors.New("not found")

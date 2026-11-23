@@ -5,6 +5,7 @@ scripts/*
 !scripts/deploy-docker.sh
 tests/
 .qa/
+/temp/
 data/
 .pnpm-store/
 .env

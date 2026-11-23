@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage.vue';
 import AccountPage from './pages/AccountPage.vue';
 import StudioPage from './pages/StudioPage.vue';
 import NotFoundPage from './pages/NotFoundPage.vue';
+import ProfilePage from './pages/ProfilePage.vue';
+import MessagesPage from './pages/MessagesPage.vue';
 
 const routes = [
   { path: '/', name: 'home', component: GalleryPage },
@@ -13,6 +15,8 @@ const routes = [
   { path: '/setup', name: 'setup', component: SetupPage },
   { path: '/login', name: 'login', component: LoginPage },
   { path: '/account', name: 'account', component: AccountPage },
+  { path: '/u/:handle', name: 'profile', component: ProfilePage },
+  { path: '/messages/:handle?', name: 'messages', component: MessagesPage },
   { path: '/chat/:conversationId?', name: 'chat', component: StudioPage, props: (route: any) => ({ view: 'chat', conversationId: route.params.conversationId || '' }) },
   { path: '/image', name: 'image', component: StudioPage, props: { view: 'image' } },
   { path: '/video', name: 'video', component: StudioPage, props: { view: 'video' } },

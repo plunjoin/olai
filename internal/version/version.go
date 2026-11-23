@@ -1,7 +1,7 @@
 // Package version exposes the build revision and compares client release
 // versions. Version is injected at build time with:
 //
-//	go build -ldflags "-X olai/internal/version.Version=1.4.0"
+//	go build -ldflags "-X olai/internal/version.Version=1.5.0"
 //
 // Values stay empty by default so local `go build` keeps working without any
 // deployment tooling.

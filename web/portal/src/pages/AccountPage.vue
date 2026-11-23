@@ -108,9 +108,31 @@
             </section>
 
             <section class="account-card">
+              <div class="account-card-head"><h2>{{ t('个人主页与隐私') }}</h2><span>{{ t('游客也可访问你的主页') }}</span></div>
+              <p class="account-note">{{ t('主页地址、简介和下面的开关决定别人能看到什么。关闭后对应内容不再出现，也不会提示已隐藏。') }}</p>
+              <label class="account-privacy-field">{{ t('主页地址') }}<input v-model="privacy.handle" maxlength="20" :aria-label="t('主页地址')" placeholder="river" /></label>
+              <label class="account-privacy-field">{{ t('简介') }}<textarea v-model="privacy.bio" maxlength="160" :aria-label="t('简介')" /></label>
+              <label class="account-privacy-field">{{ t('个人网址') }}<input v-model="privacy.website" maxlength="200" :aria-label="t('个人网址')" placeholder="https://" /></label>
+              <div class="account-privacy-switches">
+                <label><input v-model="privacy.showWorks" type="checkbox" />{{ t('公开作品') }}</label>
+                <label><input v-model="privacy.showFavorites" type="checkbox" />{{ t('公开收藏') }}</label>
+                <label><input v-model="privacy.showBio" type="checkbox" />{{ t('公开简介与网址') }}</label>
+                <label><input v-model="privacy.showJoined" type="checkbox" />{{ t('公开加入时间') }}</label>
+                <label><input v-model="privacy.showFollows" type="checkbox" />{{ t('公开关注数') }}</label>
+                <label><input v-model="privacy.allowMessages" type="checkbox" />{{ t('允许私信') }}</label>
+              </div>
+              <div class="account-sync-actions">
+                <button type="button" class="secondary-button" :disabled="privacyBusy" @click="savePrivacy">{{ privacyBusy ? t('保存中…') : t('保存隐私设置') }}</button>
+                <RouterLink v-if="privacy.handle" class="secondary-button" :to="`/u/${privacy.handle}`">{{ t('查看我的主页') }}</RouterLink>
+              </div>
+              <p v-if="privacyNote" class="account-status" role="status">{{ privacyNote }}</p>
+            </section>
+
+            <section class="account-card">
               <div class="account-card-head"><h2>{{ t('快捷入口') }}</h2></div>
               <div class="account-links">
                 <RouterLink class="account-link" to="/library"><LayoutGrid :size="16" />{{ t('我的库') }}</RouterLink>
+                <RouterLink class="account-link" to="/messages"><Images :size="16" />{{ t('私信') }}</RouterLink>
                 <RouterLink class="account-link" to="/gallery"><Images :size="16" />{{ t('作品广场') }}</RouterLink>
                 <RouterLink class="account-link" to="/"><Sparkles :size="16" />{{ t('继续创作') }}</RouterLink>
               </div>
@@ -134,8 +156,12 @@ import { accountRequest, type AccountState } from '../lib/account';
 import { flushStorage, initializeStorage, syncGuestRecords } from '../lib/storage';
 import { profileDisplayName } from '../lib/profile';
 import { t } from '../lib/i18n';
+import { getMyProfile, saveMyProfile, type PrivacySettings } from '../lib/people';
 
 const account = ref<AccountState | null>(null);
+const privacy = ref<PrivacySettings>({ handle: '', bio: '', website: '', showWorks: true, showFavorites: false, showBio: true, showJoined: true, showFollows: true, allowMessages: true });
+const privacyBusy = ref(false);
+const privacyNote = ref('');
 const error = ref('');
 const busy = ref(false);
 const syncing = ref(false);
@@ -153,7 +179,10 @@ async function load() {
   error.value = '';
   try {
     account.value = await initializeStorage();
-    if (account.value.user) void sync(account.value.user.id);
+    if (account.value.user) {
+      void sync(account.value.user.id);
+      privacy.value = (await getMyProfile()).profile;
+    }
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : t('账号服务暂不可用。');
   }
@@ -169,6 +198,18 @@ async function sync(userId: string) {
     failures.value = [failure instanceof Error ? failure.message : t('请重试。')];
   } finally {
     syncing.value = false;
+  }
+}
+async function savePrivacy() {
+  privacyBusy.value = true;
+  privacyNote.value = '';
+  try {
+    privacy.value = (await saveMyProfile(privacy.value)).profile;
+    privacyNote.value = t('隐私设置已保存。');
+  } catch (failure) {
+    privacyNote.value = failure instanceof Error ? failure.message : t('隐私设置暂不可用，请稍后重试。');
+  } finally {
+    privacyBusy.value = false;
   }
 }
 async function copyInvite() {

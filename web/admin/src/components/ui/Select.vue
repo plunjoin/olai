@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue';
 import { Check, ChevronDown } from 'lucide-vue-next';
 import type { SelectOption } from './select';
 
@@ -89,7 +89,6 @@ interface MenuPosition { top: number; left: number; width: number; maxHeight: nu
 
 const MENU_GAP = 6;
 const VIEWPORT_PAD = 8;
-let seed = 0;
 
 const triggerRef = ref<HTMLButtonElement | null>(null);
 const menuRef = ref<HTMLDivElement | null>(null);
@@ -98,7 +97,8 @@ const active = ref(-1);
 const position = ref<MenuPosition | null>(null);
 const portalHost = ref<HTMLElement | null>(null);
 const typed = { text: '', at: 0 };
-const instanceId = `olai-sel-${++seed}-${Math.random().toString(36).slice(2, 7)}`;
+// 后台虽然是 SPA，仍用 useId 避免实例 id 随刷新变化；与 portal 保持一致。
+const instanceId = `olai-sel-${useId()}`;
 const listId = `${instanceId}-listbox`;
 const optionId = (index: number) => `${instanceId}-option-${index}`;
 const current = computed(() => props.options.find(option => option.value === props.modelValue));

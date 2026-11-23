@@ -8,7 +8,7 @@
   <p>
     <img src="https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white" alt="Go 1.27" />
     <img src="https://img.shields.io/badge/Vue-3-42B883?logo=vue.js&logoColor=white" alt="Vue 3" />
-    <img src="https://img.shields.io/badge/webfront-0.1.6-4F5EE0" alt="webfront" />
+    <img src="https://img.shields.io/badge/webfront-0.1.8-4F5EE0" alt="webfront" />
     <img src="https://img.shields.io/badge/SQLite-PostgreSQL-6366F1" alt="SQLite / PostgreSQL" />
   </p>
 
@@ -37,6 +37,7 @@ Olai 将 AI 对话与媒体创作放在同一个工作台。首页是作品广�
 | 🗂️ 作品库 | 收藏创作结果，从已有歌曲继续编辑并生成新版本 |
 | 🧠 长期记忆 | 保存称呼与偏好，让之后的对话更懂你；可在设置里管理 |
 | ☁️ 账号同步 | 登录后同步游客记录，在其他设备读取账号作品 |
+| 👤 个人主页 | 设置公开主页与展示项，关注创作者、公开收藏并互发私信 |
 
 首页和 `/gallery` 都是作品广场：游客和登录用户可浏览所有账号已完成的图像、视频与音乐，支持搜索、按类型筛选、预览、播放、下载和滚动加载；点击作品会在当前滚动位置以共享元素动画展开详情：详情作为独立版块占据左侧版面（左为作品，右为作者、操作与评论），右侧继续显示广场作品，滚动位置不会被带回顶部；浏览器后退或关闭按钮即可回到原处。窄屏下详情改为整页展示，关闭时回到原来的滚动位置。左侧导航同时提供「我的库」，登录后只读取当前账号生成的作品。游客自己的创作仍保存在当前浏览器，登录后自动同步。云端已完成的作品（包括已有作品）会自动出现在广场；聊天记录、未完成/失败作品和短片工作流草稿不会公开，公开浏览不能修改或删除他人的作品。
 
@@ -192,7 +193,13 @@ go run .
 
 点击侧边栏或顶部的「登录 / 注册」会进入独立的登录页 `/login`，可使用邮箱和 **8–128 位密码**注册。注册后会向该邮箱发送验证链接，验证通过后才能登录。已登录用户点击「我的账号」进入账号中心 `/account`，可查看积分、每日额度、邀请码与价目，同步本地数据或退出登录；点击资料卡上的「编辑资料」可以修改昵称、选择预设头像，或上传 PNG / JPG / WebP 图片作为头像（上传会把图片居中裁剪为 256×256，并保存到私有媒体存储，需启用 OSS）；修改后工作台与账号中心会同步显示。账号中心在服务端校验登录态，未登录访问会带 `next=/account` 转到登录页。
 
-密码使用 scrypt 加盐散列，登录凭证通过 HttpOnly / SameSite Cookie 保存，数据库仅保存凭证散列，有效期 30 天。登录页提供密码重置：输入邮箱后会收到重置链接，30 分钟内有效。验证邮件和重置邮件由 `MAIL_*` 配置通过 SMTP 发送（`.env` 或管理后台「系统设置 → 出站邮件」），发件地址为 `MAIL_FROM`（默认 `noreply@olai.cc`）。已有账号在升级后视为已验证，不受影响。GitHub / Google 登录仍使用各平台已验证的邮箱，无需再走邮件验证。退出登录会撤销当前登录凭证并回到工作台。
+密码使用 scrypt 加盐散列，登录凭证通过 HttpOnly / SameSite Cookie 保存，数据库仅保存凭证散列，有效期 30 天。HTTPS 部署只信任带 `__Host-` 前缀的会话 Cookie，防止子域投放裸 Cookie；从旧版本或纯 HTTP 部署升级的用户可能需要重新登录一次。登录页提供密码重置：输入邮箱后会收到重置链接，30 分钟内有效。验证邮件和重置邮件由 `MAIL_*` 配置通过 SMTP 发送（`.env` 或管理后台「系统设置 → 出站邮件」），发件地址为 `MAIL_FROM`（默认 `noreply@olai.cc`）。已有账号在升级后视为已验证，不受影响。GitHub / Google 登录仍使用各平台已验证的邮箱，无需再走邮件验证。退出登录会撤销当前登录凭证并回到工作台。
+
+#### 个人主页、关注与私信
+
+登录用户在账号中心「编辑资料与隐私」中设置公开主页地址（3–20 位小写字母、数字或连字符）、简介、个人网址和展示开关；可分别控制作品、收藏、简介、加入时间、关注数据和私信权限。作品作者名会链接到 `/u/<handle>`，主页只展示已完成的公开作品，收藏只有在作者主动公开时才可见。关注与拉黑互斥，拉黑会同时解除双方关注并阻止私信；私信要求双方都未拉黑且收信人开启私信。
+
+作品默认公开；作者可在作品详情或作品库中把单件作品设为私密。私密作品不会出现在广场、个人主页、公开收藏、评论和公开媒体接口中，仍保留在作者自己的库中。收藏可以创建分类并移动作品；删除分类不会删除作品，只会把其中的收藏移回未分类。
 
 #### 使用 GitHub 登录
 
@@ -214,7 +221,7 @@ go run .
 
 ### 管理后台
 
-后台与门户使用**两套完全独立的登录体系**：后台账号保存在 `admin_accounts`，后台会话使用自己的 HttpOnly Cookie（默认 12 小时有效），门户登录不会获得后台权限，后台登录也不会登录门户。门户不显示任何后台入口或入口提示，后台页面也不链接回门户。后台默认入口是 `/admin`，登录页是入口下的 `/login`（默认 `/admin/login`）；入口可在“系统设置”中改成自定义路径（例如 `/console-x7k2`），修改后原入口立即失效，`/admin/assets/` 保持固定。
+后台与门户使用**两套完全独立的登录体系**：后台账号保存在 `admin_accounts`，后台会话使用自己的 HttpOnly Cookie（默认 12 小时有效，HTTPS 下同样只信任 `__Host-` Cookie），门户登录不会获得后台权限，后台登录也不会登录门户。门户不显示任何后台入口或入口提示，后台页面也不链接回门户。后台默认入口是 `/admin`，登录页是入口下的 `/login`（默认 `/admin/login`）；入口可在“系统设置”中改成自定义路径（例如 `/console-x7k2`），修改后原入口立即失效，`/admin/assets/` 保持固定。
 
 全新部署在 `/setup` 创建第一个**后台管理员账号**，完成后直接跳转到后台登录页；该账号不会自动创建或登录门户账号。存量部署首次启动时，会把 `ADMIN_EMAILS`（逗号分隔，大小写不敏感）中已在门户注册且使用密码登录的邮箱一次性迁移为独立后台账号，初始密码沿用原门户密码，请登录后台后立即修改；只有第三方登录（GitHub / Google）、没有门户密码的邮箱无法自动迁移，需要用下面的命令设置后台密码。门户之后修改密码不会影响后台账号，反之亦然。
 
@@ -234,17 +241,37 @@ go run ./cmd/admin-passwd -email admin@example.com
 
 浏览器只会拿到模型的不透明公开 ID、别名、支持的档位和积分价格；上游模型 ID 仅保存在服务端，不会出现在 `/api/models` 响应、页面源码或日志中。停用的模型不再出现在选择列表，但仍保留价格配置。未选择模型（或模型目录为空）时继续使用 `.env` / 系统设置中的默认模型与全局档位价。
 
-### 版本与客户端更新
+### 版本与更新
 
 服务端版本在构建时写入二进制：`go build` 不传参数时显示 `dev`，正式构建建议传入语义化版本：
 
 ```bash
 go tool wf build -modules ../wf_modules ./web/portal
 go tool wf build -mode spa -base /admin -modules ../wf_modules ./web/admin
-go build -trimpath -ldflags="-s -w -X olai/internal/version.Version=1.4.0" -o olai .
+go build -trimpath -ldflags="-s -w -X olai/internal/version.Version=1.5.0" -o olai .
 ```
 
-Docker 构建支持 `VERSION`、`COMMIT`、`BUILT_AT` 三个 build arg；例如 `docker build --build-arg VERSION=1.4.0 -t olai:1.4.0 .`。网络无法直接访问 Go 官方模块代理时，可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。正式镜像由 Release 工作流在推送 `v*.*.*` tag 时自动构建，后台页头会显示当前服务端版本，下载页页脚也会显示。该版本号是构建产物的一部分，不能在后台修改。
+Docker 构建支持 `VERSION`、`COMMIT`、`BUILT_AT` 三个 build arg；例如 `docker build --build-arg VERSION=1.5.0 -t olai:1.5.0 .`。网络无法直接访问 Go 官方模块代理时，可追加 `--build-arg GOPROXY=https://goproxy.cn,direct`。正式镜像由 Release 工作流在推送 `v*.*.*` tag 时自动构建，后台页头会显示当前服务端版本，下载页页脚也会显示。该版本号是构建产物的一部分，不能在后台修改。
+
+#### 整站更新
+
+后台「系统设置 → 版本与更新」顶部提供**整站更新**面板，显示当前服务端版本、最新 Git tag、最近部署记录，并可从后台触发整站升级。它不会让容器直接操作 Docker；点击「更新整站」只是通过 GitHub API 触发仓库里的 `Deploy production` 工作流（默认 `deploy.yml`），实际部署仍由 Actions 完成：检出 tag、备份 SQLite 数据卷、拉取 GHCR 镜像、替换 Compose 服务、健康检查，失败自动回滚。服务端与两个前端随镜像一起更新。
+
+启用前需要填写：
+
+| 配置 | 说明 |
+| --- | --- |
+| `SITE_UPDATE_ENABLED` | 开启后台整站更新入口 |
+| `SITE_UPDATE_REPO` | GitHub 仓库，格式 `owner/repo`，默认 `plunjoin/olai` |
+| `SITE_UPDATE_WORKFLOW` | 部署工作流文件名，默认 `deploy.yml` |
+| `SITE_UPDATE_REF` | 触发工作流的分支，默认 `master`，该分支必须包含部署工作流 |
+| `SITE_UPDATE_TOKEN` | 细粒度 GitHub PAT，需要 `Actions: Read and write` 与 `Contents: Read`；仅保存在服务端 |
+
+这些配置也可写入 `.env`，首次启动时导入数据库。部署工作流使用仓库 `Settings → Environments → production` 的审批策略；若配置了 Required reviewers，后台会显示「等待审批」，需要在 GitHub Actions 中批准后才会继续。更新前应先确认对应 tag 的 `Release image` 工作流已经成功，否则部署工作流会在镜像校验阶段失败。后台不能绕过 GitHub 审批、SSH 密钥或服务器上的 Docker 权限。
+
+首次升级到包含该面板的版本（`v1.5.0`）仍需要在 GitHub Actions 手动运行一次 `Deploy production`；部署完成并进入新后台后，后续版本才可以在「系统设置 → 版本与更新」中直接触发整站更新。
+
+#### 客户端更新
 
 后台「系统设置 → 版本与更新」控制 iOS / Android 的发布信息：是否启用更新检查、是否强制旧版本更新、更新说明、最新版本、最低支持版本和下载地址。最低版本不能高于最新版本；版本格式为 `1.2.3`（也接受 `v1.2.3` 或 `1.2`）。保存后立即生效，多实例最多 10 秒同步。
 
@@ -259,7 +286,7 @@ GET /api/app/update?platform=ios&version=1.2.3
   "enabled": true,
   "platform": "ios",
   "currentVersion": "1.2.3",
-  "latestVersion": "1.4.0",
+  "latestVersion": "1.5.0",
   "minimumVersion": "1.3.0",
   "updateAvailable": true,
   "required": true,
@@ -386,7 +413,7 @@ GET /api/app/update?platform=ios&version=1.2.3
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | 留空 | Google OAuth Web 客户端凭证；两项都配置后显示 Google 登录入口 |
 | `GOOGLE_PROXY` | 留空 | 服务端访问 Google 令牌 / 用户信息接口时的代理；留空时读取 `HTTPS_PROXY` / `https_proxy` |
 | `GITHUB_RESOLVE_IP` | 留空 | 无代理时可访问的 github.com IP，作为直连备选 |
-| `TRUST_PROXY` | `false` | 是否信任代理提供的客户端 IP |
+| `TRUST_PROXY` | `false` | 是否信任代理提供的客户端 IP 与 `X-Forwarded-Proto` 协议头 |
 
 除 `HOST`、`PORT`、`DATABASE_URL`、`SETUP_TOKEN` 外，上表配置在首次启动时会一次性写入主数据库（默认 SQLite）；之后修改 `.env` 不会覆盖数据库中的值，请在后台“系统设置”中调整，或使用“恢复默认”重新回落到 `.env` / 内置默认值。
 
@@ -561,15 +588,15 @@ docker compose up -d
 | `Release image` | 推送 `v*.*.*` tag | 再次测试后构建并推送 GHCR 镜像，同时生成版本 tag、`sha-*` tag 和稳定版的 `latest` |
 | `Deploy production` | 手动触发并审批 | SSH 到服务器，检出指定 tag，调用部署脚本替换容器 |
 
-镜像名格式为 `ghcr.io/plunjoin/olai:<版本>`。例如 `v1.4.0` 会生成：
+镜像名格式为 `ghcr.io/plunjoin/olai:<版本>`。例如 `v1.5.0` 会生成：
 
 ```text
-ghcr.io/plunjoin/olai:1.4.0
+ghcr.io/plunjoin/olai:1.5.0
 ghcr.io/plunjoin/olai:sha-<提交短哈希>
 ghcr.io/plunjoin/olai:latest
 ```
 
-预发布 tag（如 `v1.4.0-rc.1`）不会覆盖 `latest`。
+预发布 tag（如 `v1.5.0-rc.1`）不会覆盖 `latest`。
 
 #### 服务器首次准备
 
@@ -596,11 +623,11 @@ ghcr.io/plunjoin/olai:latest
 发布新版本：
 
 ```bash
-git tag -a v1.4.0 -m "v1.4.0"
-git push origin v1.4.0
+git tag -a v1.5.0 -m "v1.5.0"
+git push origin v1.5.0
 ```
 
-等待 `Release image` 成功后，在 Actions 中手动运行 `Deploy production`，输入 `v1.4.0` 并审批。部署脚本会读取当前容器镜像、停止容器做 SQLite 数据卷备份、拉取新镜像、替换 Compose 服务，并最多等待 180 秒健康检查。
+等待 `Release image` 成功后，在 Actions 中手动运行 `Deploy production` 并输入 `v1.5.0`；也可以在后台「系统设置 → 版本与更新」的整站更新面板选择该 tag 并点击「更新整站」。两种方式都会在配置了 `production` 环境保护时等待审批。部署脚本会读取当前容器镜像、停止容器做 SQLite 数据卷备份、拉取新镜像、替换 Compose 服务，并最多等待 180 秒健康检查。
 
 部署状态保存在：
 
@@ -622,14 +649,14 @@ docker run --rm \
   --entrypoint sh \
   -v olai-data:/data \
   -v "$PWD/backups:/backup" \
-  ghcr.io/plunjoin/olai:1.4.0 \
+  ghcr.io/plunjoin/olai:1.5.0 \
   -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/<备份文件>.tar.gz -C /data'
 docker compose up -d
 ```
 
 PostgreSQL 部署必须在发布前自行做 `pg_dump`，不能依赖 `olai-data` 卷备份。生产环境还应把数据卷和数据库备份复制到另一台机器或对象存储。
 
-后台「系统设置 → 版本与更新」只控制 iOS / Android 客户端的更新提示与下载地址。服务端升级不会从管理后台直接触发：生产环境运行的是编译好的静态二进制镜像，容器内没有 Go 工具链，更新由 tag → GHCR 镜像 → Compose 替换完成。
+后台「系统设置 → 版本与更新」同时包含整站更新和 iOS / Android 客户端更新。整站更新不会在容器内直接替换进程或操作 Docker：它通过 GitHub Actions 触发 `Deploy production`，由 Actions 和服务器上的部署脚本完成 tag → GHCR 镜像 → Compose 替换；生产环境仍运行编译好的静态二进制镜像，容器内没有 Go 工具链。
 
 ### 反向代理与来源校验
 
@@ -637,7 +664,9 @@ PostgreSQL 部署必须在发布前自行做 `pg_dump`，不能依赖 `olai-data
 
 通过反向代理部署时，设置 `SITE_ORIGIN` 为公开站点的完整 origin，不含路径和末尾斜杠（例如 `https://olai.example.com`）。应用自行校验所有变更请求的 `Origin`（`internal/server` 的 `sameOrigin` 与各接口处理器），因此无需在构建时写入域名。
 
-仅当可信代理覆盖 `X-Forwarded-For`、且外部不能直接连接应用时，启用 `TRUST_PROXY=true`。默认拒绝带有未受信任转发 IP 标头的游客生成及登录请求，避免伪造 IP 改变额度。
+使用 `-tags dev` 的开发构建会忽略数据库 / 环境变量里的 `SITE_ORIGIN`，一律按请求 Host 校验来源并生成媒体链接；因此在任意端口启动开发服务器都不必改设置，生产二进制仍使用配置的公开地址。
+
+仅当可信代理覆盖 `X-Forwarded-For` / `X-Forwarded-Proto`、且外部不能直接连接应用时，启用 `TRUST_PROXY=true`。默认拒绝带有未受信任转发 IP 标头的游客生成及登录请求，避免伪造 IP 改变额度；启用后 `X-Forwarded-Proto: https` 也会让服务按 HTTPS 处理会话 Cookie（未配置 `SITE_ORIGIN` 时尤其重要）。
 
 代理需保留原始 `Host` 并传递 `X-Forwarded-Proto`（`https` 时尤为重要），否则未配置 `SITE_ORIGIN` 时应用无法还原浏览器看到的来源并会拒绝请求：
 

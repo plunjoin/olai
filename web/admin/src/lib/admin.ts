@@ -36,6 +36,7 @@ export const ADMIN_ACTIONS: Record<string, string> = {
   'models.update': t('修改模型'), 'models.sync': t('同步模型'),
   'report.resolve': t('处理举报'), 'report.dismiss': t('忽略举报'),
   'gallery.hide': t('隐藏作品'), 'gallery.unhide': t('恢复作品显示'),
+  'site.update': t('更新整站'),
   'admin.login': t('后台登录'), 'admin.password': t('修改后台密码'),
 };
 

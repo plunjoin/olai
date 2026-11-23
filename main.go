@@ -39,19 +39,14 @@ func main() {
 	}
 	defer db.Close()
 
-	portalDist, err := fs.Sub(webui.PortalFS, "portal/dist")
-	if err != nil {
-		log.Fatalf("portal 产物不可用：%v", err)
-	}
-	adminDist, err := fs.Sub(webui.AdminFS, "admin/dist")
-	if err != nil {
-		log.Fatalf("admin 产物不可用：%v", err)
-	}
-	frontends, err := server.LoadFrontends(portalDist, adminDist)
+	// 生产构建读嵌入 dist；-tags dev 返回 nil，页面由 DevServer 现场编译。
+	frontends, err := loadFrontends()
 	if err != nil {
 		log.Fatalf("前端运行时初始化失败：%v", err)
 	}
-	defer frontends.Close()
+	if frontends != nil {
+		defer frontends.Close()
+	}
 
 	public, err := fs.Sub(publicAssets, "public")
 	if err != nil {
@@ -87,6 +82,12 @@ func main() {
 	}
 
 	app := server.New(cfg, db, frontends, public)
+	// -tags dev：在 settings.Refresh 之后启动 portal/admin 开发服务器；
+	// 正式构建里 AttachDev 是空操作。
+	if err := app.AttachDev("web/portal", "web/admin"); err != nil {
+		log.Fatalf("开发前端启动失败：%v", err)
+	}
+	defer app.CloseDev()
 
 	httpServer := &http.Server{
 		Addr:              cfg.Addr(),
@@ -108,4 +109,21 @@ func main() {
 		log.Fatalf("服务启动失败：%v", err)
 	}
 	fmt.Println("Olai 已停止。")
+}
+
+// loadFrontends 读取嵌入的 dist 产物并启动生产 SSR 池。开发构建不读 dist，
+// 页面与 SSR 都由 DevServer 现场编译，因此可以在没有 dist 的源码树上启动。
+func loadFrontends() (*server.Frontends, error) {
+	if server.DevBuild() {
+		return nil, nil
+	}
+	portalDist, err := fs.Sub(webui.PortalFS, "portal/dist")
+	if err != nil {
+		return nil, fmt.Errorf("portal 产物不可用：%w", err)
+	}
+	adminDist, err := fs.Sub(webui.AdminFS, "admin/dist")
+	if err != nil {
+		return nil, fmt.Errorf("admin 产物不可用：%w", err)
+	}
+	return server.LoadFrontends(portalDist, adminDist)
 }

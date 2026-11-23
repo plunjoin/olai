@@ -53,13 +53,14 @@ const (
 )
 
 var (
-	recordKeyRE  = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	uuidPattern  = `[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}`
-	handleRE     = regexp.MustCompile(`(?i)^/api/media/(` + uuidPattern + `)$`)
-	publicRE     = regexp.MustCompile(`^([a-f0-9]{64})\.(url|coverUrl|lyricsUrl|lrcUrl)\.(` + uuidPattern + `|inline-[a-f0-9]{64})$`)
-	dataHeaderRE = regexp.MustCompile(`(?i)^data:([a-z0-9.+/-]+)(?:;charset=[a-z0-9_-]+)?;base64$`)
-	base64RE     = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
-	durationRE   = regexp.MustCompile(`^(?:auto|1:1|16:9|9:16|4:3|3:4|3:2|2:3|21:9)$`)
+	folderIDPattern = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
+	recordKeyRE     = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	uuidPattern     = `[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}`
+	handleRE        = regexp.MustCompile(`(?i)^/api/media/(` + uuidPattern + `)$`)
+	publicRE        = regexp.MustCompile(`^([a-f0-9]{64})\.(url|coverUrl|lyricsUrl|lrcUrl)\.(` + uuidPattern + `|inline-[a-f0-9]{64})$`)
+	dataHeaderRE    = regexp.MustCompile(`(?i)^data:([a-z0-9.+/-]+)(?:;charset=[a-z0-9_-]+)?;base64$`)
+	base64RE        = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
+	durationRE      = regexp.MustCompile(`^(?:auto|1:1|16:9|9:16|4:3|3:4|3:2|2:3|21:9)$`)
 )
 
 var fields = []string{"url", "coverUrl", "lyricsUrl", "lrcUrl"}
@@ -401,7 +402,7 @@ func (m *Manager) publicRecord(ctx context.Context, key string) (*store.RecordWi
 	if err != nil {
 		return nil, nil, unavailable()
 	}
-	if record.Store != "assets" || record.Body == "" || len(record.Body) > maxRecordChars {
+	if record.Store != "assets" || record.Visibility == "private" || record.Body == "" || len(record.Body) > maxRecordChars {
 		return nil, nil, notFound()
 	}
 	hidden, err := m.DB.IsGalleryHidden(ctx, key)
@@ -556,7 +557,11 @@ func (m *Manager) projectCandidates(ctx context.Context, items []candidate, view
 			}
 		}
 		author := authors[item.record.UserID]
-		asset["author"] = publicAuthor(author.Name, author.Avatar)
+		handle, err := m.authorHandle(ctx, item.record.UserID, author.Handle)
+		if err != nil {
+			return nil, unavailable()
+		}
+		asset["author"] = publicAuthor(item.record.UserID, author.Name, author.Avatar, handle)
 		metric := stats[item.record.Key]
 		asset["views"] = metric.Views
 		asset["downloads"] = metric.Downloads
@@ -599,7 +604,7 @@ func (m *Manager) List(ctx context.Context, r *http.Request, viewer string) (map
 	origin := sourceOrigin(r, m.Settings)
 	secrets := m.AI.PrivateValues(nil)
 	if favoritesOnly {
-		return m.listFavorites(ctx, viewer, offset, limit, origin, secrets, hidden)
+		return m.listFavorites(ctx, viewer, viewer, r.URL.Query().Get("folder"), offset, limit, origin, secrets, hidden, true)
 	}
 
 	target := int(offset + limit + 1)
@@ -671,8 +676,20 @@ func (m *Manager) List(ctx context.Context, r *http.Request, viewer string) (map
 }
 
 // listFavorites serves the account-backed favorites view in favorite order.
-func (m *Manager) listFavorites(ctx context.Context, viewer string, offset, limit int64, origin string, secrets []string, hidden map[string]bool) (map[string]any, error) {
-	keys, total, err := m.DB.GalleryFavoriteKeys(ctx, viewer, int(limit), int(offset))
+// owner selects whose favorites are listed; viewer decides the favorite flags.
+// Private works stay visible only in the owner's own library view.
+func (m *Manager) listFavorites(ctx context.Context, owner, viewer, folder string, offset, limit int64, origin string, secrets []string, hidden map[string]bool, includePrivate bool) (map[string]any, error) {
+	if folder != "" && !folderIDPattern.MatchString(folder) {
+		return nil, errorf(400, "GALLERY_FOLDER", "收藏分类无效。")
+	}
+	var keys []string
+	var total int64
+	var err error
+	if includePrivate {
+		keys, total, err = m.DB.GalleryFavoriteKeysIn(ctx, owner, folder, int(limit), int(offset))
+	} else {
+		keys, total, err = m.DB.GalleryFavoriteKeysPublicIn(ctx, owner, folder, int(limit), int(offset))
+	}
 	if err != nil {
 		return nil, unavailable()
 	}
@@ -683,7 +700,7 @@ func (m *Manager) listFavorites(ctx context.Context, viewer string, offset, limi
 	items := make([]candidate, 0, len(keys))
 	for _, key := range keys {
 		record, ok := records[key]
-		if !ok || hidden[key] || !recordKeyRE.MatchString(record.Key) || record.Body == "" || len(record.Body) > maxRecordChars {
+		if !ok || hidden[key] || (!includePrivate && record.Visibility == "private") || !recordKeyRE.MatchString(record.Key) || record.Body == "" || len(record.Body) > maxRecordChars {
 			continue
 		}
 		var value map[string]any
@@ -697,8 +714,15 @@ func (m *Manager) listFavorites(ctx context.Context, viewer string, offset, limi
 		return nil, unavailable()
 	}
 	favorites := map[string]bool{}
-	for _, item := range items {
-		favorites[item.record.Key] = true
+	if viewer == owner {
+		for _, item := range items {
+			favorites[item.record.Key] = true
+		}
+	} else if viewer != "" {
+		favorites, err = m.DB.GalleryFavoriteSet(ctx, viewer, candidateKeys(items))
+		if err != nil {
+			return nil, unavailable()
+		}
 	}
 	assets, err := m.projectCandidates(ctx, items, viewer, stats, favorites, secrets)
 	if err != nil {
@@ -709,6 +733,91 @@ func (m *Manager) listFavorites(ctx context.Context, viewer string, offset, limi
 		nextOffset = offset + limit
 	}
 	return map[string]any{"records": assets, "nextOffset": nextOffset, "favoriteTotal": total}, nil
+}
+
+// ListByOwner returns one page of an account's public, completed works. The
+// caller has already decided the visitor may see them.
+func (m *Manager) ListByOwner(ctx context.Context, r *http.Request, owner, viewer string) (map[string]any, error) {
+	if err := m.Media.AssertMediaOrigin(r, false); err != nil {
+		return nil, err
+	}
+	offset, err := parameter(r, "offset", 0, 0, maxListOffset)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := parameter(r, "limit", batchSize, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := m.DB.PublicAssetKeys(ctx, owner, int(limit)+1, int(offset))
+	if err != nil {
+		return nil, unavailable()
+	}
+	hidden, err := m.DB.GalleryHiddenKeys(ctx)
+	if err != nil {
+		return nil, unavailable()
+	}
+	records, err := m.DB.RecordsByKeys(ctx, keys)
+	if err != nil {
+		return nil, unavailable()
+	}
+	origin := sourceOrigin(r, m.Settings)
+	items := make([]candidate, 0, len(keys))
+	for _, key := range keys {
+		record, ok := records[key]
+		if !ok || hidden[key] || record.Visibility == "private" || !recordKeyRE.MatchString(record.Key) || record.Body == "" || len(record.Body) > maxRecordChars {
+			continue
+		}
+		var value map[string]any
+		if err := json.Unmarshal([]byte(record.Body), &value); err != nil || !completed(value) {
+			continue
+		}
+		items = append(items, candidate{record: record, value: value, refs: referenceList(value, origin)})
+	}
+	return m.pageOf(ctx, r, items, viewer, offset, limit, int64(len(keys)) > limit)
+}
+
+// ListFavoritesOf returns one account's favorites for a visitor who is allowed
+// to see them. Favorites of works that are no longer public are left out.
+func (m *Manager) ListFavoritesOf(ctx context.Context, r *http.Request, owner, viewer string) (map[string]any, error) {
+	if err := m.Media.AssertMediaOrigin(r, false); err != nil {
+		return nil, err
+	}
+	offset, err := parameter(r, "offset", 0, 0, maxListOffset)
+	if err != nil {
+		return nil, err
+	}
+	limit, err := parameter(r, "limit", batchSize, 1, 100)
+	if err != nil {
+		return nil, err
+	}
+	hidden, err := m.DB.GalleryHiddenKeys(ctx)
+	if err != nil {
+		return nil, unavailable()
+	}
+	origin := sourceOrigin(r, m.Settings)
+	secrets := m.AI.PrivateValues(nil)
+	return m.listFavorites(ctx, owner, viewer, "", offset, limit, origin, secrets, hidden, false)
+}
+
+func (m *Manager) pageOf(ctx context.Context, r *http.Request, items []candidate, viewer string, offset, limit int64, more bool) (map[string]any, error) {
+	stats, err := m.DB.GalleryStatsFor(ctx, candidateKeys(items))
+	if err != nil {
+		return nil, unavailable()
+	}
+	favorites, err := m.DB.GalleryFavoriteSet(ctx, viewer, candidateKeys(items))
+	if err != nil {
+		return nil, unavailable()
+	}
+	assets, err := m.projectCandidates(ctx, items, viewer, stats, favorites, m.AI.PrivateValues(nil))
+	if err != nil {
+		return nil, err
+	}
+	var nextOffset any
+	if more {
+		nextOffset = offset + limit
+	}
+	return map[string]any{"records": assets, "nextOffset": nextOffset}, nil
 }
 
 // SetFavorite adds or removes one account-backed favorite. Public visibility
@@ -877,14 +986,36 @@ func (m *Manager) Report(ctx context.Context, r *http.Request, user *store.Sessi
 
 // ---- public authors and comments ----
 
-// publicAvatarThemes mirrors the preset avatars in lib/profile.ts. Uploaded
-// avatars point at owner-scoped media, so they are never published here.
+// publicAvatarThemes mirrors the preset avatars in lib/profile.ts.
 var publicAvatarThemes = map[string]bool{
 	"ocean": true, "sunset": true, "mint": true,
 	"violet": true, "amber": true, "slate": true,
 }
 
-func publicAuthor(name, avatar string) map[string]any {
+// avatarIDPattern is the uuid stored after "upload:" for a cropped avatar.
+var avatarIDPattern = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
+
+// publicAvatar keeps a preset theme as-is. An uploaded portrait is rewritten
+// to the public gallery media route, because /api/media only serves the owner.
+func publicAvatar(userID, avatar string) string {
+	if publicAvatarThemes[avatar] {
+		return avatar
+	}
+	const prefix = "upload:"
+	if !strings.HasPrefix(avatar, prefix) {
+		return ""
+	}
+	id := strings.ToLower(strings.TrimPrefix(avatar, prefix))
+	if !avatarIDPattern.MatchString(id) {
+		return ""
+	}
+	return "upload:gallery." + userID + "." + id
+}
+
+// PublicAuthorName is the name shown on a work, a comment and a profile.
+// An account that set neither a nickname nor a usable mailbox reads as a
+// generic member rather than a blank.
+func PublicAuthorName(name string) string {
 	clean := strings.Map(func(value rune) rune {
 		if unicode.IsControl(value) {
 			return -1
@@ -894,16 +1025,48 @@ func publicAuthor(name, avatar string) map[string]any {
 	if clean == "" {
 		clean = "Olai 用户"
 	}
-	if !publicAvatarThemes[avatar] {
-		avatar = ""
+	return truncate(clean, 40)
+}
+
+// PublicAvatar is the avatar value the portal can render for any visitor.
+func PublicAvatar(userID, avatar string) string {
+	return publicAvatar(userID, avatar)
+}
+
+func publicAuthor(userID, name, avatar, handle string) map[string]any {
+	out := map[string]any{"name": PublicAuthorName(name), "avatar": publicAvatar(userID, avatar)}
+	if handle != "" {
+		out["id"] = handle
 	}
-	return map[string]any{"name": truncate(clean, 40), "avatar": avatar}
+	return out
+}
+
+// authorHandle returns the saved profile handle, creating the default profile
+// when the account has never opened its privacy settings. Without that row the
+// avatar and name have nowhere to link.
+func (m *Manager) authorHandle(ctx context.Context, userID, known string) (string, error) {
+	if known != "" || userID == "" {
+		return known, nil
+	}
+	clean := strings.Map(func(value rune) rune {
+		if value >= '0' && value <= '9' || value >= 'a' && value <= 'z' {
+			return value
+		}
+		return -1
+	}, strings.ToLower(userID))
+	if len(clean) > 12 {
+		clean = clean[:12]
+	}
+	if clean == "" {
+		clean = "user"
+	}
+	return m.DB.EnsureProfile(ctx, userID, "u-"+clean)
 }
 
 func commentPayload(comment store.GalleryComment) map[string]any {
 	return map[string]any{
 		"id": comment.ID, "body": comment.Body, "createdAt": comment.CreatedAt,
-		"author": publicAuthor(comment.AuthorName, comment.AuthorAvatar),
+		"author": publicAuthor(comment.UserID, comment.AuthorName, comment.AuthorAvatar, comment.AuthorHandle),
 	}
 }
 
@@ -929,6 +1092,16 @@ func (m *Manager) ListComments(ctx context.Context, r *http.Request, id string) 
 		return nil, unavailable()
 	}
 	payload := make([]any, 0, len(comments))
+	for i := range comments {
+		if comments[i].AuthorHandle != "" || comments[i].UserID == "" {
+			continue
+		}
+		handle, err := m.authorHandle(ctx, comments[i].UserID, "")
+		if err != nil {
+			return nil, unavailable()
+		}
+		comments[i].AuthorHandle = handle
+	}
 	for _, comment := range comments {
 		payload = append(payload, commentPayload(comment))
 	}
@@ -989,13 +1162,18 @@ func (m *Manager) AddComment(ctx context.Context, r *http.Request, user *store.S
 	if user.Name != nil {
 		name = *user.Name
 	}
+	name = store.DisplayName(name, user.Email)
 	if user.Avatar != nil {
 		avatar = *user.Avatar
+	}
+	handle, err := m.authorHandle(ctx, user.ID, "")
+	if err != nil {
+		return nil, unavailable()
 	}
 	return map[string]any{
 		"comment": map[string]any{
 			"id": commentID, "body": body, "createdAt": now.UnixMilli(),
-			"author": publicAuthor(name, avatar),
+			"author": publicAuthor(user.ID, name, avatar, handle),
 		},
 		"total": total,
 	}, nil
@@ -1034,7 +1212,7 @@ func (m *Manager) ImportFavorites(ctx context.Context, viewer string, ids []stri
 	imported := 0
 	for _, key := range keys {
 		record, ok := records[key]
-		if !ok || hidden[key] || record.Store != "assets" || record.Body == "" || len(record.Body) > maxRecordChars {
+		if !ok || hidden[key] || record.Store != "assets" || record.Visibility == "private" || record.Body == "" || len(record.Body) > maxRecordChars {
 			continue
 		}
 		var value map[string]any
@@ -1050,6 +1228,52 @@ func (m *Manager) ImportFavorites(ctx context.Context, viewer string, ids []stri
 		}
 	}
 	return imported, nil
+}
+
+// publishedAvatarID splits "<user id>.<media uuid>" from the public avatar route.
+var publishedAvatarID = regexp.MustCompile(`^([A-Za-z0-9_-]{1,100})\.([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$`)
+
+// ServeAvatar streams the portrait an account chose, so visitors see the same
+// picture the owner sees. It only serves a media row the account currently
+// points at, and only one that was stored as an avatar image.
+func (m *Manager) ServeAvatar(ctx context.Context, w http.ResponseWriter, r *http.Request, identity media.Identity) error {
+	if err := m.Media.AssertOrigin(r, identity.Origin, false); err != nil {
+		return err
+	}
+	if !m.Media.Enabled() {
+		return &media.Error{Status: 503, Code: "MEDIA_UNAVAILABLE", Message: "私有媒体服务暂不可用。"}
+	}
+	raw := r.PathValue("id")
+	dot := strings.LastIndex(raw, ".")
+	if dot > 0 {
+		raw = raw[:dot] + strings.ToLower(raw[dot:])
+	}
+	match := publishedAvatarID.FindStringSubmatch(raw)
+	if match == nil {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	userID, mediaID := match[1], match[2]
+	owner, err := m.DB.UserByID(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	if err != nil {
+		return &media.Error{Status: 503, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}
+	}
+	if owner.Avatar == nil || *owner.Avatar != "upload:"+mediaID {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	row, err := m.DB.MediaByID(ctx, mediaID)
+	if errors.Is(err, store.ErrNotFound) {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	if err != nil {
+		return &media.Error{Status: 503, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}
+	}
+	if row.Owner != "user:"+userID || row.AttachmentID != "avatar" || row.Size > 2*1024*1024 || !strings.HasPrefix(row.Mime, "image/") {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	return m.Media.ServeMedia(ctx, w, r, identity, row)
 }
 
 // ServePublished streams one exact whitelisted field of a completed record.
@@ -1073,7 +1297,7 @@ func (m *Manager) ServePublished(ctx context.Context, w http.ResponseWriter, r *
 	if err != nil {
 		return &media.Error{Status: 503, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}
 	}
-	if record.Store != "assets" || record.Body == "" || len(record.Body) > maxRecordChars {
+	if record.Store != "assets" || record.Visibility == "private" || record.Body == "" || len(record.Body) > maxRecordChars {
 		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
 	}
 	hidden, err := m.DB.IsGalleryHidden(ctx, key)

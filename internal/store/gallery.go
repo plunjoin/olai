@@ -54,7 +54,7 @@ func (d *DB) RecordsByKeys(ctx context.Context, keys []string) (map[string]Recor
 			end = len(keys)
 		}
 		list, args := galleryArgList(keys[start:end])
-		rows, err := d.QueryContext(ctx, `SELECT key, user_id, store, record_id, data, updated_at
+		rows, err := d.QueryContext(ctx, `SELECT key, user_id, store, record_id, data, updated_at, visibility
 			FROM studio_records WHERE key IN (`+list+`)`, args...)
 		if err != nil {
 			return nil, err
@@ -62,7 +62,7 @@ func (d *DB) RecordsByKeys(ctx context.Context, keys []string) (map[string]Recor
 		var records []StudioRecord
 		for rows.Next() {
 			var record StudioRecord
-			if err := rows.Scan(&record.Key, &record.UserID, &record.Store, &record.RecordID, &record.Data, &record.UpdatedAt); err != nil {
+			if err := rows.Scan(&record.Key, &record.UserID, &record.Store, &record.RecordID, &record.Data, &record.UpdatedAt, &record.Visibility); err != nil {
 				rows.Close()
 				return nil, err
 			}
@@ -108,28 +108,73 @@ func (d *DB) RemoveGalleryFavorite(ctx context.Context, userID, recordKey string
 
 // GalleryFavoriteTotal counts only favorites the gallery can still list:
 // deleted records and takedowns must not inflate the portal's 收藏 badge.
+// A folder limits the count to that folder; an empty folder is the whole list.
 func (d *DB) GalleryFavoriteTotal(ctx context.Context, userID string) (int64, error) {
+	return d.galleryFavoriteTotalIn(ctx, userID, "", false)
+}
+
+func (d *DB) GalleryFavoriteTotalIn(ctx context.Context, userID, folderID string) (int64, error) {
+	return d.galleryFavoriteTotalIn(ctx, userID, folderID, false)
+}
+
+func (d *DB) galleryFavoriteTotalIn(ctx context.Context, userID, folderID string, publicOnly bool) (int64, error) {
+	where := `f.user_id = ?`
+	args := []any{userID}
+	if folderID != "" {
+		where += ` AND f.folder_id = ?`
+		args = append(args, folderID)
+	}
+	if publicOnly {
+		where += ` AND r.visibility = 'public'`
+	}
 	var total int64
 	err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM gallery_favorites f
 		JOIN studio_records r ON r.key = f.record_key AND r.store = 'assets'
-		WHERE f.user_id = ? AND NOT EXISTS (
+		WHERE `+where+` AND NOT EXISTS (
 			SELECT 1 FROM gallery_hidden h WHERE h.record_key = f.record_key
-		)`, userID).Scan(&total)
+		)`, args...).Scan(&total)
 	return total, err
 }
 
 // GalleryFavoriteKeys returns one page of favorited record keys, newest first.
 func (d *DB) GalleryFavoriteKeys(ctx context.Context, userID string, limit, offset int) ([]string, int64, error) {
-	total, err := d.GalleryFavoriteTotal(ctx, userID)
+	return d.GalleryFavoriteKeysIn(ctx, userID, "", limit, offset)
+}
+
+// GalleryFavoriteKeysIn is GalleryFavoriteKeys limited to one folder. An empty
+// folderID is the whole list, in the same newest-first order.
+func (d *DB) GalleryFavoriteKeysIn(ctx context.Context, userID, folderID string, limit, offset int) ([]string, int64, error) {
+	return d.galleryFavoriteKeysIn(ctx, userID, folderID, limit, offset, false)
+}
+
+// GalleryFavoriteKeysPublicIn is the public-profile variant: private works
+// are excluded before pagination, so neither the page nor its total reveals
+// how many favorites the owner keeps private.
+func (d *DB) GalleryFavoriteKeysPublicIn(ctx context.Context, userID, folderID string, limit, offset int) ([]string, int64, error) {
+	return d.galleryFavoriteKeysIn(ctx, userID, folderID, limit, offset, true)
+}
+
+func (d *DB) galleryFavoriteKeysIn(ctx context.Context, userID, folderID string, limit, offset int, publicOnly bool) ([]string, int64, error) {
+	total, err := d.galleryFavoriteTotalIn(ctx, userID, folderID, publicOnly)
 	if err != nil {
 		return nil, 0, err
 	}
+	where := `f.user_id = ?`
+	args := []any{userID}
+	if folderID != "" {
+		where += ` AND f.folder_id = ?`
+		args = append(args, folderID)
+	}
+	if publicOnly {
+		where += ` AND r.visibility = 'public'`
+	}
+	args = append(args, limit, offset)
 	rows, err := d.QueryContext(ctx, `SELECT f.record_key FROM gallery_favorites f
 		JOIN studio_records r ON r.key = f.record_key AND r.store = 'assets'
-		WHERE f.user_id = ? AND NOT EXISTS (
+		WHERE `+where+` AND NOT EXISTS (
 			SELECT 1 FROM gallery_hidden h WHERE h.record_key = f.record_key
 		)
-		ORDER BY f.created_at DESC, f.record_key LIMIT ? OFFSET ?`, userID, limit, offset)
+		ORDER BY f.created_at DESC, f.record_key LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -418,12 +463,13 @@ func (d *DB) CountOpenGalleryReports(ctx context.Context) (int64, error) {
 
 // ---- public authors and comments ----
 
-// GalleryAuthor is the publishable part of one portal account. Uploaded
-// avatars stay out of it: /api/media is owner-scoped, so only preset theme ids
-// are meaningful to other visitors.
+// GalleryAuthor is the publishable part of one portal account. Name is the
+// nickname, or the mailbox name before @ when the nickname was left empty;
+// the domain never leaves the database.
 type GalleryAuthor struct {
 	Name   string
 	Avatar string
+	Handle string
 }
 
 // GalleryAuthors resolves display names for a page of works in bounded
@@ -445,18 +491,18 @@ func (d *DB) GalleryAuthors(ctx context.Context, ids []string) (map[string]Galle
 			end = len(unique)
 		}
 		list, args := galleryArgList(unique[start:end])
-		rows, err := d.QueryContext(ctx, `SELECT id, name, avatar FROM users WHERE id IN (`+list+`)`, args...)
+		rows, err := d.QueryContext(ctx, `SELECT u.id, u.name, u.email, u.avatar, COALESCE(p.handle, '') FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id WHERE u.id IN (`+list+`)`, args...)
 		if err != nil {
 			return nil, err
 		}
 		for rows.Next() {
-			var id string
+			var id, email, handle string
 			var name, avatar sql.NullString
-			if err := rows.Scan(&id, &name, &avatar); err != nil {
+			if err := rows.Scan(&id, &name, &email, &avatar, &handle); err != nil {
 				rows.Close()
 				return nil, err
 			}
-			out[id] = GalleryAuthor{Name: name.String, Avatar: avatar.String}
+			out[id] = GalleryAuthor{Name: DisplayName(name.String, email), Avatar: avatar.String, Handle: handle}
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
@@ -467,27 +513,34 @@ func (d *DB) GalleryAuthors(ctx context.Context, ids []string) (map[string]Galle
 	return out, nil
 }
 
-// GalleryComment is one public comment joined with its author's display name.
+// GalleryComment is one public comment joined with its author's display name
+// and profile handle. The handle is what a visitor follows to the profile.
 type GalleryComment struct {
 	ID           string
 	RecordKey    string
 	UserID       string
 	Body         string
 	AuthorName   string
+	AuthorEmail  string
 	AuthorAvatar string
+	AuthorHandle string
 	CreatedAt    int64
 }
 
 const galleryCommentSelect = `SELECT c.id, c.record_key, c.user_id, c.body, c.created_at,
-	COALESCE(u.name, ''), COALESCE(u.avatar, '')
-	FROM gallery_comments c LEFT JOIN users u ON u.id = c.user_id`
+	COALESCE(u.name, ''), COALESCE(u.email, ''), COALESCE(u.avatar, ''), COALESCE(p.handle, '')
+	FROM gallery_comments c
+	LEFT JOIN users u ON u.id = c.user_id
+	LEFT JOIN user_profiles p ON p.user_id = c.user_id`
 
 func scanGalleryComment(row interface{ Scan(...any) error }) (*GalleryComment, error) {
 	var comment GalleryComment
 	if err := row.Scan(&comment.ID, &comment.RecordKey, &comment.UserID, &comment.Body,
-		&comment.CreatedAt, &comment.AuthorName, &comment.AuthorAvatar); err != nil {
+		&comment.CreatedAt, &comment.AuthorName, &comment.AuthorEmail, &comment.AuthorAvatar, &comment.AuthorHandle); err != nil {
 		return nil, err
 	}
+	comment.AuthorName = DisplayName(comment.AuthorName, comment.AuthorEmail)
+	comment.AuthorEmail = ""
 	return &comment, nil
 }
 

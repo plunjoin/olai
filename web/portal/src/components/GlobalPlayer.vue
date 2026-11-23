@@ -44,7 +44,10 @@
 
       <div class="floating-video-stage" @click="hasVideo && toggle()">
         <div ref="videoStageHost" class="video-element-host">
-          <Teleport :to="videoHost || 'body'" :disabled="!videoHost">
+          <!-- 没有视频时服务端不会渲染 Teleport 的子节点，客户端 vdom 却会，
+               造成 hydration children mismatch。把 video 本身也按同一个条件
+               v-if 掉，SSR 与客户端首帧都为空；真正播放时再挂载。 -->
+          <Teleport v-if="hasVideo || videoPreview" :to="videoHost" :disabled="!videoHost">
             <video
               ref="videoRef"
               :src="videoSrc"
@@ -1340,6 +1343,10 @@ watch(videoHost, async () => {
   if (videoPreview.value) return;
   restoreVideoPlayback();
 });
+
+// video 现在按需挂载：元素出现/消失时同步给全局播放器，mediaElement 才不会
+// 一直停在 onMounted 时的 null。
+watch(videoRef, element => attachVideo(element), { flush: 'post' });
 
 watch(isMuted, value => {
   if (audioRef.value) audioRef.value.muted = value;

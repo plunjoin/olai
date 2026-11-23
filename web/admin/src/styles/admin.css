@@ -203,5 +203,15 @@
 .adm-report-reason strong { display: block; font-size: 12px; }
 .adm-report-reason small { display: block; margin-top: 2px; color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .adm-report-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+
+.adm-update-meta { margin-bottom: 12px; }
+.adm-update-meta dd { min-width: 0; overflow-wrap: anywhere; }
+.adm-update-actions {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 14px 0 8px;
+}
+.adm-update-actions .adm-select { min-width: 180px; max-width: 280px; }
+.adm-link { color: var(--accent-lime); font-size: 12.5px; text-decoration: none; }
+.adm-link:hover { text-decoration: underline; }
 .adm-report-handler { display: block; margin-top: 3px; color: var(--text-muted); font-size: 10.5px; }
 .adm-report-time { white-space: nowrap; }

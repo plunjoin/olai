@@ -1,3 +1,5 @@
+@import './navigation.css';
+
 /* ==========================================================================
    Works Plaza · Public gallery home
    A quiet, paper-toned browsing surface: slim icon rail, search, waterfall of
@@ -57,81 +59,6 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
   border-right: 1px solid var(--plaza-line);
   backdrop-filter: blur(18px) saturate(130%);
 }
-.plaza-rail-brand {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 15px;
-  transition: background var(--transition), transform var(--transition);
-}
-.plaza-rail-brand:hover { background: var(--plaza-soft); transform: translateY(-1px); }
-.plaza-rail-nav {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 4px 0;
-}
-.plaza-rail-bottom {
-  margin-top: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding-top: 12px;
-  border-top: 1px solid var(--plaza-line);
-}
-.plaza-rail-btn {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
-  color: #5d574e;
-  transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
-}
-.plaza-rail-btn:hover { background: var(--plaza-soft); color: var(--plaza-ink); }
-.plaza-rail-btn.is-active { background: var(--plaza-ink); color: #fff; box-shadow: 0 8px 20px -12px rgba(30, 28, 25, 0.8); }
-.plaza-rail-btn.is-active:hover { background: #000; color: #fff; }
-.plaza-rail-btn[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: calc(100% + 10px);
-  top: 50%;
-  transform: translateY(-50%) translateX(-4px);
-  padding: 5px 9px;
-  border-radius: 8px;
-  background: var(--plaza-ink);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.2;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.14s ease, transform 0.14s ease;
-  z-index: 80;
-}
-.plaza-rail-btn[data-tip]:hover::after,
-.plaza-rail-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateY(-50%) translateX(0); }
-.plaza-rail-avatar {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  margin-top: 2px;
-  border-radius: 50%;
-  border: 1px solid var(--plaza-line);
-  background: #fff;
-  overflow: hidden;
-  transition: border-color 0.16s ease, transform 0.16s ease;
-}
-.plaza-rail-avatar:hover { border-color: var(--plaza-ink); transform: translateY(-1px); }
-.plaza-rail-avatar .account-avatar-media { width: 100%; height: 100%; border-radius: 50%; }
 .plaza-rail-menu-wrap { position: relative; }
 .plaza-rail-menu {
   position: fixed;
@@ -481,7 +408,11 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
   min-width: 0;
   flex: 1;
   color: #49443c;
+  text-decoration: none;
 }
+a.plaza-card-author { cursor: pointer; border-radius: 999px; margin: -3px -6px; padding: 3px 6px; transition: background 0.15s ease; }
+a.plaza-card-author:hover { background: var(--plaza-soft); }
+a.plaza-card-author:hover .plaza-card-author-name { color: var(--plaza-ink); }
 .plaza-card-author .account-avatar-media {
   width: 20px;
   height: 20px;
@@ -773,7 +704,11 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
   gap: 10px;
   padding: 2px 20px 14px;
   flex-shrink: 0;
+  color: inherit;
+  text-decoration: none;
 }
+a.plaza-detail-author { cursor: pointer; border-radius: 14px; margin: -6px 14px 8px; padding: 8px 6px; transition: background 0.15s ease; }
+a.plaza-detail-author:hover { background: var(--plaza-soft); }
 .plaza-detail-author .account-avatar-media { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }
 .plaza-detail-author > div { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
 .plaza-detail-author strong { font-size: 13px; font-weight: 650; color: var(--plaza-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -930,15 +865,28 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
 }
 .plaza-detail-comments-state.is-empty { color: #928b7e; }
 .plaza-detail-comments-state button { color: var(--plaza-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
-.plaza-comment-list { display: flex; flex-direction: column; gap: 15px; }
-.plaza-comment { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; }
-.plaza-comment .account-avatar-media { width: 30px; height: 30px; border-radius: 50%; }
-.plaza-comment > div { min-width: 0; }
-.plaza-comment header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.plaza-comment header strong { font-size: 12px; font-weight: 650; color: var(--plaza-ink); }
-.plaza-comment header time { font-size: 10.5px; color: var(--plaza-faint); }
+.plaza-comment-list { display: flex; flex-direction: column; gap: 16px; }
+.plaza-comment { min-width: 0; }
+.plaza-comment .account-avatar-media { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(30, 28, 25, 0.08); }
+.plaza-comment header { display: flex; align-items: center; gap: 8px; }
+.plaza-comment-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: -3px;
+  padding: 3px;
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
+}
+a.plaza-comment-person { cursor: pointer; transition: background 0.15s ease; }
+a.plaza-comment-person:hover { background: var(--plaza-soft); }
+.plaza-comment-person strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; color: var(--plaza-ink); }
+.plaza-comment header time { margin-left: auto; flex-shrink: 0; font-size: 10.5px; color: var(--plaza-faint); }
 .plaza-comment p {
-  margin-top: 2px;
+  margin-top: 3px;
+  padding-left: 38px;
   color: #514c44;
   font-size: 12.5px;
   line-height: 1.6;
@@ -947,7 +895,7 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
 }
 .plaza-comment-more {
   align-self: flex-start;
-  margin: 0 0 4px 40px;
+  margin: 0 0 4px 38px;
   padding: 5px 10px;
   border-radius: 999px;
   border: 1px solid var(--plaza-line);
@@ -1217,15 +1165,15 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
     background: rgba(253, 252, 249, 0.94);
     box-shadow: 0 -10px 30px -24px rgba(30, 28, 25, 0.5);
   }
-  .plaza-rail-brand,
-  .plaza-rail-bottom > .plaza-rail-btn,
-  .plaza-rail-nav .plaza-rail-btn:nth-child(7) { display: none; }
-  .plaza-rail-nav { flex-direction: row; justify-content: space-around; gap: 2px; width: 100%; padding: 0; }
-  .plaza-rail-bottom { margin: 0; flex: 0 0 auto; flex-direction: row; padding: 0; border: 0; }
-  .plaza-rail-avatar { width: 34px; height: 34px; margin: 0 4px; }
+  .plaza-rail .app-rail { flex-direction: row; gap: 0; }
+  .plaza-rail .app-rail-brand,
+  .plaza-rail .app-rail-download,
+  .plaza-rail .app-rail-nav .app-rail-btn:nth-child(7) { display: none; }
+  .plaza-rail .app-rail-nav { flex: 1 1 auto; flex-direction: row; justify-content: space-around; gap: 2px; width: auto; padding: 0; overflow: visible; }
+  .plaza-rail .app-rail-bottom { flex: 0 0 auto; flex-direction: row; gap: 4px; width: auto; margin: 0; padding: 0; border: 0; }
+  .plaza-rail .app-rail-avatar { width: 34px; height: 34px; margin: 0 4px; }
   .plaza-rail-menu { left: auto; right: 8px; bottom: 70px; }
-  .plaza-rail-btn { width: 40px; height: 40px; }
-  .plaza-rail-btn[data-tip]::after { display: none; }
+  .plaza-rail .app-rail-btn { width: 40px; height: 40px; }
   .plaza-main { margin-left: 0; padding-bottom: 68px; }
   .plaza-topbar { min-height: 64px; gap: 10px; padding: 10px 14px; }
   .plaza-search { height: 44px; padding: 0 14px; }
@@ -1246,7 +1194,7 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
   .plaza-detail-stage-actions { top: 11px; right: 11px; }
   .plaza-detail-stage-actions button, .plaza-detail-back { width: 33px; height: 33px; }
   .plaza-detail-actions { padding: 11px 12px 4px; }
-  .plaza-detail-author { padding: 2px 14px 12px; }
+  a.plaza-detail-author { margin-left: 8px; margin-right: 8px; }
   .plaza-detail-scroll { padding: 0 14px 14px; }
   .plaza-detail-scroll h1 { font-size: 19px; }
   .plaza-detail-composer { bottom: 62px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px)); }

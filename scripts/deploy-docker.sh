@@ -11,7 +11,7 @@ usage() {
 Usage: bash scripts/deploy-docker.sh <image>
 
 Example:
-  bash scripts/deploy-docker.sh ghcr.io/plunjoin/olai:1.4.0
+  bash scripts/deploy-docker.sh ghcr.io/plunjoin/olai:1.5.0
 EOF
 }
 

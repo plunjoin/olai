@@ -49,8 +49,13 @@ type Server struct {
 
 	mux *http.ServeMux
 
-	chatMu     sync.Mutex
-	chatActive map[string]int
+	// dev 只在 -tags dev 构建里由 AttachDev 填充；生产构建始终为 nil，
+	// 相关分支不会触达任何 esbuild/HMR 代码。
+	dev *devFrontends
+
+	chatMu       sync.Mutex
+	chatActive   map[string]int
+	siteUpdateMu sync.Mutex
 
 	// 首页灵感卡片：每天每种语言生成一次，进程内缓存，数据库保存当日结果。
 	suggestMu      sync.Mutex
@@ -123,6 +128,7 @@ func (s *Server) routes() *http.ServeMux {
 	// Public gallery
 	mux.HandleFunc("GET /api/gallery", s.handleGallery)
 	mux.HandleFunc("GET /api/gallery/media/{id}", s.handleGalleryMedia)
+	mux.HandleFunc("GET /api/gallery/avatar/{id}", s.handleGalleryAvatar)
 	mux.HandleFunc("PUT /api/gallery/{id}/favorite", s.handleGalleryFavorite)
 	mux.HandleFunc("DELETE /api/gallery/{id}/favorite", s.handleGalleryFavorite)
 	mux.HandleFunc("POST /api/gallery/favorites/import", s.handleGalleryFavoritesImport)
@@ -131,6 +137,25 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/gallery/comments", s.handleGalleryComments)
 	mux.HandleFunc("POST /api/gallery/comments", s.handleGalleryCommentCreate)
 	mux.HandleFunc("POST /api/gallery/{id}/report", s.handleGalleryReport)
+	mux.HandleFunc("PUT /api/gallery/{id}/visibility", s.handleRecordVisibility)
+	mux.HandleFunc("PUT /api/gallery/{id}/folder", s.handleFavoritePlacement)
+	mux.HandleFunc("GET /api/favorites/folders", s.handleFavoriteFolders)
+	mux.HandleFunc("POST /api/favorites/folders", s.handleFavoriteFolders)
+	mux.HandleFunc("PUT /api/favorites/folders/{id}", s.handleFavoriteFolder)
+	mux.HandleFunc("DELETE /api/favorites/folders/{id}", s.handleFavoriteFolder)
+	// Profiles, follows and direct messages
+	mux.HandleFunc("GET /api/profile", s.handleProfileGet)
+	mux.HandleFunc("PUT /api/profile", s.handleProfileSave)
+	mux.HandleFunc("GET /api/messages", s.handleInbox)
+	mux.HandleFunc("GET /api/users/{handle}", s.handlePublicProfile)
+	mux.HandleFunc("GET /api/users/{handle}/works", s.handleProfileWorks)
+	mux.HandleFunc("GET /api/users/{handle}/favorites", s.handleProfileFavorites)
+	mux.HandleFunc("PUT /api/users/{handle}/follow", s.handleFollow)
+	mux.HandleFunc("DELETE /api/users/{handle}/follow", s.handleFollow)
+	mux.HandleFunc("PUT /api/users/{handle}/block", s.handleBlock)
+	mux.HandleFunc("DELETE /api/users/{handle}/block", s.handleBlock)
+	mux.HandleFunc("GET /api/users/{handle}/messages", s.handleConversation)
+	mux.HandleFunc("POST /api/users/{handle}/messages", s.handleConversation)
 	// Admin console auth (independent of the portal account API)
 	mux.HandleFunc("POST /api/admin/auth/login", s.handleAdminLogin)
 	mux.HandleFunc("POST /api/admin/auth/logout", s.handleAdminLogout)
@@ -151,6 +176,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/admin/models", s.handleAdminModelsSave)
 	mux.HandleFunc("GET /api/admin/settings", s.handleAdminSettings)
 	mux.HandleFunc("PUT /api/admin/settings", s.handleAdminSettingsSave)
+	mux.HandleFunc("GET /api/admin/site-update", s.handleAdminSiteUpdate)
+	mux.HandleFunc("POST /api/admin/site-update", s.handleAdminSiteUpdateStart)
 	mux.HandleFunc("GET /api/admin/reports", s.handleAdminReports)
 	mux.HandleFunc("POST /api/admin/reports/{id}", s.handleAdminReportAction)
 	mux.HandleFunc("GET /api/admin/session", s.handleAdminSession)
@@ -165,8 +192,13 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-		if r.TLS != nil || strings.HasPrefix(s.Settings.SiteOrigin(), "https:") {
+		if httpx.SecureRequest(r, s.Settings) {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		// dev 模块/HMR 请求必须先于 setup 门禁：/@wf/client、/__wf_hmr 之类
+		// 没有扩展名，否则首装阶段会被 302 到 /setup，开发外壳永远起不来。
+		if s.serveDevInternal(w, r) {
+			return
 		}
 		ctx := r.Context()
 		if s.setupNeeded(ctx) && !setupAllowedPath(r.URL.Path) {
@@ -399,6 +431,11 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title, description, noindex := pageCopy(r.URL.Path, locale)
+	// -tags dev：页面骨架/SSR 交给 DevServer，API、鉴权重定向与 setup 仍由
+	// 本函数前面的链路处理。生产构建里 s.dev 恒为 nil，不会进入。
+	if s.renderDevPortalPage(w, r, title, description, locale, noindex, user) {
+		return
+	}
 	if s.Frontends == nil {
 		http.Error(w, "前端产物不可用，请先构建 portal 与 admin。", http.StatusInternalServerError)
 		return
@@ -406,7 +443,7 @@ func (s *Server) handlePage(w http.ResponseWriter, r *http.Request) {
 	// The public plaza and download page are server-rendered for first paint
 	// and SEO. Studio, login and account depend on browser storage and use the
 	// SPA shell.
-	if r.URL.Path == "/" || r.URL.Path == "/gallery" || r.URL.Path == "/download" {
+	if portalSSRPath(r.URL.Path) {
 		s.writePortalSSR(w, r, title, description, locale, noindex, user)
 		return
 	}
@@ -464,17 +501,20 @@ func pageCopy(pathname, locale string) (title, description string, noindex bool)
 // use the console is decided by GET /api/admin/session and the admin APIs, so
 // the page itself never redirects into the portal.
 func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {
+	s.Settings.Refresh(r.Context(), true)
+	locale := requestLocale(r)
+	title := "管理后台 · Olai"
+	if locale == "en" {
+		title = "Admin · Olai"
+	}
+	if s.renderDevAdminPage(w, r, title, locale) {
+		return
+	}
 	if s.Frontends == nil {
 		http.Error(w, "前端产物不可用，请先构建 portal 与 admin。", http.StatusInternalServerError)
 		return
 	}
-	s.Settings.Refresh(r.Context(), true)
-	locale := requestLocale(r)
-	if locale == "en" {
-		s.writePage(w, s.Frontends.AdminShell, "Admin · Olai", "", locale, true, "adm-body")
-		return
-	}
-	s.writePage(w, s.Frontends.AdminShell, "管理后台 · Olai", "", locale, true, "adm-body")
+	s.writePage(w, s.Frontends.AdminShell, title, "", locale, true, "adm-body")
 }
 
 func (s *Server) setPageHeaders(w http.ResponseWriter) {

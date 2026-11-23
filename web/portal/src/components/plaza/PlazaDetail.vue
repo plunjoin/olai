@@ -122,13 +122,13 @@
         </span>
       </div>
 
-      <div class="plaza-detail-author">
+      <component :is="asset.author?.id ? 'RouterLink' : 'div'" class="plaza-detail-author" :to="asset.author?.id ? `/u/${asset.author.id}` : undefined">
         <AccountAvatar :name="authorName" :avatar="asset.author?.avatar" :size="32" />
         <div>
           <strong>{{ authorName }}</strong>
           <span>{{ t('发布于 {date}', { date: publishedAt }) }}</span>
         </div>
-      </div>
+      </component>
 
       <div ref="scrollRef" class="plaza-detail-scroll">
         <h1>{{ title }}</h1>
@@ -188,11 +188,14 @@
           </div>
           <div v-else class="plaza-comment-list">
             <article v-for="comment in comments" :key="comment.id" class="plaza-comment">
-              <AccountAvatar :name="comment.author.name" :avatar="comment.author.avatar" :size="30" />
-              <div>
-                <header><strong>{{ comment.author.name }}</strong><time :datetime="new Date(comment.createdAt).toISOString()">{{ relativeTime(comment.createdAt) }}</time></header>
-                <p>{{ comment.body }}</p>
-              </div>
+              <header>
+                <component :is="comment.author.id ? 'RouterLink' : 'span'" class="plaza-comment-person" :to="comment.author.id ? `/u/${comment.author.id}` : undefined">
+                  <AccountAvatar :name="comment.author.name" :avatar="comment.author.avatar" :size="30" />
+                  <strong>{{ comment.author.name }}</strong>
+                </component>
+                <time :datetime="new Date(comment.createdAt).toISOString()">{{ relativeTime(comment.createdAt) }}</time>
+              </header>
+              <p>{{ comment.body }}</p>
             </article>
             <button v-if="commentsNext !== null" type="button" class="plaza-comment-more" :disabled="commentsLoading" @click="loadComments(commentsNext, true)">
               {{ commentsLoading ? t('正在加载评论…') : t('加载更多评论') }}

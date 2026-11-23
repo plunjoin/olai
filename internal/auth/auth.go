@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/crypto/scrypt"
 
+	"olai/internal/httpx"
 	"olai/internal/settings"
 	"olai/internal/store"
 )
@@ -75,39 +76,20 @@ func DummyHash() string {
 }
 
 func (m *Manager) secure(r *http.Request) bool {
-	if strings.HasPrefix(m.Settings.SiteOrigin(), "https:") {
-		return true
-	}
-	return r.TLS != nil
+	return httpx.SecureRequest(r, m.Settings)
 }
 
-func CookieNames(r *http.Request) []string {
-	header := r.Header.Get("Cookie")
-	var names []string
-	for _, part := range strings.Split(header, ";") {
-		name := strings.TrimSpace(strings.SplitN(strings.TrimSpace(part), "=", 2)[0])
-		if name != "" {
-			names = append(names, name)
+func cookieCount(r *http.Request, name string) int {
+	count := 0
+	for _, cookie := range r.Cookies() {
+		if cookie.Name == name {
+			count++
 		}
 	}
-	return names
+	return count
 }
 
-func HasAmbiguousSession(r *http.Request) bool {
-	hostCount, normalCount := 0, 0
-	for _, name := range CookieNames(r) {
-		switch name {
-		case HostSessionCookie:
-			hostCount++
-		case SessionCookie:
-			normalCount++
-		}
-	}
-	return hostCount > 1 || normalCount > 1
-}
-
-func SessionToken(r *http.Request) string {
-	host, normal := "", ""
+func sessionTokens(r *http.Request) (host, normal string) {
 	for _, cookie := range r.Cookies() {
 		switch cookie.Name {
 		case HostSessionCookie:
@@ -116,6 +98,38 @@ func SessionToken(r *http.Request) string {
 			normal = cookie.Value
 		}
 	}
+	return host, normal
+}
+
+// usableSessionToken returns the cookie value that may authenticate this
+// request. On HTTPS only a single non-empty __Host- cookie is accepted; bare
+// cookies, including duplicates planted by a sibling subdomain, are ignored.
+func (m *Manager) usableSessionToken(r *http.Request) (string, bool) {
+	host, normal := sessionTokens(r)
+	if m.secure(r) || host != "" {
+		if host == "" || cookieCount(r, HostSessionCookie) != 1 {
+			return "", false
+		}
+		return host, true
+	}
+	if normal == "" || cookieCount(r, SessionCookie) != 1 {
+		return "", false
+	}
+	return normal, true
+}
+
+// sessionAmbiguous reports duplicate cookies for the authoritative name, so a
+// sibling subdomain cannot block email links with extra bare cookies on HTTPS.
+func (m *Manager) sessionAmbiguous(r *http.Request) bool {
+	host, _ := sessionTokens(r)
+	if m.secure(r) || host != "" {
+		return cookieCount(r, HostSessionCookie) > 1
+	}
+	return cookieCount(r, SessionCookie) > 1
+}
+
+func SessionToken(r *http.Request) string {
+	host, normal := sessionTokens(r)
 	if host != "" {
 		return host
 	}
@@ -123,8 +137,8 @@ func SessionToken(r *http.Request) string {
 }
 
 func (m *Manager) CurrentUser(ctx context.Context, r *http.Request) (*store.SessionUser, error) {
-	token := SessionToken(r)
-	if !tokenRE.MatchString(token) {
+	token, ok := m.usableSessionToken(r)
+	if !ok || !tokenRE.MatchString(token) {
 		return nil, nil
 	}
 	user, err := m.DB.SessionUser(ctx, Hash(token))
@@ -208,7 +222,7 @@ type EmailLinkClaim struct {
 // consumed when it belongs to a different signed-in account, so the user can
 // sign out and reopen the link.
 func (m *Manager) ClaimEmailToken(ctx context.Context, w http.ResponseWriter, r *http.Request, token, purpose string) (EmailLinkClaim, error) {
-	if HasAmbiguousSession(r) {
+	if m.sessionAmbiguous(r) {
 		return EmailLinkClaim{Reason: "ambiguous-session"}, nil
 	}
 	tokenUser, err := m.PeekEmailToken(ctx, token, purpose)
@@ -235,16 +249,10 @@ func (m *Manager) ClaimEmailToken(ctx context.Context, w http.ResponseWriter, r 
 	return EmailLinkClaim{OK: true, UserID: consumed, Active: active != nil}, nil
 }
 
-// TrustsSession reports whether a bare (non __Host-) session cookie may be
-// trusted on this request. HTTPS deployments only trust the __Host- cookie.
+// TrustsSession reports whether the request carries a session cookie that may
+// authenticate it. HTTPS deployments only trust a single non-empty __Host-
+// cookie; a bare cookie is an HTTP-only fallback.
 func (m *Manager) TrustsSession(r *http.Request) bool {
-	if !strings.HasPrefix(m.Settings.SiteOrigin(), "https:") && r.TLS == nil {
-		return true
-	}
-	for _, name := range CookieNames(r) {
-		if name == HostSessionCookie {
-			return true
-		}
-	}
-	return false
+	_, ok := m.usableSessionToken(r)
+	return ok
 }

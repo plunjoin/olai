@@ -1,11 +1,13 @@
 <template>
   <RouterView />
+  <AppTooltip />
 </template>
 
 <script setup lang="ts">
 import { watchEffect } from 'vue';
 import { useRoute } from 'vue-router';
 import { getLocale } from './lib/i18n';
+import AppTooltip from './components/AppTooltip.vue';
 
 const route = useRoute();
 const bodyClass = (name: string) => {

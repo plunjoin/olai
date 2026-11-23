@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"regexp"
@@ -65,7 +66,7 @@ func intp(v int) *int { return &v }
 var Defs = []Def{
 	// 站点与安全
 	{Key: "SITE_ORIGIN", Group: "站点", Label: "公开站点地址", Type: TypeURL, Default: "", Help: "反向代理部署时填写，例如 https://olai.example.com。留空使用请求地址。"},
-	{Key: "TRUST_PROXY", Group: "站点", Label: "信任反向代理", Type: TypeBool, Default: "false", Help: "仅在可信代理会覆盖 X-Forwarded-For 且服务不能被直接访问时开启。"},
+	{Key: "TRUST_PROXY", Group: "站点", Label: "信任反向代理", Type: TypeBool, Default: "false", Help: "仅在可信代理会覆盖 X-Forwarded-For / X-Forwarded-Proto 且服务不能被直接访问时开启。"},
 	{Key: "ADMIN_PATH", Group: "站点", Label: "后台入口路径", Type: TypeText, Default: DefaultAdminPath, Max: intp(AdminPathMax), Help: "默认 /admin，可改为不易猜测的路径，例如 /console-x7k2。修改后原入口立即失效，请保存好新地址。"},
 
 	// AI 服务
@@ -136,6 +137,13 @@ var Defs = []Def{
 	{Key: "OSS_MEDIA_DAILY_BYTES", Group: "私有 OSS", Label: "每日上传字节", Type: TypeInt, Default: "1073741824", Min: intp(1), Max: intp(107374182400), Help: BYTES_HELP},
 	{Key: "OSS_MEDIA_READ_RATE_LIMIT", Group: "私有 OSS", Label: "浏览每分钟次数", Type: TypeInt, Default: "60", Min: intp(0), Max: intp(1000000)},
 	{Key: "OSS_MEDIA_READ_DAILY_BYTES", Group: "私有 OSS", Label: "浏览每日字节", Type: TypeInt, Default: "1073741824", Min: intp(1), Max: intp(107374182400), Help: BYTES_HELP},
+
+	// 整站版本与更新
+	{Key: "SITE_UPDATE_ENABLED", Group: "版本与更新", Label: "启用整站更新", Type: TypeBool, Default: "false", Help: "开启后可在后台检查 GitHub tag，并触发整站部署（服务端与前端一起更新）。"},
+	{Key: "SITE_UPDATE_REPO", Group: "版本与更新", Label: "GitHub 仓库", Type: TypeText, Default: "plunjoin/olai", Max: intp(200), Help: "格式 owner/repo，用于读取版本 tag 和触发部署工作流。"},
+	{Key: "SITE_UPDATE_WORKFLOW", Group: "版本与更新", Label: "部署工作流", Type: TypeText, Default: "deploy.yml", Max: intp(200), Help: "仓库 .github/workflows 下的工作流文件名，默认 deploy.yml。"},
+	{Key: "SITE_UPDATE_REF", Group: "版本与更新", Label: "工作流分支", Type: TypeText, Default: "master", Max: intp(200), Help: "触发 workflow_dispatch 时使用的分支，必须包含部署工作流。"},
+	{Key: "SITE_UPDATE_TOKEN", Group: "版本与更新", Label: "GitHub 令牌", Type: TypeSecret, Default: "", Secret: true, Help: "细粒度 PAT，需要 Actions: Read and write 和 Contents: Read；只保存在服务端。"},
 
 	// 客户端版本与更新
 	{Key: "APP_UPDATE_ENABLED", Group: "版本与更新", Label: "启用客户端更新检查", Type: TypeBool, Default: "false", Help: "开启后，客户端可通过 GET /api/app/update 获取更新策略；关闭后接口仍可读取，但不会要求更新。"},
@@ -236,6 +244,11 @@ type Manager struct {
 	db   *store.DB
 	mu   sync.RWMutex
 	data map[string]string
+
+	// ignoreSiteOrigin 只在 -tags dev 构建里由 IgnoreSiteOrigin 置位：
+	// 开发端口随时会变，继续用数据库里保存的公开地址会让同源校验和媒体
+	// 链接指向另一个端口。开发态统一回退到请求 Host。
+	ignoreSiteOrigin bool
 
 	attempted time.Time
 	loading   sync.Mutex
@@ -382,8 +395,56 @@ func (m *Manager) LegacyAdminEmails(ctx context.Context) []string {
 	return out
 }
 
+// SiteOrigin returns the configured public origin in the form browsers send:
+// lowercased scheme and host, no default port, and a compact IPv6 literal.
 func (m *Manager) SiteOrigin() string {
-	return strings.TrimRight(strings.TrimSpace(m.Get("SITE_ORIGIN")), "/")
+	m.mu.RLock()
+	ignore := m.ignoreSiteOrigin
+	m.mu.RUnlock()
+	if ignore {
+		return ""
+	}
+	raw := strings.TrimRight(strings.TrimSpace(m.Get("SITE_ORIGIN")), "/")
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Hostname() == "" {
+		return raw
+	}
+	return canonicalOrigin(parsed)
+}
+
+func canonicalOrigin(parsed *url.URL) string {
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.ToLower(parsed.Hostname())
+	if ip := net.ParseIP(host); ip != nil {
+		host = ip.String()
+	}
+	port := parsed.Port()
+	if port != "" && !((scheme == "http" && port == "80") || (scheme == "https" && port == "443")) {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return scheme + "://" + host
+}
+
+// SecureOrigin reports whether the configured origin is served over HTTPS. An
+// empty origin means "not configured", so callers fall back to the request
+// transport. Only an explicit http:// origin with a host is treated as
+// insecure; any other non-empty value fails closed, so a mistyped SITE_ORIGIN
+// cannot silently downgrade session cookies to plain HTTP.
+func SecureOrigin(origin string) bool {
+	trimmed := strings.TrimSpace(origin)
+	if trimmed == "" {
+		return false
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Hostname() == "" {
+		return true
+	}
+	return !strings.EqualFold(parsed.Scheme, "http")
 }
 
 func (m *Manager) AdminEntryPath() string {
@@ -458,6 +519,9 @@ func invalid(format string, args ...any) error {
 var (
 	emailPattern = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 	spacePattern = regexp.MustCompile(`\s`)
+	repoPattern  = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+	flowPattern  = regexp.MustCompile(`^[A-Za-z0-9_.-]+\.ya?ml$`)
+	refPattern   = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
 )
 
 func validate(def Def, raw string) (string, error) {
@@ -535,10 +599,11 @@ func validate(def Def, raw string) (string, error) {
 		return "", invalid("%s取值无效。", def.Label)
 	case TypeURL:
 		parsed, err := url.Parse(value)
-		if err != nil || !parsed.IsAbs() {
+		if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" {
 			return "", invalid("%s必须是完整地址，例如 https://example.com。", def.Label)
 		}
-		if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil ||
+			parsed.RawQuery != "" || parsed.Fragment != "" || parsed.ForceQuery || strings.HasSuffix(value, "#") {
 			return "", invalid("%s必须是不含账号、查询和锚点的 http(s) 地址。", def.Label)
 		}
 		if def.Key == "SITE_ORIGIN" && parsed.Path != "" && parsed.Path != "/" {
@@ -582,6 +647,16 @@ func validate(def Def, raw string) (string, error) {
 		if def.Key == "MAIL_HOST" && (strings.ContainsAny(value, "/:") || spacePattern.MatchString(value) ||
 			strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".")) {
 			return "", invalid("SMTP 主机格式无效。")
+		}
+		if def.Key == "SITE_UPDATE_REPO" && (!repoPattern.MatchString(value) || strings.Contains(value, "..")) {
+			return "", invalid("GitHub 仓库必须是 owner/repo 格式。")
+		}
+		if def.Key == "SITE_UPDATE_WORKFLOW" && !flowPattern.MatchString(value) {
+			return "", invalid("部署工作流必须是 .github/workflows 下的 .yml 或 .yaml 文件名。")
+		}
+		if def.Key == "SITE_UPDATE_REF" && (!refPattern.MatchString(value) || strings.Contains(value, "..") ||
+			strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/")) {
+			return "", invalid("工作流分支名格式无效。")
 		}
 		return value, nil
 	}

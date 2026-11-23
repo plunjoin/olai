@@ -92,7 +92,11 @@ function validComment(value: any): GalleryComment | null {
   if (!author || typeof author !== 'object' || typeof author.name !== 'string') return null;
   return {
     id: value.id, body: value.body, createdAt: Number(value.createdAt),
-    author: { name: author.name, avatar: typeof author.avatar === 'string' ? author.avatar : '' },
+    author: {
+      name: author.name,
+      avatar: typeof author.avatar === 'string' ? author.avatar : '',
+      id: typeof author.id === 'string' && author.id ? author.id : undefined,
+    },
   };
 }
 

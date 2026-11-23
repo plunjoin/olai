@@ -2,55 +2,57 @@
   <div class="studio-shell workspace-redesign">
     <div v-if="sidebarOpen && narrow" class="sidebar-overlay" @click="sidebarOpen = false" />
     <aside ref="sidebarRef" class="sidebar" :class="sidebarOpen ? 'open' : 'collapsed'" :aria-label="t('侧边栏')" :inert="narrow && !sidebarOpen">
-      <div class="sidebar-rail" :aria-hidden="sidebarOpen">
-        <button type="button" class="rail-btn rail-open" :aria-label="t('打开边栏')" @click="toggleSidebar"><PanelLeft :size="20" /><span class="rail-tip" aria-hidden="true">{{ t('打开边栏') }}</span></button>
-        <RouterLink class="rail-btn rail-brand" to="/" :aria-label="t('小o 首页')"><BrandLogo :size="28" /><span class="rail-tip" aria-hidden="true">{{ t('小o') }}</span></RouterLink>
-        <nav class="rail-nav" :aria-label="t('快捷导航')">
-          <button type="button" class="rail-btn" :disabled="chatBusy" :aria-label="t('发起新对话')" @click="startNewConversation"><SquarePen :size="20" :stroke-width="1.75" /><span class="rail-tip" aria-hidden="true">{{ chatBusy ? t('请先停止当前回答') : t('发起新对话') }}</span></button>
-          <button type="button" class="rail-btn" :aria-label="t('搜索会话')" @click="openSearch"><Search :size="20" :stroke-width="1.75" /><span class="rail-tip" aria-hidden="true">{{ t('搜索会话') }}</span></button>
-          <RouterLink class="rail-btn" :class="{ active: view === 'gallery' }" to="/gallery" :aria-label="t('作品广场')"><Globe :size="20" :stroke-width="1.75" /><span class="rail-tip" aria-hidden="true">{{ t('作品广场') }}</span></RouterLink>
-          <RouterLink class="rail-btn" :class="{ active: view === 'library' }" to="/library" :aria-label="t('我的库')"><LayoutGrid :size="20" :stroke-width="1.75" /><span class="rail-tip" aria-hidden="true">{{ t('我的库') }}</span></RouterLink>
-          <RouterLink v-for="item in creativeNavigation" :key="item.view" class="rail-btn" :class="{ active: activeMode === item.view }" :to="`/${item.view}`" :aria-label="t(item.label)" @click="onCreativeNav(item.view)"><component :is="item.icon" :size="20" :stroke-width="1.5" /><span class="rail-tip" aria-hidden="true">{{ t(item.label) }}</span></RouterLink>
-          <RouterLink v-if="status.shortFilm" class="rail-btn" :class="{ active: view === 'workflow' }" to="/workflow" :aria-label="t('短片工坊')"><Film :size="20" :stroke-width="1.75" /><span class="rail-tip" aria-hidden="true">{{ t('短片工坊') }}</span></RouterLink>
-        </nav>
-        <div class="rail-bottom">
-          <button type="button" class="rail-btn" :aria-label="t('创作设置')" @click="settingsOpen = true"><SettingsIcon :size="20" :stroke-width="1.75" /><span class="rail-tip" aria-hidden="true">{{ t('创作设置') }}</span></button>
-          <button type="button" class="rail-avatar" :disabled="!ready" :aria-label="account.user ? t('我的账号 · {name}', { name: profileName }) : t('登录 / 注册')" @click="openAccount"><AccountAvatar class-name="rail-avatar-media" :name="profileName" :avatar="account.user?.avatar" :size="26" /><span class="rail-tip" aria-hidden="true">{{ account.user ? t('我的账号 · {name}', { name: profileName }) : t('登录 / 注册') }}</span></button>
-        </div>
+      <div class="sidebar-rail">
+        <AppRail
+          :user="account.user"
+          :short-film="status.shortFilm"
+          @navigate="onRailNavigate"
+          @account-click="onAccountClick"
+        >
+          <template #settings>
+            <button type="button" class="app-rail-btn" :aria-label="t('创作设置')" :data-tip="t('创作设置')" @click="settingsOpen = true">
+              <SettingsIcon :size="20" :stroke-width="1.7" />
+            </button>
+          </template>
+        </AppRail>
       </div>
 
       <div class="sidebar-panel">
         <div class="sidebar-drawer-header">
-          <RouterLink class="brand" to="/" :aria-label="t('小o 首页')"><BrandLogo :size="32" /><span class="brand-wordmark"><img src="/brand/olai-wordmark.png" alt="olai" width="585" height="240" /></span></RouterLink>
+          <strong class="sidebar-panel-title">{{ t('会话历史') }}</strong>
           <div class="sidebar-header-actions">
             <button type="button" class="icon-button" :aria-label="t('搜索会话')" :aria-pressed="searchOpen" @click="searchOpen = !searchOpen; searchOpen && focusSearch()"><Search :size="18" :stroke-width="1.75" /></button>
             <button ref="sidebarPanelToggleRef" type="button" class="icon-button sidebar-panel-toggle" :aria-label="t('收起侧边栏')" :aria-expanded="sidebarOpen" :title="t('收起侧边栏')" @click="toggleSidebar"><PanelLeftClose :size="18" /></button>
           </div>
         </div>
 
-        <nav :aria-label="t('主导航')">
-          <button type="button" class="nav-item nav-new-chat" :disabled="chatBusy" :title="chatBusy ? t('请先停止当前回答，再发起新对话') : t('发起新对话')" @click="startNewConversation">
-            <span class="nav-icon-box"><SquarePen :size="18" :stroke-width="1.75" /></span><span class="nav-label">{{ t('发起新对话') }}</span>
+        <nav class="sidebar-mobile-nav" :aria-label="t('主导航')">
+          <RouterLink
+            v-for="item in mobileNavigation"
+            :key="item.key"
+            :to="item.to"
+            :class="{ 'is-active': isMobileNavActive(item) }"
+            :aria-current="isMobileNavActive(item) ? 'page' : undefined"
+            @click="onRailNavigate(item.key, $event)"
+          >
+            <component :is="item.icon" :size="17" :stroke-width="1.7" />
+            <span>{{ t(item.label) }}</span>
+          </RouterLink>
+          <RouterLink :to="account.user ? '/account' : '/login'" @click="sidebarOpen = false">
+            <UserRound :size="17" :stroke-width="1.7" />
+            <span>{{ account.user ? t('我的账号') : t('登录 / 注册') }}</span>
+          </RouterLink>
+          <button type="button" class="sidebar-mobile-action" @click="sidebarOpen = false; settingsOpen = true">
+            <SettingsIcon :size="17" :stroke-width="1.7" />
+            <span>{{ t('创作设置') }}</span>
           </button>
-          <RouterLink v-for="item in creativeNavigation" :key="item.view" class="nav-item" :class="{ active: activeMode === item.view }" :to="`/${item.view}`" @click="onCreativeNav(item.view)">
-            <span class="nav-icon-box"><component :is="item.icon" :size="18" :stroke-width="1.5" /></span><span class="nav-label">{{ t(item.label) }}</span>
-          </RouterLink>
-          <RouterLink class="nav-item" :class="{ active: view === 'gallery' }" to="/gallery">
-            <span class="nav-icon-box"><Globe :size="18" :stroke-width="1.75" /></span><span class="nav-label">{{ t('作品广场') }}</span>
-          </RouterLink>
-          <RouterLink class="nav-item" :class="{ active: view === 'library' }" to="/library">
-            <span class="nav-icon-box"><LayoutGrid :size="18" :stroke-width="1.75" /></span><span class="nav-label">{{ t('我的库') }}</span>
-            <span v-if="completedCount > 0" class="count-badge">{{ completedCount }}</span>
-          </RouterLink>
-          <RouterLink v-if="status.shortFilm" class="nav-item" :class="{ active: view === 'workflow' }" to="/workflow">
-            <span class="nav-icon-box"><Film :size="18" :stroke-width="1.75" /></span><span class="nav-label">{{ t('短片工坊') }}</span><span class="nav-new">Beta</span>
-          </RouterLink>
         </nav>
 
+        <button type="button" class="sidebar-new-chat" :disabled="chatBusy" :title="chatBusy ? t('请先停止当前回答，再发起新对话') : t('发起新对话')" @click="startNewConversation">
+          <SquarePen :size="17" :stroke-width="1.75" /><span>{{ t('发起新对话') }}</span>
+        </button>
+
         <div class="history-section">
-          <button type="button" class="history-section-toggle" :aria-expanded="historyExpanded" @click="historyExpanded = !historyExpanded">
-            <span>{{ t('会话历史') }}</span><ChevronRight :size="16" :class="{ 'is-open': historyExpanded }" />
-          </button>
           <input v-if="searchOpen" ref="searchRef" v-model="search" class="session-search" :aria-label="t('搜索会话标题')" :placeholder="t('搜索会话…')" />
           <div class="recent-sessions">
             <div v-for="conversation in visibleRecent" :key="conversation.id" class="session-row" :class="{ selected: isChatShell && activeId === conversation.id }">
@@ -66,14 +68,6 @@
             <div v-if="!visibleRecent.length" class="recent-empty"><MessageSquare :size="20" :stroke-width="1.5" /><p>{{ search ? t('没有匹配的会话') : t('还没有开始的对话') }}</p><small>{{ search ? t('换个关键词试试') : t('和小o聊聊，灵感会留在这里') }}</small></div>
             <button v-if="hasMoreHistory" type="button" class="history-more" @click="historyExpanded = true">{{ t('显示更多') }}</button>
           </div>
-        </div>
-
-        <div class="sidebar-bottom">
-          <button type="button" class="profile-button" :disabled="!ready" @click="openAccount">
-            <AccountAvatar class-name="profile-avatar" :name="profileName" :avatar="account.user?.avatar" :size="28" />
-            <span>{{ profileName }}<small>{{ profileMeta }}</small></span>
-          </button>
-          <button type="button" class="icon-button profile-settings" :aria-label="t('创作设置')" :title="t('创作设置')" @click="settingsOpen = true"><SettingsIcon :size="18" :stroke-width="1.75" /></button>
         </div>
       </div>
     </aside>
@@ -126,9 +120,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ChevronRight, CircleAlert, Film, Globe, Image as ImageIcon, LayoutGrid, MessageSquare, Music2, PanelLeft, PanelLeftClose, Pencil, Search, Settings as SettingsIcon, SquarePen, Trash2, Video, X } from 'lucide-vue-next';
-import BrandLogo from '../components/BrandLogo.vue';
-import AccountAvatar from '../components/AccountAvatar.vue';
+import { CircleAlert, Image as ImageIcon, MessageSquare, Music2, PanelLeft, PanelLeftClose, Pencil, Search, Settings as SettingsIcon, SquarePen, Trash2, UserRound, Video, X } from 'lucide-vue-next';
+import AppRail from '../components/AppRail.vue';
 import ChatWorkspace from '../components/ChatWorkspace.vue';
 import Library from '../components/Library.vue';
 import VideoWorkflow from '../components/VideoWorkflow.vue';
@@ -139,9 +132,10 @@ import Companion from '../components/Companion.vue';
 import { profileDisplayName } from '../lib/profile';
 import { t } from '../lib/i18n';
 import { loadStatus } from '../lib/status';
+import { isNavigationActive, primaryNavigation, type NavigationItem } from '../lib/navigation';
 import type { Asset, Conversation, MediaKind, Settings } from '../lib/types';
 import {
-  account, activeConversation, activeId, changeSettings, chatBusy, completedCount, conversationKind, conversations, deleteConversation,
+  account, activeConversation, activeId, changeSettings, chatBusy, conversationKind, conversations, deleteConversation,
   initStudio, loadError, newConversation, ready, renameConversation, runGuestSync, settings, status, syncFailures, syncing,
 } from '../composables/studio';
 import { clearToast, notify, toastText } from '../composables/ui';
@@ -159,7 +153,13 @@ const shellKind = computed<MediaKind | null>(() => {
 const activeMode = computed(() => isChatShell.value ? (shellKind.value || 'chat') : '');
 const router = useRouter();
 const route = useRoute();
-const sidebarOpen = ref(window.innerWidth > 768 ? localStorage.getItem('olai.sidebar') !== 'false' : false);
+function preferredSidebarOpen() {
+  let stored = '';
+  try { stored = localStorage.getItem('olai.sidebar') || ''; } catch { /* optional */ }
+  if (stored === 'true' || stored === 'false') return stored === 'true';
+  return window.innerWidth >= 1200;
+}
+const sidebarOpen = ref(window.innerWidth > 768 ? preferredSidebarOpen() : false);
 const narrow = ref(window.innerWidth <= 768);
 const sidebarRef = ref<HTMLElement | null>(null);
 const sidebarToggleRef = ref<HTMLButtonElement | null>(null);
@@ -173,16 +173,8 @@ const historyExpanded = ref(false);
 const searchRef = ref<HTMLInputElement | null>(null);
 const creationDraft = ref<{ token: string; prompt: string; options: Record<string, string | number> } | null>(null);
 const musicEdit = ref<Asset | null>(null);
-const creativeNavigation = [
-  { view: 'chat', label: 'AI 对话', icon: MessageSquare },
-  { view: 'image', label: '图像', icon: ImageIcon },
-  { view: 'video', label: '视频', icon: Video },
-  { view: 'music', label: '音乐', icon: Music2 },
-];
 const profileName = computed(() => account.value.user ? profileDisplayName(account.value.user) : t('访客'));
-const profileMeta = computed(() => account.value.user
-  ? t('已同步{credits}', { credits: typeof account.value.points === 'number' ? t(' · {n} 积分', { n: account.value.points }) : '' })
-  : t('各 {n} 次 / 天 · 对话 {m} 条', { n: account.value.generationLimit, m: account.value.chatLimit ?? 100 }));
+const mobileNavigation = computed(() => primaryNavigation(status.value.shortFilm));
 const recent = computed(() => conversations.value.filter(conversation => conversation.title.toLowerCase().includes(search.value.toLowerCase())));
 const visibleRecent = computed(() => historyExpanded.value || search.value || searchOpen.value ? recent.value : recent.value.slice(0, 5));
 const hasMoreHistory = computed(() => !historyExpanded.value && !search.value && !searchOpen.value && recent.value.length > 5);
@@ -193,7 +185,6 @@ function toggleSidebar() {
   if (!narrow.value) { try { localStorage.setItem('olai.sidebar', String(sidebarOpen.value)); } catch { /* optional */ } }
 }
 function focusSearch() { void nextTick(() => searchRef.value?.focus()); }
-function openSearch() { sidebarOpen.value = true; searchOpen.value = true; focusSearch(); }
 function startNewConversation() {
   if (chatBusy.value) { notify(t('请先停止当前回答，再新建会话。')); return; }
   const mode = activeMode.value;
@@ -207,10 +198,15 @@ function startNewConversation() {
   if (!id) return;
   void router.push(`/chat/${encodeURIComponent(id)}`);
 }
+function isMobileNavActive(item: NavigationItem) {
+  return isNavigationActive(item, route.path, route.name);
+}
 /** Clicking the current creation mode again starts a fresh conversation. */
-function onCreativeNav(target: string) {
+function onRailNavigate(target: string, event: MouseEvent) {
   if (target !== 'image' && target !== 'video' && target !== 'music') return;
-  if (activeMode.value === target) startNewConversation();
+  if (activeMode.value !== target) return;
+  event.preventDefault();
+  startNewConversation();
 }
 function sessionIcon(conversation: Conversation) {
   const kind = conversationKind(conversation);
@@ -224,10 +220,11 @@ async function removeConversation(conversation: any) {
   await deleteConversation(conversation);
   if (view.value === 'chat' && !activeId.value) void router.push('/chat');
 }
-function openAccount() {
-  if (!ready.value) return;
-  if (chatBusy.value) { notify(t('请先等待创作完成或停止当前回答，再切换账号。')); return; }
-  window.location.assign(account.value.user ? '/account' : '/login');
+function onAccountClick(event: MouseEvent) {
+  if (!ready.value) { event.preventDefault(); return; }
+  if (!chatBusy.value) return;
+  event.preventDefault();
+  notify(t('请先等待创作完成或停止当前回答，再切换账号。'));
 }
 function savePreferences(next: Settings) {
   changeSettings(next, true);
@@ -264,7 +261,13 @@ function onWorkspaceKeydown(event: KeyboardEvent) {
 }
 watch([narrow, sidebarOpen], async ([isNarrow, open]) => {
   clearTimeout(drawerFocusTimer);
-  if (!isNarrow) { drawerWasOpen = false; return; }
+  if (!isNarrow) {
+    drawerWasOpen = false;
+    await nextTick();
+    if (open) sidebarPanelToggleRef.value?.focus();
+    else sidebarToggleRef.value?.focus();
+    return;
+  }
   if (!open) {
     if (!drawerWasOpen) return;
     drawerWasOpen = false;
@@ -303,11 +306,16 @@ onMounted(async () => {
   const update = () => {
     narrow.value = query.matches;
     if (query.matches) sidebarOpen.value = false;
-    else { try { sidebarOpen.value = localStorage.getItem('olai.sidebar') !== 'false'; } catch { sidebarOpen.value = true; } }
+    else sidebarOpen.value = preferredSidebarOpen();
   };
   query.addEventListener('change', update);
   window.addEventListener('keydown', onWorkspaceKeydown);
   await Promise.all([loadStatus().then(value => { status.value = value; }), initStudio()]);
+  if (route.query.new === '1' && view.value === 'chat') {
+    clearActiveConversation();
+    const id = newConversation('chat');
+    if (id) void router.replace(`/chat/${encodeURIComponent(id)}`);
+  }
   if (view.value === 'workflow' && !status.value.shortFilm) void router.replace('/chat');
   if (props.conversationId && conversations.value.some(item => item.id === props.conversationId)) activeId.value = props.conversationId;
 });

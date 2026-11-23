@@ -5,6 +5,7 @@ dist
 .deploy
 backups
 .qa
+/temp
 data
 .env
 .env.*

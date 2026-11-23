@@ -476,7 +476,7 @@ func TestGalleryCommentsLifecycle(t *testing.T) {
 		t.Fatalf("created comment = %v", created["comment"])
 	}
 	author, ok := comment["author"].(map[string]any)
-	if !ok || author["name"] != "Reader" || author["avatar"] != "ocean" {
+	if !ok || author["name"] != "Reader" || author["avatar"] != "ocean" || author["id"] == "" {
 		t.Fatalf("comment author = %v", comment["author"])
 	}
 
@@ -496,11 +496,66 @@ func TestGalleryCommentsLifecycle(t *testing.T) {
 		t.Fatalf("listed comment = %v", comments[0])
 	}
 	listedAuthor, ok := listed["author"].(map[string]any)
-	if !ok || listedAuthor["name"] != "Reader" || listedAuthor["avatar"] != "ocean" {
+	if !ok || listedAuthor["name"] != "Reader" || listedAuthor["avatar"] != "ocean" || listedAuthor["id"] != author["id"] {
 		t.Fatalf("listed author = %v", listed["author"])
 	}
 
 	if _, err := m.AddComment(ctx, galleryRequest(t, "/api/gallery/"+id+"/comments"), user, id, "   "); err == nil {
 		t.Fatal("blank comment should be rejected")
+	}
+}
+
+func TestCommentAuthorMatchesTheAccount(t *testing.T) {
+	ctx := context.Background()
+	m, db := galleryManager(t)
+	galleryUser(t, db, "owner")
+	galleryUser(t, db, "commenter")
+	key := strings.Repeat("c", 64)
+	galleryAsset(t, db, "owner", key)
+	id := "gallery_" + key
+	portrait := "upload:12345678-1234-1234-1234-123456789abc"
+	if _, err := db.ExecContext(ctx, `UPDATE users SET email = ?, avatar = ? WHERE id = ?`, "river@example.com", portrait, "commenter"); err != nil {
+		t.Fatalf("set commenter profile: %v", err)
+	}
+	user := &store.SessionUser{ID: "commenter", Email: "river@example.com", Avatar: &portrait}
+
+	created, err := m.AddComment(ctx, galleryRequest(t, "/api/gallery/"+id+"/comments"), user, id, "hello")
+	if err != nil {
+		t.Fatalf("add comment: %v", err)
+	}
+	author := created["comment"].(map[string]any)["author"].(map[string]any)
+	if author["name"] != "river" {
+		t.Fatalf("name = %v, want the mailbox name", author["name"])
+	}
+	if author["avatar"] != "upload:gallery.commenter.12345678-1234-1234-1234-123456789abc" {
+		t.Fatalf("avatar = %v", author["avatar"])
+	}
+	handle, _ := author["id"].(string)
+	if handle == "" {
+		t.Fatal("comment author has no profile to open")
+	}
+
+	page, err := m.ListComments(ctx, galleryRequest(t, "/api/gallery/"+id+"/comments"), id)
+	if err != nil {
+		t.Fatalf("list comments: %v", err)
+	}
+	listed := page["comments"].([]any)[0].(map[string]any)["author"].(map[string]any)
+	if listed["name"] != "river" || listed["avatar"] != author["avatar"] || listed["id"] != handle {
+		t.Fatalf("listed author = %v, want %v", listed, author)
+	}
+
+	works, err := m.List(ctx, galleryRequest(t, "/api/gallery?limit=10"), "")
+	if err != nil {
+		t.Fatalf("list works: %v", err)
+	}
+	var workAuthor map[string]any
+	for _, record := range works["records"].([]any) {
+		asset := record.(map[string]any)
+		if asset["id"] == id {
+			workAuthor = asset["author"].(map[string]any)
+		}
+	}
+	if workAuthor == nil || workAuthor["id"] == "" || workAuthor["name"] == "" {
+		t.Fatalf("work author = %v", workAuthor)
 	}
 }

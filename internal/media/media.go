@@ -119,25 +119,12 @@ func Attachment(value string) (string, error) {
 }
 
 func (m *Manager) destinationOrigin(r *http.Request) (string, error) {
-	if configured := m.Settings.SiteOrigin(); configured != "" {
-		parsed, err := url.Parse(configured)
-		if err != nil {
-			return "", unavailable()
-		}
-		return parsed.Scheme + "://" + parsed.Host, nil
-	}
-	host := r.Header.Get("Host")
-	if host == "" {
-		host = r.Host
-	}
-	if host == "" {
+	origin := httpx.RequestOrigin(r, m.Settings)
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
 		return "", unavailable()
 	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	return scheme + "://" + host, nil
+	return origin, nil
 }
 
 func (m *Manager) AssertMediaOrigin(r *http.Request, upload bool) error {
@@ -196,7 +183,7 @@ func (m *Manager) Identify(ctx context.Context, w http.ResponseWriter, r *http.R
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name: DeviceCookie, Value: device, Path: "/", HttpOnly: true,
-			SameSite: http.SameSiteLaxMode, Secure: strings.HasPrefix(origin, "https:"),
+			SameSite: http.SameSiteLaxMode, Secure: settings.SecureOrigin(origin),
 			MaxAge: 365 * 86400,
 		})
 	}

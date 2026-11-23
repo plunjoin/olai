@@ -7,15 +7,22 @@ import (
 	"strings"
 )
 
-const googleUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
+// Endpoints are variables so tests can point the token and userinfo calls at a
+// local fake without touching the global default transport.
+var (
+	googleTokenURL    = "https://oauth2.googleapis.com/token"
+	googleUserInfoURL = "https://openidconnect.googleapis.com/v1/userinfo"
+)
+
+const googleAuthorizeURL = "https://accounts.google.com/o/oauth2/v2/auth"
 
 func googleProvider() oauthProvider {
 	return oauthProvider{
 		Name:            "google",
 		ClientIDKey:     "GOOGLE_CLIENT_ID",
 		ClientSecretKey: "GOOGLE_CLIENT_SECRET",
-		AuthorizeURL:    "https://accounts.google.com/o/oauth2/v2/auth",
-		TokenURL:        "https://oauth2.googleapis.com/token",
+		AuthorizeURL:    googleAuthorizeURL,
+		TokenURL:        googleTokenURL,
 		Scope:           "openid email profile",
 		AuthorizeParams: url.Values{"prompt": {"select_account"}},
 		TokenParams:     url.Values{"grant_type": {"authorization_code"}},
