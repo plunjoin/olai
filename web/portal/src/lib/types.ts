@@ -13,6 +13,8 @@ export interface Message {
 }
 export interface Conversation { id: string; title: string; messages: Message[]; createdAt: number; updatedAt: number; kind?: ConversationKind }
 export interface CreationMeta { requestId?: string; conversationId?: string; revisionOf?: string; version?: number }
+/** Which editable fields the work-info dialog actually changed. */
+export interface WorkMetaChange { title: boolean; prompt: boolean }
 export interface Asset {
   id: string; kind: MediaKind; prompt: string; createdAt: number;
   status: 'pending' | 'completed' | 'failed'; remoteId?: string; url?: string; blob?: Blob;
@@ -30,6 +32,14 @@ export interface Asset {
   favorite?: boolean; favoriteCount?: number; views?: number; downloads?: number; heat?: number;
   /** Public gallery only: the creator's display name and preset avatar theme. */
   author?: GalleryAuthor;
+  /** Creator-supplied tags; public works expose them to the plaza search. */
+  tags?: string[];
+  /** Creator-supplied display name. Missing means the prompt/song fallback. */
+  title?: string;
+  /** Public gallery only: set when the signed-in viewer owns this work. */
+  owner?: boolean;
+  /** Public gallery only, owner-only: the record id used by 我的库. */
+  recordId?: string;
   error?: string; options: Record<string, string | number>;
   /** Public display name of the model that produced the work. Never an upstream model ID. */
   modelLabel?: string;

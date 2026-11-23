@@ -33,6 +33,11 @@ const (
 	maxRecordChars = 64 * 1024 * 1024
 	inlineMaxBytes = 32 * 1024 * 1024
 	batchSize      = 30
+	// maxTags and maxTagRunes bound the public tag list carried by a work.
+	maxTags     = 8
+	maxTagRunes = 24
+	// maxTitleRunes matches the portal's work-title cap.
+	maxTitleRunes = 80
 	// heatScanLimit bounds how many works the hot ranking reads in one request.
 	// A self-hosted gallery is expected to stay far below this; the bound keeps
 	// a pathological database from pinning a request indefinitely.
@@ -231,6 +236,14 @@ func projection(record store.RecordWithBody, value map[string]any, secrets []str
 		"prompt":    text(stringValue(value["prompt"]), 16000),
 		"createdAt": value["createdAt"], "options": map[string]any{},
 	}
+	// A creator-supplied name is optional; older works keep the client-side
+	// prompt/song fallback. The title is ordinary public text, so secrets are
+	// redacted like the prompt.
+	if workTitle, ok := value["title"].(string); ok {
+		if workTitle = strings.TrimSpace(workTitle); workTitle != "" {
+			output["title"] = text(workTitle, maxTitleRunes)
+		}
+	}
 	options := map[string]any{}
 	if raw, ok := value["options"].(map[string]any); ok {
 		options = raw
@@ -280,6 +293,39 @@ func projection(record store.RecordWithBody, value map[string]any, secrets []str
 	for _, field := range []string{"lyrics", "lrc"} {
 		if input, ok := value[field].(string); ok {
 			output[field] = text(input, 64000)
+		}
+	}
+	// Tags are creator-supplied and public: trim the leading #, drop control
+	// characters, dedupe case-insensitively and cap the list so one work cannot
+	// flood the plaza filters.
+	if raw, ok := value["tags"].([]any); ok {
+		tags := make([]string, 0, len(raw))
+		seen := map[string]bool{}
+		for _, item := range raw {
+			tag, ok := item.(string)
+			if !ok {
+				continue
+			}
+			tag = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(tag), "#＃"))
+			tag = strings.Map(func(value rune) rune {
+				if unicode.IsControl(value) {
+					return -1
+				}
+				return value
+			}, tag)
+			tag = text(tag, maxTagRunes)
+			key := strings.ToLower(tag)
+			if tag == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			tags = append(tags, tag)
+			if len(tags) >= maxTags {
+				break
+			}
+		}
+		if len(tags) > 0 {
+			output["tags"] = tags
 		}
 	}
 	if source, ok := value["lrcSource"].(string); ok && (source == "estimated" || source == "audio" || source == "manual") {
@@ -569,6 +615,15 @@ func (m *Manager) projectCandidates(ctx context.Context, items []candidate, view
 		asset["heat"] = heatScore(metric)
 		if viewer != "" {
 			asset["favorite"] = favorites[item.record.Key]
+			// Lets the detail panel offer owner-only actions without exposing
+			// user ids: the flag is derived from the signed-in session.
+			owner := item.record.UserID == viewer
+			asset["owner"] = owner
+			// The owner's record id links the public work back to the same
+			// asset in 我的库, so a plaza edit can refresh the cached copy.
+			if owner {
+				asset["recordId"] = item.record.RecordID
+			}
 		}
 		assets = append(assets, asset)
 	}

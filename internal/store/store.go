@@ -63,6 +63,12 @@ func Open(ctx context.Context, cfg config.Config) (*DB, error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "作品创建时间回填未完成，稍后启动会继续重试：%v\n", err)
 	}
+	metaCtx, cancelMeta := context.WithTimeout(context.Background(), 2*time.Minute)
+	err = db.BackfillRecordMeta(metaCtx)
+	cancelMeta()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "作品名称回填未完成，稍后启动会继续重试：%v\n", err)
+	}
 	return db, nil
 }
 

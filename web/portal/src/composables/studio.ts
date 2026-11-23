@@ -6,7 +6,7 @@ import { accountRequest, type AccountState } from '../lib/account';
 import { alignLyricsToAudio, readAudioDuration } from '../lib/lyricAlignment';
 import { ensurePlayableAudioBlob } from '../lib/audio';
 import { generateLrcFromPrompt } from '../lib/lrc';
-import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, syncGuestRecords } from '../lib/storage';
+import { getAll, initializeStorage, loadSettings, put, remove, saveSettings, setAssetVisibility, syncGuestRecords } from '../lib/storage';
 import { isStoredMedia, registerStoredBlob } from '../lib/mediaStorage';
 import { composeSong, parseSong, songLyrics, sungLines } from '../lib/music';
 import { imageDimensions } from '../lib/generation';
@@ -17,6 +17,7 @@ import { DEFAULT_SETTINGS, type Asset, type Conversation, type ConversationKind,
 import { DEFAULT_MEMORY_STATE, extractMemories, loadMemoryState, type MemoryState } from '../lib/memory';
 import { loadStatus, DEFAULT_STATUS, type StatusState } from '../lib/status';
 import { t } from '../lib/i18n';
+import { generateTitle } from '../lib/titles';
 import { notify, uid, downloadBlob } from './ui';
 import { confirmAction } from './dialog';
 import { close as closePlayer, activeMedia } from './player';
@@ -36,6 +37,8 @@ export const syncFailures = ref<string[]>([]);
 export const modelCatalog = ref<PublicModel[]>([]);
 export const modelSelection = ref<Record<string, string>>({});
 export const aligningIds = ref<string[]>([]);
+/** Works whose publish/withdraw request is in flight. */
+export const visibilityBusyIds = ref<string[]>([]);
 export const status = ref<StatusState>({ ...DEFAULT_STATUS });
 export const creating = ref<Record<string, boolean>>({});
 export const activeConversation = computed(() => conversations.value.find(item => item.id === activeId.value));
@@ -58,8 +61,66 @@ function saveConversation(conversation: Conversation, persist = true) {
 }
 
 async function saveAsset(asset: Asset) {
+  // Completion and cover updates are built from copies captured earlier. Keep a
+  // title that was edited or generated while the work was still in flight.
+  const current = assets.value.find(item => item.id === asset.id);
+  if (!asset.title && current?.title) asset = { ...asset, title: current.title };
   assets.value = [asset, ...assets.value.filter(item => item.id !== asset.id)].sort((a, b) => b.createdAt - a.createdAt);
   try { await put('assets', asset); } catch (error) { persistError(error); }
+}
+
+/** Conversations whose AI title request is still in flight. */
+const titleRequests = new Set<string>();
+
+/**
+ * Replace a truncated prompt seed with a short title from the default chat
+ * model. The seed check keeps a manual rename authoritative even when the
+ * request finishes late.
+ */
+async function autoTitleConversation(id: string, seed: string, text: string, reply = '') {
+  if (!seed || titleRequests.has(id)) return;
+  titleRequests.add(id);
+  try {
+    const title = await generateTitle('conversation', text, reply);
+    if (!title) return;
+    const current = conversations.value.find(item => item.id === id);
+    if (!current || current.title !== seed) return;
+    saveConversation({ ...current, title });
+  } finally {
+    titleRequests.delete(id);
+  }
+}
+
+/**
+ * Name a work with the default chat model so the library does not show a
+ * truncated prompt. An explicit or user-edited title always wins.
+ */
+async function autoTitleWork(asset: Asset) {
+  const title = await generateTitle('work', asset.prompt);
+  if (!title) return;
+  const current = assets.value.find(item => item.id === asset.id);
+  // Only fill a still-untitled work whose prompt has not changed meanwhile.
+  if (!current || current.title || current.prompt !== asset.prompt) return;
+  await saveAsset({ ...current, title });
+}
+
+/** Publishes or withdraws a completed work, updating every card that shows it. */
+export async function toggleAssetVisibility(asset: Asset): Promise<Asset | undefined> {
+  if (visibilityBusyIds.value.includes(asset.id)) return;
+  visibilityBusyIds.value = [...visibilityBusyIds.value, asset.id];
+  try {
+    const visibility = await setAssetVisibility(asset.id, asset.visibility === 'private' ? 'public' : 'private');
+    const current = assets.value.find(item => item.id === asset.id) || asset;
+    const updated = { ...current, visibility } as Asset;
+    assets.value = assets.value.map(item => item.id === asset.id ? updated : item);
+    notify(visibility === 'private' ? t('已从广场撤回，作品只对你可见。') : t('已发布到广场，大家可以看到这件作品了。'));
+    return updated;
+  } catch (error) {
+    notify(errorText(error));
+    return undefined;
+  } finally {
+    visibilityBusyIds.value = visibilityBusyIds.value.filter(id => id !== asset.id);
+  }
 }
 
 function touchConversation(id?: string) {
@@ -230,6 +291,8 @@ export function startCreation(kind: MediaKind, text: string, images: { url: stri
     messages: [...previous, message],
   };
   saveConversation(next);
+  // The request text is only a seed; ask the default model for a real title.
+  if (first) void autoTitleConversation(next.id, next.title, text);
   return { conversation: next, requestId };
 }
 
@@ -282,6 +345,8 @@ export async function sendMessage(text: string, retryId?: string) {
     updatedAt: now,
     messages: [...history, assistant],
   };
+  // Only the first exchange seeds a title; later messages keep it.
+  const autoTitleSeed = !retryId && conversation.messages.length === 0 ? running.title : '';
   const controller = new AbortController();
   chatController.value = controller;
   chatBusy.value = true;
@@ -312,6 +377,8 @@ export async function sendMessage(text: string, retryId?: string) {
     saveConversation(running);
     chatController.value = null;
     chatBusy.value = false;
+    // Summarize the first exchange now that the reply (or its error) is known.
+    if (autoTitleSeed) void autoTitleConversation(running.id, autoTitleSeed, text, assistant.content);
   }
 }
 
@@ -386,11 +453,15 @@ export async function generate(kind: MediaKind, prompt: string, options: Record<
   const modelLabel = (selectedModel?.name || '').trim().slice(0, 80);
   const asset: Asset = {
     id: retry?.id || uid(), kind, prompt, options, createdAt: Date.now(), status: 'pending',
+    // New works start private; publishing is an explicit action. A retry keeps
+    // the visibility the work already has.
+    visibility: retry?.visibility ?? 'private',
     requestId: retry?.requestId || meta?.requestId,
     conversationId: retry?.conversationId || meta?.conversationId,
     revisionOf: retry?.revisionOf || meta?.revisionOf,
     version: retry?.version ?? meta?.version,
     ...(modelLabel ? { modelLabel } : {}),
+    ...(retry?.title ? { title: retry.title } : {}),
   };
   creating.value[kind] = true;
   await saveAsset(asset);
@@ -404,6 +475,10 @@ export async function generate(kind: MediaKind, prompt: string, options: Record<
       asset.lrcSource = lines ? 'estimated' : undefined;
       await saveAsset(asset);
     }
+    // Summarize the prompt with the default chat model while it generates, so
+    // the library never has to show a truncated prompt as the work's name.
+    // Music with its own song title already has a suitable name.
+    if (!asset.title && !(kind === 'music' && asset.song?.title?.trim())) void autoTitleWork(asset);
     let response: Response;
     if (kind === 'video') {
       response = await generateVideo({ prompt, options, mode: status.value.videoMode, context: modelContext, ...(referenceImages?.length && status.value.videoMode === 'task' ? { inputImage: referenceImages[0] } : {}) });
@@ -489,7 +564,10 @@ export async function generate(kind: MediaKind, prompt: string, options: Record<
       if (kind === 'music') blob = await ensurePlayableAudioBlob(blob);
       resolutionWarning = await saveCompletedAsset({ ...asset, status: 'completed', blob, lrc: asset.lrc });
     }
-    notify(resolutionWarning ? t('{warning} 原图已保存到作品库。', { warning: resolutionWarning }) : t('创作完成，已加入你的作品库。'));
+    const done = asset.visibility === 'private'
+      ? t('创作完成，已加入你的作品库。发布到广场后大家就能看到。')
+      : t('创作完成，已加入你的作品库。');
+    notify(resolutionWarning ? t('{warning} 原图已保存到作品库。', { warning: resolutionWarning }) : done);
   } catch (error) {
     await saveAsset({ ...asset, status: 'failed', coverStatus: undefined, error: errorText(error) });
     touchConversation(asset.conversationId);

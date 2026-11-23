@@ -62,6 +62,7 @@
               @favorite="toggleFavorite"
               @download="downloadWork"
               @share="shareWork"
+              @tag="searchTag"
             />
           </div>
           <p v-else-if="profile.works || profile.favorites" class="profile-status">{{ tab === 'favorites' ? t('还没有公开的收藏') : t('还没有公开的作品') }}</p>
@@ -166,6 +167,9 @@ async function toggleBlock() {
 
 function openWork(asset: Asset) {
   router.push({ path: '/', query: { work: asset.id } });
+}
+function searchTag(tag: string) {
+  router.push({ path: '/', query: { tag } });
 }
 function downloadWork(asset: Asset) {
   if (asset.url) window.open(asset.url, '_blank', 'noopener');

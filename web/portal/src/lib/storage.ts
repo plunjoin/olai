@@ -20,17 +20,20 @@ export async function initializeStorage(): Promise<AccountState> {
   storageMode = accountId ? 'cloud' : 'indexeddb';
   return state;
 }
-async function cloudRequest(store: string, init: RequestInit = {}, id?: string, userId = accountId, importing = false) {
+async function cloudJSON(path: string, init: RequestInit = {}, userId = accountId) {
   const headers = new Headers(init.headers);
   headers.set('X-Olai-User', userId!);
   if (init.body) headers.set('Content-Type', 'application/json');
-  const query = importing ? '?import=guest' : id ? `?id=${encodeURIComponent(id)}` : '';
-  const response = await fetch(`/api/records/${store}${query}`, { ...init, headers, credentials: 'same-origin', signal: init.signal || AbortSignal.timeout(60_000) });
+  const response = await fetch(path, { ...init, headers, credentials: 'same-origin', signal: init.signal || AbortSignal.timeout(60_000) });
   if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(t('云端记录接口未返回 JSON（HTTP {status}），请检查服务配置。', { status: response.status }));
   let data;
   try { data = await response.json(); } catch { throw new Error(t('云端记录接口返回的数据格式无效。')); }
   if (!response.ok) throw new Error(t('{error}（HTTP {status}）', { error: data?.error?.message || t('云端保存失败。'), status: response.status }));
   return data;
+}
+async function cloudRequest(store: string, init: RequestInit = {}, id?: string, userId = accountId, importing = false) {
+  const query = importing ? '?import=guest' : id ? `?id=${encodeURIComponent(id)}` : '';
+  return cloudJSON(`/api/records/${store}${query}`, init, userId);
 }
 function enqueue(key: string, write: () => Promise<void>): Promise<void> {
   const next = (pending.get(key) || Promise.resolve()).catch(() => {}).then(write);
@@ -39,6 +42,18 @@ function enqueue(key: string, write: () => Promise<void>): Promise<void> {
   return next;
 }
 export async function flushStorage() { await Promise.all([...pending.values()]); }
+
+/** Publishes or withdraws one of the signed-in owner's works. The server key
+ * is derived from the record id, so no gallery alias is needed. */
+export async function setAssetVisibility(id: string, visibility: 'public' | 'private'): Promise<'public' | 'private'> {
+  if (!accountId) throw new Error(t('登录后才能发布作品。'));
+  await flushStorage();
+  const data = await cloudJSON(`/api/records/assets/${encodeURIComponent(id)}/visibility`, {
+    method: 'PUT',
+    body: JSON.stringify({ visibility }),
+  }, accountId);
+  return data?.visibility === 'private' ? 'private' : 'public';
+}
 async function openWithTimeout(name: string, version: number, options?: Parameters<typeof openDB>[2], timeoutMs = 2500) {
   return Promise.race([
     openDB(name, version, options),
@@ -131,6 +146,9 @@ async function recordBody(value: Conversation | Asset | VideoWorkflowProject | L
   if (ossStorage) {
     const item = { ...await persistRecordMedia(scrubRecordPrivacy(value), userId) } as Record<string, unknown>;
     delete item.linkedAccountId;
+    // Visibility is server state changed only through the publish endpoint, so
+    // a stale full-record save can never republish or withdraw a work.
+    if ('kind' in value && 'prompt' in value) delete item.visibility;
     const body = JSON.stringify(item);
     if (new Blob([body]).size > MAX_RECORD_BYTES) throw new Error(t('记录正文超过 64 MB，请先下载备份。'));
     return body;
@@ -141,6 +159,9 @@ async function recordBody(value: Conversation | Asset | VideoWorkflowProject | L
   value = scrubRecordPrivacy(value);
   const item: Record<string, unknown> = { ...value };
   delete item.linkedAccountId;
+  // Visibility is server state changed only through the publish endpoint, so a
+  // stale full-record save can never republish or withdraw a work.
+  if ('kind' in value && 'prompt' in value) delete item.visibility;
   if ('blob' in value && value.blob) { item.blobData = await encodeBlob(value.blob); delete item.blob; }
   
   // Handle workflow project blobs

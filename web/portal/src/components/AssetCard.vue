@@ -59,6 +59,8 @@
         <div v-if="resolutionWarning" class="image-resolution-warning" role="status">{{ resolutionWarning }}</div>
       </template>
 
+      <p v-if="asset.title && asset.kind !== 'music'" class="asset-work-title" :title="asset.title">{{ asset.title }}</p>
+
       <template v-if="asset.kind === 'music'">
         <div class="music-card-head">
           <strong class="music-card-title" :title="songTitle">{{ songTitle }}</strong>
@@ -84,6 +86,20 @@
       </template>
       <p v-else :title="asset.prompt">{{ asset.prompt }}</p>
 
+      <div v-if="asset.tags?.length || (editableTags && asset.status === 'completed')" class="asset-tags" :aria-label="t('作品标签')">
+        <span v-for="tag in asset.tags" :key="tag" class="asset-tag">#{{ tag }}</span>
+        <button v-if="editableTags && asset.status === 'completed'" type="button" class="asset-tag is-action" @click="emit('tags', asset)">
+          {{ asset.tags?.length ? t('编辑标签') : t('添加标签') }}
+        </button>
+      </div>
+
+      <div v-if="publishable && asset.status === 'completed' && privateWork" class="asset-visibility">
+        <span class="asset-visibility-state"><Lock :size="12" />{{ t('仅自己可见') }}</span>
+        <button type="button" class="asset-publish" :disabled="publishing" @click="emit('visibility', asset)">
+          <Globe :size="13" />{{ publishing ? t('发布中…') : t('发布到广场') }}
+        </button>
+      </div>
+
       <div class="asset-meta">
         <span>{{ new Date(asset.createdAt).toLocaleDateString(intlLocale(), { month: 'short', day: 'numeric' }) }} · {{ asset.kind === 'music' ? t('原创音乐') : asset.kind === 'video' ? t('动态影像') : t('灵感图像') }}</span>
         <div>
@@ -92,9 +108,11 @@
           <button v-if="asset.status === 'completed' && (!readOnly || url)" class="icon-button" :aria-label="t('下载作品')" :title="t('下载作品及关联文件')" @click="emit('download', asset)"><Download :size="15" /></button>
           <button v-if="asset.status === 'completed' && asset.coverUrl" class="icon-button" :aria-label="t('下载封面')" :title="t('下载封面')" @click="emit('download-cover', asset)"><ImageIcon :size="15" /></button>
           <button v-if="!readOnly && asset.kind === 'music' && asset.status === 'completed' && asset.song" class="icon-button" :aria-label="t('编辑后生成')" :title="t('编辑后生成')" @click="emit('edit', asset)"><Pencil :size="15" /></button>
+          <button v-if="!readOnly && editableInfo && asset.status === 'completed'" class="icon-button" :aria-label="t('编辑作品信息')" :title="t('编辑作品信息')" @click="emit('rename', asset)"><PenLine :size="15" /></button>
           <button v-if="!readOnly && asset.kind === 'music' && asset.status === 'completed' && !asset.song?.instrumental && asset.lyrics" class="icon-button" :aria-label="t('校准歌词')" :title="t('校准歌词')" :disabled="aligning" @click="emit('align', asset)"><WandSparkles :size="15" /></button>
           <button v-if="!readOnly && asset.kind === 'music' && asset.status === 'completed' && !asset.coverUrl && asset.coverStatus !== 'failed'" class="icon-button" :aria-label="t('生成封面')" :title="t('生成封面')" :disabled="asset.coverStatus === 'pending'" @click="emit('retry-cover', asset)"><ImageIcon :size="15" /></button>
-          <button v-if="!readOnly && asset.status === 'completed'" class="icon-button" :aria-label="privateWork ? t('设为公开') : t('设为私密')" :aria-pressed="privateWork" :title="privateWork ? t('设为公开') : t('设为私密')" @click="emit('visibility', asset)"><Lock v-if="privateWork" :size="15" /><Globe v-else :size="15" /></button>
+          <button v-if="!readOnly && editableTags && asset.status === 'completed'" class="icon-button" :aria-label="t('编辑标签')" :title="t('编辑标签')" @click="emit('tags', asset)"><Tag :size="15" /></button>
+          <button v-if="!readOnly && publishable && asset.status === 'completed' && !privateWork" class="icon-button" :aria-label="t('设为私密')" :title="t('设为私密')" :disabled="publishing" @click="emit('visibility', asset)"><Lock :size="15" /></button>
           <button v-if="!readOnly" class="icon-button asset-delete" :aria-label="t('删除作品')" :title="t('删除作品')" :disabled="asset.status === 'pending'" @click="emit('delete', asset.id)"><Trash2 :size="15" /></button>
         </div>
       </div>
@@ -104,7 +122,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { CircleAlert, Disc3, Download, FileText, Globe, Image as ImageIcon, LoaderCircle, Lock, Music2, Pause, Pencil, Play, RefreshCw, Trash2, Video, WandSparkles } from 'lucide-vue-next';
+import { CircleAlert, Disc3, Download, FileText, Globe, Image as ImageIcon, LoaderCircle, Lock, Music2, Pause, Pencil, PenLine, Play, RefreshCw, Tag, Trash2, Video, WandSparkles } from 'lucide-vue-next';
 import ThinkingOrb from './ThinkingOrb.vue';
 import type { Asset } from '../lib/types';
 import { publicServiceError } from '../lib/api';
@@ -115,16 +133,24 @@ import {
 } from '../composables/player';
 import { downloadBlob } from '../composables/ui';
 
-const props = withDefaults(defineProps<{ asset: Asset; readOnly?: boolean; aligning?: boolean }>(), { readOnly: false, aligning: false });
+const props = withDefaults(defineProps<{
+  asset: Asset; readOnly?: boolean; aligning?: boolean; editableTags?: boolean; editableInfo?: boolean;
+  /** Show the owner's publish/withdraw controls. Only signed-in cloud works have them. */
+  publishable?: boolean; publishing?: boolean;
+}>(), {
+  readOnly: false, aligning: false, editableTags: false, editableInfo: false, publishable: false, publishing: false,
+});
 const emit = defineEmits<{
   retry: [asset: Asset];
   delete: [id: string];
   download: [asset: Asset];
   edit: [asset: Asset];
+  rename: [asset: Asset];
   align: [asset: Asset];
   'download-cover': [asset: Asset];
   'retry-cover': [asset: Asset];
   visibility: [asset: Asset];
+  tags: [asset: Asset];
 }>();
 const privateWork = computed(() => props.asset.visibility === 'private');
 const loadError = ref(false);
@@ -135,7 +161,7 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined;
 let objectURL: string | null = null;
 const url = ref('');
 const hasCover = computed(() => !!props.asset.coverUrl && !coverError.value);
-const songTitle = computed(() => props.asset.song?.title || props.asset.prompt.slice(0, 40) || t('未命名歌曲'));
+const songTitle = computed(() => props.asset.title?.trim() || props.asset.song?.title || props.asset.prompt.slice(0, 40) || t('未命名歌曲'));
 const kindLabel = computed(() => props.asset.kind === 'image' ? t('图像') : props.asset.kind === 'video' ? t('视频') : t('音乐'));
 const resolution = computed(() => loadedResolution.value || (props.asset.imageWidth && props.asset.imageHeight ? { width: props.asset.imageWidth, height: props.asset.imageHeight } : undefined));
 const resolutionWarning = computed(() => imageResolutionWarning(resolution.value, props.asset.options.image_size));

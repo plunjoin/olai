@@ -151,6 +151,8 @@
                   <AssetCard
                     :asset="asset"
                     :aligning="aligningIds.includes(asset.id)"
+                    :publishable="Boolean(account.user)"
+                    :publishing="visibilityBusyIds.includes(asset.id)"
                     @retry="retryAsset"
                     @delete="deleteAsset"
                     @download="downloadAsset"
@@ -158,6 +160,7 @@
                     @align="alignMusicLyrics"
                     @download-cover="downloadCover"
                     @retry-cover="retryCover"
+                    @visibility="toggleAssetVisibility"
                   />
                 </div>
                 <div v-if="!exchange.results.length && locked" class="creation-waiting">
@@ -223,8 +226,8 @@ import { newSong, SECTION_LABELS, SECTION_TYPES } from '../lib/music';
 import { attachmentImages, attachmentPrompt, type ComposerAttachment } from '../lib/attachments';
 import { t } from '../lib/i18n';
 import {
-  activeAssets, alignMusicLyrics, aligningIds, composeForMusic, deleteAsset, downloadAsset, downloadCover, generate, kindBusy,
-  modelCatalog, modelSelection, retryAsset, retryCover, status,
+  account, activeAssets, alignMusicLyrics, aligningIds, composeForMusic, deleteAsset, downloadAsset, downloadCover, generate, kindBusy,
+  modelCatalog, modelSelection, retryAsset, retryCover, status, toggleAssetVisibility, visibilityBusyIds,
 } from '../composables/studio';
 import { uid } from '../composables/ui';
 

@@ -57,6 +57,54 @@ func TestSaveRecordFallsBackToUpdatedAt(t *testing.T) {
 	}
 }
 
+func TestSaveRecordCreateVisibilityAppliesOnlyOnInsert(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	insertUser(t, db, "u1")
+	key := recordKey(0)
+	record := StudioRecord{
+		Key: key, UserID: "u1", Store: "assets", RecordID: "asset-v",
+		Data: `{"id":"asset-v"}`, UpdatedAt: 10, CreateVisibility: "private",
+	}
+	if err := db.SaveRecord(ctx, record, nil); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	visibility, err := db.RecordVisibility(ctx, key)
+	if err != nil || visibility != "private" {
+		t.Fatalf("new visibility = %q err=%v, want private", visibility, err)
+	}
+	// An ordinary edit carries no visibility and must not change it.
+	record.Data = `{"id":"asset-v","edited":true}`
+	record.UpdatedAt = 20
+	if err := db.SaveRecord(ctx, record, nil); err != nil {
+		t.Fatalf("resave: %v", err)
+	}
+	if visibility, err = db.RecordVisibility(ctx, key); err != nil || visibility != "private" {
+		t.Fatalf("visibility after edit = %q err=%v, want private", visibility, err)
+	}
+	// An explicit visibility still updates the row.
+	record.Visibility = "public"
+	record.UpdatedAt = 30
+	record.CreateVisibility = ""
+	if err := db.SaveRecord(ctx, record, nil); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if visibility, err = db.RecordVisibility(ctx, key); err != nil || visibility != "public" {
+		t.Fatalf("visibility after publish = %q err=%v, want public", visibility, err)
+	}
+	// The guest import uses the same create-only default.
+	imported := StudioRecord{
+		Key: recordKey(1), UserID: "u1", Store: "assets", RecordID: "asset-import",
+		Data: `{"id":"asset-import"}`, UpdatedAt: 40, CreateVisibility: "private",
+	}
+	if _, err := db.InsertRecordIfAbsent(ctx, imported, nil, "", "", ""); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	if visibility, err = db.RecordVisibility(ctx, recordKey(1)); err != nil || visibility != "private" {
+		t.Fatalf("imported visibility = %q err=%v, want private", visibility, err)
+	}
+}
+
 func TestGalleryNewBatchPagesNewestFirst(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)

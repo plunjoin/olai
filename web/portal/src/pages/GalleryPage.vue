@@ -4,10 +4,20 @@
 
     <div class="plaza-main">
       <header class="plaza-topbar">
-        <div class="plaza-search">
+        <div class="plaza-search" :class="{ 'has-tags': selectedTags.length }">
           <Search :size="18" stroke-width="1.8" />
-          <input v-model="search" type="search" :aria-label="t('搜索作品')" :placeholder="t('搜索作品、风格或提示词')" />
-          <button v-if="search" type="button" class="plaza-search-clear" :aria-label="t('清除搜索')" @click="search = ''"><X :size="15" /></button>
+          <span v-for="tag in selectedTags" :key="tag" class="plaza-search-chip">
+            <span>#{{ tag }}</span>
+            <button type="button" :aria-label="t('移除标签：{tag}', { tag })" @click="removeTag(tag)"><X :size="12" /></button>
+          </span>
+          <input
+            v-model="search"
+            type="search"
+            :aria-label="t('搜索作品')"
+            :placeholder="t('搜索作品、风格或提示词，输入 # 标签后回车')"
+            @keydown.enter.prevent="commitTypedTags"
+          />
+          <button v-if="search || selectedTags.length" type="button" class="plaza-search-clear" :aria-label="t('清除搜索')" @click="clearSearch"><X :size="15" /></button>
         </div>
         <div class="plaza-topbar-actions">
           <RouterLink v-if="user" class="plaza-topbar-account" to="/account" :aria-label="t('我的账号 · {name}', { name: accountName })">
@@ -65,6 +75,8 @@
             @share="shareAsset"
             @report="reportTarget = $event"
             @login="goLogin"
+            @tag="filterByTag"
+            @edit="editTarget = $event"
           />
         </div>
 
@@ -83,6 +95,7 @@
               @download="downloadAsset"
               @share="shareAsset"
               @report="reportTarget = $event"
+              @tag="filterByTag"
             />
           </div>
           <div v-else-if="!active" class="plaza-empty">
@@ -127,6 +140,7 @@
 
     <GlobalPlayer />
     <GalleryReportDialog v-if="reportTarget" :asset="reportTarget" @close="reportTarget = null" />
+    <WorkEditorDialog v-if="editTarget" :asset="editTarget" :save="saveWorkInfo" @close="editTarget = null" @saved="applySavedWork" />
     <div v-if="toastText" class="toast plaza-toast" role="status">
       <CircleAlert :size="17" /><span>{{ toastText }}</span>
       <button type="button" :aria-label="t('关闭通知')" @click="clearToast"><X :size="15" /></button>
@@ -145,11 +159,12 @@ import PlazaCard from '../components/plaza/PlazaCard.vue';
 import PlazaDetail from '../components/plaza/PlazaDetail.vue';
 import GalleryReportDialog from '../components/GalleryReportDialog.vue';
 import GlobalPlayer from '../components/GlobalPlayer.vue';
+import WorkEditorDialog from '../components/WorkEditorDialog.vue';
 import AccountAvatar from '../components/AccountAvatar.vue';
 import { accountRequest, type Account } from '../lib/account';
 import {
   getGallery, importGalleryFavorites, recordGalleryDownload, recordGalleryView, setGalleryFavorite,
-  type GalleryMetrics, type GallerySort,
+  updateGalleryWorkMeta, type GalleryMetrics, type GallerySort,
 } from '../lib/gallery';
 import { readGalleryFavorites, writeGalleryFavorites } from '../lib/galleryFavorites';
 import { createFavoriteFolder, getFavoriteFolders, placeFavorite, type FavoriteFolder } from '../lib/people';
@@ -158,7 +173,9 @@ import { t } from '../lib/i18n';
 import { flyPlazaMedia, type PlazaMotionSource } from '../lib/plazaMotion';
 import { profileDisplayName } from '../lib/profile';
 import { DEFAULT_STATUS, loadStatus, type StatusState } from '../lib/status';
-import type { Asset } from '../lib/types';
+import type { Asset, WorkMetaChange } from '../lib/types';
+import { normalizeWorkTag, normalizeWorkTags, parseWorkTagsQuery, workHasTags } from '../lib/workTags';
+import { assets as studioAssets } from '../composables/studio';
 import { clearToast, downloadBlob, notify, toastText } from '../composables/ui';
 
 type Filter = 'all' | 'image' | 'video' | 'music' | 'favorites';
@@ -177,6 +194,7 @@ const loadingMore = ref(false);
 const error = ref('');
 const filter = ref<Filter>('all');
 const search = ref('');
+const selectedTags = ref<string[]>(parseWorkTagsQuery(route.query.tag));
 const sort = ref<GallerySort>('new');
 const favoriteTotal = ref(0);
 const folders = ref<FavoriteFolder[]>([]);
@@ -186,6 +204,7 @@ const active = ref<Asset | null>(null);
 const closing = ref(false);
 const detailSource = ref<{ rect: DOMRect | null; src: string }>({ rect: null, src: '' });
 const reportTarget = ref<Asset | null>(null);
+const editTarget = ref<Asset | null>(null);
 const user = ref<Account | null>(bootstrap?.initialUser ?? null);
 const status = ref<StatusState>({ ...DEFAULT_STATUS });
 const isNarrow = ref(false);
@@ -224,8 +243,9 @@ const visible = computed(() => {
   return assets.value.filter(asset => {
     if (filter.value === 'favorites' && !asset.favorite) return false;
     if (filter.value !== 'all' && filter.value !== 'favorites' && asset.kind !== filter.value) return false;
+    if (!workHasTags(asset.tags, selectedTags.value)) return false;
     if (!query) return true;
-    const haystack = `${asset.prompt}\n${asset.song?.title ?? ''}\n${asset.song?.style ?? ''}\n${asset.author?.name ?? ''}`.toLowerCase();
+    const haystack = `${asset.title ?? ''}\n${asset.prompt}\n${asset.song?.title ?? ''}\n${asset.song?.style ?? ''}\n${asset.author?.name ?? ''}\n${(asset.tags || []).join(' ')}`.toLowerCase();
     return haystack.includes(query);
   });
 });
@@ -362,9 +382,44 @@ async function changeFilter(next: Filter) {
 }
 function resetFilters() {
   search.value = '';
+  setTags([]);
   const wasFavorites = filter.value === 'favorites';
   filter.value = 'all';
   if (wasFavorites) void load(0, true);
+}
+/** Tag selection is shareable through ?tag=a,b and filters the loaded feed. */
+function setTags(next: readonly string[]) {
+  selectedTags.value = normalizeWorkTags(next);
+  const current = typeof route.query.tag === 'string' ? route.query.tag : '';
+  const value = selectedTags.value.join(',');
+  if (value === current) return;
+  const query = { ...route.query };
+  if (value) query.tag = value;
+  else delete query.tag;
+  querySyncing = true;
+  void router.replace({ path: route.path, query }).catch(() => {}).finally(() => { querySyncing = false; });
+}
+function addTag(tag: string) {
+  setTags([...selectedTags.value, normalizeWorkTag(tag)]);
+}
+function removeTag(tag: string) {
+  setTags(selectedTags.value.filter(item => item.toLowerCase() !== tag.toLowerCase()));
+}
+/** Typing "#夜景 #人像" and pressing Enter turns those tokens into chips. */
+function commitTypedTags() {
+  const tokens = [...search.value.matchAll(/(?:^|\s)[#＃]([^\s#＃]+)/g)].map(match => match[1]);
+  if (!tokens.length) return;
+  setTags([...selectedTags.value, ...tokens]);
+  search.value = search.value.replace(/(?:^|\s)[#＃][^\s#＃]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function clearSearch() {
+  search.value = '';
+  setTags([]);
+}
+/** A tag clicked on a card or in the open detail starts a plaza search. */
+function filterByTag(tag: string) {
+  addTag(tag);
+  if (active.value) void closeDetail();
 }
 function goLogin() {
   void router.push({ path: '/login', query: { next: route.fullPath } });
@@ -504,7 +559,7 @@ function openFromQuery(): boolean {
 function continueSharedWorkLookup(): boolean {
   const id = typeof route.query.work === 'string' ? route.query.work : '';
   if (!id || active.value || error.value || nextOffset.value === null
-    || filter.value !== 'all' || sort.value !== 'new' || search.value
+    || filter.value !== 'all' || sort.value !== 'new' || search.value || selectedTags.value.length
     || sharedLookupFailed.has(id)) {
     sharedLookup = null;
     return false;
@@ -595,6 +650,32 @@ async function shareAsset(asset: Asset) {
     notify(url);
   }
 }
+/** Plaza works may not live in the local library, so save metadata in place. */
+async function saveWorkInfo(updated: Asset, change: WorkMetaChange): Promise<Partial<Asset>> {
+  const payload: { title?: string; prompt?: string } = {};
+  if (change.title) payload.title = updated.title ?? '';
+  if (change.prompt) payload.prompt = updated.prompt;
+  const result = await updateGalleryWorkMeta(updated.id, payload);
+  return { title: result.title, prompt: result.prompt };
+}
+function applySavedWork(updated: Asset) {
+  const source = assets.value.find(item => item.id === updated.id);
+  if (source) {
+    source.title = updated.title;
+    source.prompt = updated.prompt;
+  }
+  if (active.value?.id === updated.id) {
+    active.value.title = updated.title;
+    active.value.prompt = updated.prompt;
+  }
+  // Keep 我的库 in sync: its cards are backed by the memoized studio list, and
+  // a later full-record save there must not restore the old name.
+  const cached = updated.recordId ? studioAssets.value.find(item => item.id === updated.recordId) : undefined;
+  if (cached) {
+    cached.title = updated.title;
+    cached.prompt = updated.prompt;
+  }
+}
 async function importLocalFavorites() {
   if (localFavoritesImported || !user.value) return;
   const local = readGalleryFavorites();
@@ -611,6 +692,10 @@ async function importLocalFavorites() {
 }
 
 watch(() => user.value?.id, id => { if (id) void importLocalFavorites(); }, { immediate: true });
+watch(() => route.query.tag, value => {
+  if (querySyncing) return;
+  selectedTags.value = parseWorkTagsQuery(value);
+});
 watch(() => route.query.work, work => {
   if (querySyncing) return;
   const id = typeof work === 'string' ? work : '';

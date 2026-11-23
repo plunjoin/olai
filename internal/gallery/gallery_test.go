@@ -118,6 +118,44 @@ func TestProjectionRedactsSecretsFromModelLabel(t *testing.T) {
 	}
 }
 
+func TestProjectionPublishesCleanTags(t *testing.T) {
+	output := projection(
+		store.RecordWithBody{StudioRecord: store.StudioRecord{Key: "record"}},
+		map[string]any{"kind": "image", "tags": []any{
+			"  #夜景 ", "夜景", "人像", "", 42, strings.Repeat("长", 30),
+		}},
+		nil,
+	)
+	tags, ok := output["tags"].([]string)
+	if !ok {
+		t.Fatalf("tags = %v", output["tags"])
+	}
+	if len(tags) != 3 {
+		t.Fatalf("tags = %v, want deduped non-empty three", tags)
+	}
+	if tags[0] != "夜景" || tags[1] != "人像" {
+		t.Fatalf("tags = %v, want leading # trimmed and case-insensitive dedupe", tags)
+	}
+	if got := []rune(tags[2]); len(got) != maxTagRunes {
+		t.Fatalf("long tag = %d runes, want capped at %d", len(got), maxTagRunes)
+	}
+}
+
+func TestProjectionCapsTagCount(t *testing.T) {
+	raw := make([]any, 0, maxTags+3)
+	for index := 0; index < maxTags+3; index++ {
+		raw = append(raw, "tag"+string(rune('a'+index)))
+	}
+	tags, ok := projection(
+		store.RecordWithBody{StudioRecord: store.StudioRecord{Key: "record"}},
+		map[string]any{"kind": "image", "tags": raw},
+		nil,
+	)["tags"].([]string)
+	if !ok || len(tags) != maxTags {
+		t.Fatalf("tags = %v, want at most %d", tags, maxTags)
+	}
+}
+
 func TestHeatScoreWeightsEngagement(t *testing.T) {
 	stats := store.GalleryStats{Views: 10, Downloads: 2, Favorites: 3}
 	want := int64(10*heatViewWeight + 2*heatDownloadWeight + 3*heatFavoriteWeight)

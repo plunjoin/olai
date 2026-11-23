@@ -96,6 +96,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/version", s.handleVersion)
 	mux.HandleFunc("GET /api/app/update", s.handleAppUpdate)
 	mux.HandleFunc("GET /api/suggestions", s.handleSuggestions)
+	mux.HandleFunc("POST /api/title", s.handleTitle)
 	mux.HandleFunc("POST /api/chat/completions", s.handleProxy)
 	mux.HandleFunc("POST /api/generate/{kind}", s.handleProxy)
 	mux.HandleFunc("GET /api/videos/{id}", s.handleProxy)
@@ -121,6 +122,7 @@ func (s *Server) routes() *http.ServeMux {
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
 		mux.HandleFunc(method+" /api/records/{store}", s.handleRecords)
 	}
+	mux.HandleFunc("PUT /api/records/{store}/{id}/visibility", s.handleStoredRecordVisibility)
 	// Private media
 	mux.HandleFunc("POST /api/media", s.handleMediaUpload)
 	mux.HandleFunc("POST /api/media/import", s.handleMediaImport)
@@ -138,6 +140,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/gallery/comments", s.handleGalleryCommentCreate)
 	mux.HandleFunc("POST /api/gallery/{id}/report", s.handleGalleryReport)
 	mux.HandleFunc("PUT /api/gallery/{id}/visibility", s.handleRecordVisibility)
+	mux.HandleFunc("PUT /api/gallery/{id}/meta", s.handleGalleryWorkMeta)
 	mux.HandleFunc("PUT /api/gallery/{id}/folder", s.handleFavoritePlacement)
 	mux.HandleFunc("GET /api/favorites/folders", s.handleFavoriteFolders)
 	mux.HandleFunc("POST /api/favorites/folders", s.handleFavoriteFolders)
@@ -162,6 +165,11 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/admin/auth/password", s.handleAdminPassword)
 	// Admin
 	mux.HandleFunc("GET /api/admin/overview", s.handleAdminOverview)
+	mux.HandleFunc("GET /api/admin/works", s.handleAdminWorks)
+	mux.HandleFunc("POST /api/admin/works", s.handleAdminWorkCreate)
+	mux.HandleFunc("GET /api/admin/works/{id}", s.handleAdminWorkDetail)
+	mux.HandleFunc("PUT /api/admin/works/{id}", s.handleAdminWorkUpdate)
+	mux.HandleFunc("DELETE /api/admin/works/{id}", s.handleAdminWorkDelete)
 	mux.HandleFunc("GET /api/admin/users", s.handleAdminUsers)
 	mux.HandleFunc("GET /api/admin/users/{id}", s.handleAdminUser)
 	mux.HandleFunc("POST /api/admin/users/{id}/ban", s.handleAdminBan)

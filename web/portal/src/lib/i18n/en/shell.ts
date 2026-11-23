@@ -150,6 +150,7 @@ const dict: Record<string, string> = {
 
   // Media generation
   '创作完成，已加入你的作品库。': 'Done — your work is now in the library.',
+  '创作完成，已加入你的作品库。发布到广场后大家就能看到。': 'Done — your work is in the library. Publish it to the gallery for everyone to see.',
   '{warning} 原图已保存到作品库。': '{warning} The original image is saved to your library.',
   '同类型作品正在生成，请等待完成。': 'A work of this type is already generating. Please wait for it to finish.',
   '未命名歌曲': 'Untitled song',

@@ -51,7 +51,7 @@
         <AccountAvatar :name="authorName" :avatar="asset.author?.avatar" :size="20" />
         <span class="plaza-card-author-name">{{ authorName }}</span>
       </span>
-      <div class="plaza-card-more-wrap">
+      <div ref="moreWrapRef" class="plaza-card-more-wrap">
         <button
           type="button"
           class="plaza-card-more"
@@ -62,7 +62,7 @@
         >
           <Ellipsis :size="18" />
         </button>
-        <div v-if="menuOpen" class="plaza-card-menu" role="menu" @click.stop>
+        <div v-if="menuOpen" ref="menuRef" class="plaza-card-menu" :class="{ 'is-up': menuUp }" role="menu" @click.stop>
           <button type="button" role="menuitem" @click="choose('favorite')">
             <Bookmark :size="14" :fill="favorite ? 'currentColor' : 'none'" />{{ favorite ? t('取消收藏') : t('收藏作品') }}
           </button>
@@ -78,11 +78,23 @@
         </div>
       </div>
     </footer>
+
+    <div v-if="asset.tags?.length" class="plaza-card-tags" :aria-label="t('作品标签')">
+      <button
+        v-for="tag in asset.tags.slice(0, 3)"
+        :key="tag"
+        type="button"
+        class="plaza-card-tag"
+        :title="t('按标签筛选：{tag}', { tag })"
+        @click.stop="emit('tag', tag)"
+      >#{{ tag }}</button>
+      <span v-if="asset.tags.length > 3" class="plaza-card-tag-more">+{{ asset.tags.length - 3 }}</span>
+    </div>
   </article>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { Bookmark, Download, Ellipsis, Flag, Image as ImageIcon, Link2, Music2, Video } from 'lucide-vue-next';
 import AccountAvatar from '../AccountAvatar.vue';
 import { galleryKindLabel, galleryTitle } from '../../lib/galleryDetail';
@@ -96,9 +108,13 @@ const emit = defineEmits<{
   download: [asset: Asset];
   share: [asset: Asset];
   report: [asset: Asset];
+  tag: [tag: string];
 }>();
 
 const menuOpen = ref(false);
+const menuUp = ref(false);
+const moreWrapRef = ref<HTMLElement | null>(null);
+const menuRef = ref<HTMLElement | null>(null);
 const imageFailed = ref(false);
 const title = computed(() => galleryTitle(props.asset));
 const kindLabel = computed(() => galleryKindLabel(props.asset.kind));
@@ -119,9 +135,28 @@ const ratio = computed(() => {
 });
 
 function closeMenu() { menuOpen.value = false; }
-function toggleMenu(event: MouseEvent) {
+async function toggleMenu(event: MouseEvent) {
   event.stopPropagation();
-  menuOpen.value = !menuOpen.value;
+  if (menuOpen.value) {
+    menuOpen.value = false;
+    return;
+  }
+  menuUp.value = false;
+  menuOpen.value = true;
+  await nextTick();
+  positionMenu();
+}
+/** Flip the menu above the trigger when there is not enough room below it. */
+function positionMenu() {
+  const wrap = moreWrapRef.value;
+  const menu = menuRef.value;
+  if (!wrap || !menu) return;
+  const rect = wrap.getBoundingClientRect();
+  const menuHeight = menu.offsetHeight;
+  const gap = 10;
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  menuUp.value = spaceBelow < menuHeight + gap && spaceAbove > spaceBelow;
 }
 function choose(action: 'favorite' | 'download' | 'share' | 'report') {
   menuOpen.value = false;
@@ -133,8 +168,19 @@ function choose(action: 'favorite' | 'download' | 'share' | 'report') {
 function onDocumentClick() { closeMenu(); }
 
 watch(menuOpen, open => {
-  if (open) window.setTimeout(() => document.addEventListener('click', onDocumentClick), 0);
-  else document.removeEventListener('click', onDocumentClick);
+  if (open) {
+    window.setTimeout(() => document.addEventListener('click', onDocumentClick), 0);
+    window.addEventListener('scroll', positionMenu, true);
+    window.addEventListener('resize', positionMenu);
+  } else {
+    document.removeEventListener('click', onDocumentClick);
+    window.removeEventListener('scroll', positionMenu, true);
+    window.removeEventListener('resize', positionMenu);
+  }
 });
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick));
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick);
+  window.removeEventListener('scroll', positionMenu, true);
+  window.removeEventListener('resize', positionMenu);
+});
 </script>

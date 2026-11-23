@@ -137,6 +137,22 @@ export async function reportGalleryWork(id: string, reason: string, detail: stri
   });
 }
 
+export interface WorkMetaResult { title: string; displayTitle: string; prompt: string }
+
+/** Owners rename a published work or edit its description in place. */
+export async function updateGalleryWorkMeta(id: string, input: { title?: string; prompt?: string }): Promise<WorkMetaResult> {
+  const response = await galleryRequest(`/api/gallery/${encodeURIComponent(id)}/meta`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await response.json();
+  if (typeof data.title !== 'string' || typeof data.prompt !== 'string' || typeof data.displayTitle !== 'string') {
+    throw new Error(t('作品信息保存失败，请稍后重试。'));
+  }
+  return { title: data.title, displayTitle: data.displayTitle, prompt: data.prompt };
+}
+
 /** Adopt browser-local bookmarks created before account favorites existed. */
 export async function importGalleryFavorites(ids: readonly string[]): Promise<number> {
   const response = await galleryRequest('/api/gallery/favorites/import', {

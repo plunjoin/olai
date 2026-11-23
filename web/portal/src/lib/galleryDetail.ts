@@ -20,6 +20,7 @@ export function galleryModelLabel(kind: MediaKind): string {
 
 /** The public gallery shows a short, human title; the full prompt lives in the detail panel. */
 export function galleryTitle(asset: Asset): string {
+  if (asset.title?.trim()) return asset.title.trim().slice(0, 80);
   if (asset.kind === 'music' && asset.song?.title?.trim()) return asset.song.title.trim().slice(0, 80);
   const line = (asset.prompt || '').trim().split('\n')[0]?.trim() ?? '';
   return line.slice(0, 80) || (asset.kind === 'music' ? t('未命名歌曲') : t('未命名作品'));

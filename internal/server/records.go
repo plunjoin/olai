@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"olai/internal/ai"
 	"olai/internal/httpx"
@@ -16,6 +18,15 @@ import (
 const (
 	maxRecordBytes = 64 * 1024 * 1024
 	recordChunk    = 128 * 1024
+	// Mirror the gallery projection limits so stored tags always fit the public
+	// shape instead of being silently dropped later.
+	maxWorkTags     = 8
+	maxWorkTagRunes = 24
+	// maxWorkTitleRunes matches the public title cap; maxWorkPromptRunes matches
+	// the gallery's prompt projection so an editable description is not silently
+	// cut off when it is published.
+	maxWorkTitleRunes  = 80
+	maxWorkPromptRunes = 16000
 )
 
 var recordIDRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
@@ -161,8 +172,26 @@ func recordError(value map[string]any, storeName string) string {
 	if _, ok := value["prompt"].(string); !ok {
 		return "作品描述需要是文本。"
 	}
+	if raw, exists := value["title"]; exists {
+		title, ok := raw.(string)
+		if !ok || utf8.RuneCountInString(strings.TrimSpace(title)) > maxWorkTitleRunes {
+			return "作品名称无效或超过 80 个字符。"
+		}
+	}
 	if _, ok := value["options"].(map[string]any); !ok {
 		return "作品参数需要是 JSON 对象。"
+	}
+	if raw, exists := value["tags"]; exists {
+		tags, ok := raw.([]any)
+		if !ok || len(tags) > maxWorkTags {
+			return "作品标签格式无效。"
+		}
+		for _, item := range tags {
+			tag, ok := item.(string)
+			if !ok || strings.TrimSpace(tag) == "" || utf8.RuneCountInString(tag) > maxWorkTagRunes {
+				return "作品标签需为 1–24 个字符。"
+			}
+		}
 	}
 	return ""
 }
@@ -239,6 +268,14 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 			if s.ossEnabled() {
 				value = s.Media.PublicRecordMedia(value, identity)
 			}
+			if storeName == "assets" {
+				// Visibility lives in a column so a stale body can never
+				// republish or withdraw a work. The owner's client still needs
+				// the current value to show the publish action after a reload.
+				if object, ok := value.(map[string]any); ok {
+					object["visibility"] = record.Visibility
+				}
+			}
 			output = append(output, value)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"records": output})
@@ -247,6 +284,50 @@ func (s *Server) handleRecords(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		s.saveRecord(w, r, user, storeName)
 	}
+}
+
+// handleStoredRecordVisibility publishes or withdraws one of the signed-in
+// owner's works by its record id. The portal knows each asset by that id, so
+// the action does not need the gallery alias or a full record rewrite.
+func (s *Server) handleStoredRecordVisibility(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	if r.PathValue("store") != "assets" {
+		writeError(w, http.StatusNotFound, "接口不存在。")
+		return
+	}
+	if r.Header.Get("X-Olai-User") != user.ID {
+		writeError(w, http.StatusConflict, "账号已切换，请刷新页面后继续。")
+		return
+	}
+	id := r.PathValue("id")
+	if !recordIDRE.MatchString(id) {
+		writeError(w, http.StatusBadRequest, "记录编号无效。")
+		return
+	}
+	input, err := readJSONObject(r, 2*1024)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "公开设置格式无效。")
+		return
+	}
+	visibility, _ := input["visibility"].(string)
+	if visibility != "public" && visibility != "private" {
+		writeError(w, http.StatusBadRequest, "公开设置只能是公开或私密。")
+		return
+	}
+	key := httpx.Hash(user.ID + ":assets:" + id)
+	changed, err := s.DB.SetRecordVisibility(r.Context(), key, user.ID, visibility)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "公开设置暂不可用，请稍后重试。")
+		return
+	}
+	if !changed {
+		writeError(w, http.StatusNotFound, "作品不存在。")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"visibility": visibility})
 }
 
 func (s *Server) migrateRecords(w http.ResponseWriter, r *http.Request, user *store.SessionUser, storeName string) {
@@ -333,6 +414,40 @@ func splitRecord(value []byte) (string, []store.RecordChunk) {
 	return "", chunks
 }
 
+// workRecordKind reads the asset kind that is mirrored into the admin listing.
+func workRecordKind(value map[string]any) string {
+	kind, _ := value["kind"].(string)
+	switch kind {
+	case "image", "video", "music":
+		return kind
+	}
+	return ""
+}
+
+// workRecordTitle returns the name a work is displayed under: the explicit
+// title, then the song title, then the first line of the prompt. It is clamped
+// to the public cap so the stored projection never differs from the feed.
+func workRecordTitle(value map[string]any) string {
+	title, _ := value["title"].(string)
+	if strings.TrimSpace(title) == "" {
+		if song, ok := value["song"].(map[string]any); ok {
+			title, _ = song["title"].(string)
+		}
+	}
+	if strings.TrimSpace(title) == "" {
+		title, _ = value["prompt"].(string)
+	}
+	title = strings.TrimSpace(title)
+	if index := strings.IndexByte(title, '\n'); index >= 0 {
+		title = strings.TrimSpace(title[:index])
+	}
+	runes := []rune(title)
+	if len(runes) > maxWorkTitleRunes {
+		runes = runes[:maxWorkTitleRunes]
+	}
+	return strings.TrimSpace(string(runes))
+}
+
 func (s *Server) saveRecord(w http.ResponseWriter, r *http.Request, user *store.SessionUser, storeName string) {
 	ctx := r.Context()
 	data, ok := readBody(r, maxRecordBytes)
@@ -398,12 +513,23 @@ func (s *Server) saveRecord(w http.ResponseWriter, r *http.Request, user *store.
 	}
 	record := store.StudioRecord{Key: key, UserID: user.ID, Store: storeName, RecordID: id, CreatedAt: createdAt, UpdatedAt: now}
 	if storeName == "assets" {
+		// Visibility is server state that changes only through
+		// PUT /api/records/{store}/{id}/visibility. A full-record save may pick
+		// it when the row is first created (an importer's explicit value,
+		// otherwise private), but never on update: a stale client echoing a
+		// record it fetched earlier must not republish or withdraw a work.
+		record.CreateVisibility = "private"
 		switch recordMap["visibility"] {
 		case "public":
-			record.Visibility = "public"
+			record.CreateVisibility = "public"
 		case "private":
-			record.Visibility = "private"
+			record.CreateVisibility = "private"
 		}
+		// Mirror the fields the admin console lists and searches. The effective
+		// title falls back exactly like the portal does, so a work added by an
+		// older client is still searchable by the name people see.
+		record.Kind = workRecordKind(recordMap)
+		record.Title = workRecordTitle(recordMap)
 	}
 	directData, chunks := splitRecord(serialized)
 	record.Data = directData

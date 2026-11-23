@@ -18,6 +18,7 @@
       <UsersTab v-else-if="tab === 'users'" />
       <InvitesTab v-else-if="tab === 'invites'" />
       <ContentTab v-else-if="tab === 'content'" />
+      <WorksTab v-else-if="tab === 'works'" />
       <ReportsTab v-else-if="tab === 'reports'" />
       <ModelsTab v-else-if="tab === 'models'" />
       <SettingsTab v-else-if="tab === 'settings'" />
@@ -32,6 +33,7 @@ import OverviewTab from './OverviewTab.vue';
 import UsersTab from './UsersTab.vue';
 import InvitesTab from './InvitesTab.vue';
 import ContentTab from './ContentTab.vue';
+import WorksTab from './WorksTab.vue';
 import ReportsTab from './ReportsTab.vue';
 import ModelsTab from './ModelsTab.vue';
 import SettingsTab from './SettingsTab.vue';
@@ -41,10 +43,10 @@ import { t } from '../../lib/i18n';
 
 defineProps<{ email: string; name?: string | null; version?: string }>();
 const emit = defineEmits<{ signedOut: [] }>();
-type Tab = 'overview' | 'users' | 'invites' | 'content' | 'reports' | 'models' | 'settings' | 'logs';
+type Tab = 'overview' | 'users' | 'invites' | 'content' | 'works' | 'reports' | 'models' | 'settings' | 'logs';
 const TABS: [Tab, string][] = [
   ['overview', t('概览')], ['users', t('用户')], ['invites', t('邀请')], ['content', t('生成与媒体')],
-  ['reports', t('举报')], ['models', t('模型与定价')], ['settings', t('系统设置')], ['logs', t('操作日志')],
+  ['works', t('作品管理')], ['reports', t('举报')], ['models', t('模型与定价')], ['settings', t('系统设置')], ['logs', t('操作日志')],
 ];
 const tab = ref<Tab>('overview');
 const passwordOpen = ref(false);

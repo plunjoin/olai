@@ -17,10 +17,12 @@ type AdminUserRow struct {
 }
 
 func (d *DB) AdminUsers(ctx context.Context, query string, limit, offset int) ([]AdminUserRow, int64, error) {
-	filter := ""
+	// The official publisher account owns works added from the console; it is
+	// not a person and stays out of user management.
+	filter := ` WHERE u.system = 0`
 	args := []any{}
 	if query != "" {
-		filter = ` WHERE (u.email LIKE ? OR u.id = ?)`
+		filter += ` AND (u.email LIKE ? OR u.id = ?)`
 		args = append(args, "%"+query+"%", query)
 	}
 	var total int64
@@ -307,9 +309,9 @@ func (d *DB) Overview(ctx context.Context, todayStart, weekAgo int64) (Overview,
 		args  []any
 		dest  *int64
 	}{
-		{`SELECT COUNT(*) FROM users`, nil, &out.UsersTotal},
-		{`SELECT COUNT(*) FROM users WHERE created_at >= ?`, []any{todayStart}, &out.UsersToday},
-		{`SELECT COUNT(*) FROM users WHERE created_at >= ?`, []any{weekAgo}, &out.UsersWeek},
+		{`SELECT COUNT(*) FROM users WHERE system = 0`, nil, &out.UsersTotal},
+		{`SELECT COUNT(*) FROM users WHERE system = 0 AND created_at >= ?`, []any{todayStart}, &out.UsersToday},
+		{`SELECT COUNT(*) FROM users WHERE system = 0 AND created_at >= ?`, []any{weekAgo}, &out.UsersWeek},
 		{`SELECT CAST(COALESCE(SUM(balance), 0) AS BIGINT) FROM point_accounts`, nil, &out.PointsCirc},
 		{`SELECT CAST(COALESCE(SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END), 0) AS BIGINT) FROM point_ledger`, nil, &out.PointsIssued},
 		{`SELECT CAST(COALESCE(SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END), 0) AS BIGINT) FROM point_ledger`, nil, &out.PointsSpent},
@@ -362,6 +364,7 @@ type RecentUser struct {
 func (d *DB) RecentUsers(ctx context.Context, limit int) ([]RecentUser, error) {
 	rows, err := d.QueryContext(ctx, `SELECT u.id, u.email, u.created_at, COALESCE(p.balance, 0)
 		FROM users u LEFT JOIN point_accounts p ON p.user_id = u.id
+		WHERE u.system = 0
 		ORDER BY u.created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err

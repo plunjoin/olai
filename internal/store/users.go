@@ -87,6 +87,35 @@ func (d *DB) UserByID(ctx context.Context, id string) (*User, error) {
 	return scanUser(d.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE id = ?`, id))
 }
 
+// The admin console publishes official works through a real portal account,
+// because works reference users(id) and their media must belong to that same
+// account. The account cannot sign in (its password hash is not a scrypt
+// value) and is hidden from user-management views by users.system.
+const (
+	OfficialUserID    = "olai-official"
+	OfficialUserEmail = "official@olai.invalid"
+	OfficialUserName  = "Olai 官方"
+	officialHandle    = "official"
+)
+
+// EnsureSystemUser creates the official publisher account on first use and
+// returns its id. It is safe to call on every admin work creation.
+func (d *DB) EnsureSystemUser(ctx context.Context) (string, error) {
+	now := time.Now().UnixMilli()
+	if _, err := d.ExecContext(ctx, `INSERT INTO users (id, email, password_hash, email_verified_at, name, system, created_at, updated_at)
+		VALUES (?, ?, 'system:no-login', NULL, ?, 1, ?, ?) ON CONFLICT DO NOTHING`,
+		OfficialUserID, OfficialUserEmail, OfficialUserName, now, now); err != nil {
+		return "", err
+	}
+	if _, err := d.UserByID(ctx, OfficialUserID); err != nil {
+		return "", err
+	}
+	if _, err := d.EnsureProfile(ctx, OfficialUserID, officialHandle); err != nil {
+		return "", err
+	}
+	return OfficialUserID, nil
+}
+
 func (d *DB) CreateUser(ctx context.Context, id, email, passwordHash string, verified bool) (*User, error) {
 	now := time.Now().UnixMilli()
 	var verifiedAt any = nil

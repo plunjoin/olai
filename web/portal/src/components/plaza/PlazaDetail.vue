@@ -66,7 +66,7 @@
                 <Pause v-if="playing" :size="24" /><Play v-else :size="24" class="play-icon-offset" />
               </button>
             </div>
-            <strong>{{ asset.song?.title || title }}</strong>
+            <strong>{{ asset.title || asset.song?.title || title }}</strong>
             <span>{{ asset.song?.style || t('原创音乐') }}</span>
           </div>
         </template>
@@ -108,6 +108,7 @@
             <Ellipsis :size="18" />
           </button>
           <div v-if="moreOpen" class="plaza-card-menu is-detail" role="menu" @click.stop>
+            <button v-if="asset.owner" type="button" role="menuitem" @click="moreAction('edit')"><PenLine :size="14" />{{ t('编辑作品信息') }}</button>
             <button type="button" role="menuitem" @click="moreAction('download')"><Download :size="14" />{{ t('下载作品') }}</button>
             <button type="button" role="menuitem" @click="moreAction('share')"><Link2 :size="14" />{{ t('复制链接') }}</button>
             <button type="button" role="menuitem" class="is-danger" @click="moreAction('report')"><Flag :size="14" />{{ t('举报作品') }}</button>
@@ -132,6 +133,15 @@
 
       <div ref="scrollRef" class="plaza-detail-scroll">
         <h1>{{ title }}</h1>
+        <div v-if="asset.tags?.length" class="plaza-detail-tags" :aria-label="t('作品标签')">
+          <button
+            v-for="tag in asset.tags"
+            :key="tag"
+            type="button"
+            :title="t('按标签筛选：{tag}', { tag })"
+            @click="emit('tag', tag)"
+          >#{{ tag }}</button>
+        </div>
         <section v-if="asset.prompt" class="plaza-detail-prompt-block" :aria-label="t('提示词')">
           <header class="plaza-detail-section-head">
             <h2>{{ t('提示词') }}</h2>
@@ -243,7 +253,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   ArrowLeft, Bookmark, Check, Copy, Download, Ellipsis, Eye, Flag, Heart, Image as ImageIcon, Link2, LoaderCircle,
-  Maximize2, MessageCircle, Music2, Pause, Play, Send, Share2, Video, X,
+  Maximize2, MessageCircle, Music2, Pause, PenLine, Play, Send, Share2, Video, X,
 } from 'lucide-vue-next';
 import AccountAvatar from '../AccountAvatar.vue';
 import {
@@ -277,7 +287,9 @@ const emit = defineEmits<{
   download: [asset: Asset];
   share: [asset: Asset];
   report: [asset: Asset];
+  edit: [asset: Asset];
   login: [];
+  tag: [tag: string];
 }>();
 
 const articleRef = ref<HTMLElement | null>(null);
@@ -469,10 +481,11 @@ function toggleMore(event: MouseEvent) {
   moreOpen.value = !moreOpen.value;
 }
 function closeMore() { moreOpen.value = false; }
-function moreAction(action: 'download' | 'share' | 'report') {
+function moreAction(action: 'download' | 'share' | 'report' | 'edit') {
   moreOpen.value = false;
   if (action === 'download') emit('download', props.asset);
   else if (action === 'share') emit('share', props.asset);
+  else if (action === 'edit') emit('edit', props.asset);
   else emit('report', props.asset);
 }
 

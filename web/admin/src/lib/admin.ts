@@ -2,7 +2,9 @@ import { intlLocale, t } from './i18n';
 
 export async function adminApi<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (init?.body) headers.set('Content-Type', 'application/json');
+  // FormData sets its own multipart boundary; only JSON string bodies get the
+  // explicit header.
+  if (typeof init?.body === 'string') headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers, credentials: 'same-origin' });
   const data = await response.json().catch(() => ({}));
   if (response.status === 401) {
@@ -36,6 +38,8 @@ export const ADMIN_ACTIONS: Record<string, string> = {
   'models.update': t('修改模型'), 'models.sync': t('同步模型'),
   'report.resolve': t('处理举报'), 'report.dismiss': t('忽略举报'),
   'gallery.hide': t('隐藏作品'), 'gallery.unhide': t('恢复作品显示'),
+  'work.create': t('发布作品'), 'work.update': t('修改作品'), 'work.delete': t('删除作品'),
+  'work.hide': t('隐藏作品'), 'work.unhide': t('恢复作品显示'),
   'site.update': t('更新整站'),
   'admin.login': t('后台登录'), 'admin.password': t('修改后台密码'),
 };
@@ -51,6 +55,14 @@ export const REPORT_STATUS: Record<string, string> = {
 export const MODEL_KIND_NAMES: Record<string, string> = {
   chat: t('对话'), image: t('图像'), video: t('视频'), music: t('音乐'),
 };
+
+export interface AdminWork {
+  id: string; recordKey: string; recordId: string;
+  title: string; displayTitle?: string; prompt?: string;
+  kind: string; visibility: string; hidden: boolean;
+  system: boolean; userId: string; email: string;
+  createdAt: number; updatedAt: number;
+}
 
 export type FeedbackMessage = { tone: 'ok' | 'error'; text: string } | null;
 

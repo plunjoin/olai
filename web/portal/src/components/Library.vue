@@ -26,14 +26,20 @@
         :asset="asset"
         :style="ratioStyle(asset)"
         :aligning="aligningIds.includes(asset.id)"
+        :publishable="Boolean(account.user)"
+        :publishing="visibilityBusyIds.includes(asset.id)"
+        editable-tags
+        editable-info
         @retry="retryAsset"
         @delete="deleteAsset"
         @download="downloadAsset"
         @edit="editAsset"
+        @rename="renameAsset = $event"
         @align="alignMusicLyrics"
         @download-cover="downloadCover"
         @retry-cover="retryCover"
-        @visibility="changeVisibility"
+        @visibility="toggleAssetVisibility"
+        @tags="openTags"
       />
     </div>
     <div v-else class="library-empty gallery-empty">
@@ -61,8 +67,22 @@
       </template>
     </div>
 
-    <p v-if="visibilityNote" class="library-footnote" role="status">{{ visibilityNote }}</p>
-    <p class="library-footnote">{{ account.user ? t('作品保存在你的账号 · 已完成作品默认公开，可在卡片上设为私密 · 重要作品请下载备份') : t('作品保存在当前浏览器 · 登录后可同步 · 重要作品请下载备份') }}</p>
+    <p class="library-footnote">{{ account.user ? t('作品保存在你的账号 · 新作品默认私密，发布后才会出现在作品广场 · 重要作品请下载备份') : t('作品保存在当前浏览器 · 登录后可同步 · 重要作品请下载备份') }}</p>
+
+    <TagEditorDialog
+      v-if="tagAsset"
+      :asset="tagAsset"
+      :suggestions="tagSuggestions"
+      @close="tagAsset = null"
+      @saved="applySavedTags"
+    />
+    <WorkEditorDialog
+      v-if="renameAsset"
+      :asset="renameAsset"
+      :save="saveWorkInfo"
+      @close="renameAsset = null"
+      @saved="applySavedWork"
+    />
   </div>
 </template>
 
@@ -71,27 +91,43 @@ import { computed, ref } from 'vue';
 import { CircleAlert, Image as ImageIcon, Music2, Search, Video } from 'lucide-vue-next';
 import AssetCard from './AssetCard.vue';
 import Companion from './Companion.vue';
+import TagEditorDialog from './TagEditorDialog.vue';
+import WorkEditorDialog from './WorkEditorDialog.vue';
 import { galleryKindLabel } from '../lib/galleryDetail';
 import { t } from '../lib/i18n';
 import { put } from '../lib/storage';
-import type { Asset } from '../lib/types';
+import type { Asset, WorkMetaChange } from '../lib/types';
+import { normalizeWorkTags } from '../lib/workTags';
 import {
   account, alignMusicLyrics, aligningIds, assets, deleteAsset, downloadAsset, downloadCover, retryAsset, retryCover, completedCount,
+  toggleAssetVisibility, visibilityBusyIds,
 } from '../composables/studio';
 
 const emit = defineEmits<{ edit: [asset: Asset] }>();
-const visibilityNote = ref('');
-async function changeVisibility(asset: Asset) {
-  if (!account.value.user) { visibilityNote.value = t('登录后才能设置作品是否公开。'); return; }
-  const next = asset.visibility === 'private' ? 'public' : 'private';
-  const updated = { ...asset, visibility: next } as Asset;
-  try {
-    await put('assets', updated);
-    assets.value = assets.value.map(item => item.id === asset.id ? updated : item);
-    visibilityNote.value = next === 'private' ? t('已设为私密，广场和主页不再展示。') : t('已设为公开。');
-  } catch (cause) {
-    visibilityNote.value = cause instanceof Error ? cause.message : t('公开设置暂不可用，请稍后重试。');
-  }
+const tagAsset = ref<Asset | null>(null);
+const renameAsset = ref<Asset | null>(null);
+/** Other works' tags make retyping common labels unnecessary. */
+const tagSuggestions = computed(() => normalizeWorkTags(
+  assets.value.filter(asset => asset.id !== tagAsset.value?.id).flatMap(asset => asset.tags || []),
+));
+function openTags(asset: Asset) { tagAsset.value = asset; }
+function applySavedTags(updated: Asset) {
+  assets.value = assets.value.map(item => item.id === updated.id ? updated : item);
+}
+function applySavedWork(updated: Asset) {
+  assets.value = assets.value.map(item => item.id === updated.id ? updated : item);
+}
+/**
+ * Merge into the live asset before the full-record write, so a cover or lyric
+ * job that finished while the dialog was open is not reverted.
+ */
+async function saveWorkInfo(updated: Asset, change: WorkMetaChange): Promise<Partial<Asset>> {
+  const current = assets.value.find(item => item.id === updated.id) || updated;
+  const next = { ...current } as Asset;
+  if (change.title) next.title = updated.title ?? '';
+  if (change.prompt) next.prompt = updated.prompt;
+  await put('assets', next);
+  return next;
 }
 type Filter = 'all' | 'image' | 'video' | 'music' | 'failed';
 const filter = ref<Filter>('all');
@@ -115,7 +151,7 @@ const visible = computed(() => assets.value.filter(asset => {
     if (filter.value !== 'all' && asset.kind !== filter.value) return false;
   }
   const query = search.value.trim().toLowerCase();
-  const haystack = `${asset.prompt}\n${asset.song?.title ?? ''}\n${asset.song?.style ?? ''}`.toLowerCase();
+  const haystack = `${asset.title ?? ''}\n${asset.prompt}\n${asset.song?.title ?? ''}\n${asset.song?.style ?? ''}\n${(asset.tags || []).join(' ')}`.toLowerCase();
   return !query || haystack.includes(query);
 }));
 function countFor(key: Filter) {
