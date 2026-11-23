@@ -586,7 +586,7 @@ docker compose up -d
 | --- | --- | --- |
 | `CI` | Pull Request、推送 `master` | 构建两个前端，执行 `go test`、`go vet`、`go build`，构建镜像并做 HTTP 冒烟检查 |
 | `Release image` | 推送 `v*.*.*` tag | 再次测试后构建并推送 GHCR 镜像，同时生成版本 tag、`sha-*` tag 和稳定版的 `latest` |
-| `Deploy production` | 手动触发并审批 | SSH 到服务器，检出指定 tag，调用部署脚本替换容器 |
+| `Deploy production` | `Release image` 成功后自动触发，也可手动补发 | SSH 到服务器，检出指定 tag，调用部署脚本替换容器 |
 
 镜像名格式为 `ghcr.io/plunjoin/olai:<版本>`。例如 `v1.5.0` 会生成：
 
@@ -620,14 +620,14 @@ ghcr.io/plunjoin/olai:latest
 
 #### 发布与回滚
 
-发布新版本：
+发布新版本只需要推送标签；`Release image` 成功后会自动触发 `Deploy production`：
 
 ```bash
-git tag -a v1.5.0 -m "v1.5.0"
-git push origin v1.5.0
+git tag -a v1.6.0 -m "v1.6.0"
+git push origin v1.6.0
 ```
 
-等待 `Release image` 成功后，在 Actions 中手动运行 `Deploy production` 并输入 `v1.5.0`；也可以在后台「系统设置 → 版本与更新」的整站更新面板选择该 tag 并点击「更新整站」。两种方式都会在配置了 `production` 环境保护时等待审批。部署脚本会读取当前容器镜像、停止容器做 SQLite 数据卷备份、拉取新镜像、替换 Compose 服务，并最多等待 180 秒健康检查。
+若 `production` 环境保护配置了 Required reviewers，自动部署仍会等待审批；未配置审批时会直接开始部署。也可以在 Actions 中手动运行 `Deploy production` 补发指定 tag，或在后台「系统设置 → 版本与更新」的整站更新面板选择该 tag 并点击「更新整站」。部署脚本会读取当前容器镜像、停止容器做 SQLite 数据卷备份、拉取新镜像、替换 Compose 服务，并最多等待 180 秒健康检查。
 
 部署状态保存在：
 
