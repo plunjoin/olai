@@ -1,14 +1,10 @@
 name: Deploy production
 
 on:
-  workflow_run:
-    workflows: ["Release image"]
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       tag:
-        description: "Published Git tag, for example v1.6.0 or 1.6.0"
+        description: "Published Git tag, for example v1.6.0"
         required: true
         type: string
 
@@ -23,15 +19,11 @@ concurrency:
 jobs:
   deploy:
     name: Deploy approved image
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
     env:
-      REQUESTED_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.event.inputs.tag }}
+      REQUESTED_TAG: ${{ inputs.tag }}
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
       DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
@@ -43,35 +35,16 @@ jobs:
       - name: Validate deployment input
         id: target
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
-
-          fail() {
-            local title="$1"
-            local message="$2"
-            echo "::error title=${title}::${message}" >&2
-            if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-              {
-                echo "### Deployment preflight failed"
-                echo
-                echo "**${title}**"
-                echo
-                echo "${message}"
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
-            exit 1
-          }
-
-          tag="$(printf '%s' "${REQUESTED_TAG:-}" | tr -d '[:space:]')"
+          tag="$(printf '%s' "$REQUESTED_TAG" | tr -d '[:space:]')"
           if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             tag="v$tag"
           fi
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            fail "Invalid deploy tag" "Input must be a published tag such as v1.6.0. A leading v is added automatically if omitted."
+            echo "::error title=Invalid deploy tag::Input must be a published tag such as v1.6.0. A leading v is added automatically if omitted." >&2
+            exit 1
           fi
-
           missing=()
           for name in DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_SSH_KEY; do
             if [[ -z "${!name:-}" ]]; then
@@ -79,35 +52,21 @@ jobs:
             fi
           done
           if (( ${#missing[@]} )); then
-            fail "Missing deployment secrets" "Set ${missing[*]} under Settings -> Environments -> production -> Environment secrets, then rerun this workflow. See README.md for the required values."
+            echo "::error title=Missing deployment secrets::Set ${missing[*]} under Settings -> Environments -> production -> Environment secrets." >&2
+            exit 1
           fi
-
           if [[ ! "$DEPLOY_PATH" =~ ^/[A-Za-z0-9._/-]+$ || "$DEPLOY_PATH" == *..* ]]; then
-            fail "Invalid DEPLOY_PATH" "DEPLOY_PATH must be an absolute path without spaces or '..', for example /opt/olai."
+            echo "::error title=Invalid DEPLOY_PATH::DEPLOY_PATH must be an absolute path without spaces or '..'." >&2
+            exit 1
           fi
-
-          if [[ -n "${DEPLOY_PORT:-}" ]]; then
-            if [[ ! "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || (( 10#$DEPLOY_PORT < 1 || 10#$DEPLOY_PORT > 65535 )); then
-              fail "Invalid DEPLOY_PORT" "DEPLOY_PORT must be a number between 1 and 65535 when set."
-            fi
+          if [[ -n "${DEPLOY_PORT:-}" && ! "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]; then
+            echo "::error title=Invalid DEPLOY_PORT::DEPLOY_PORT must be a number when set." >&2
+            exit 1
           fi
-
-          if [[ -n "${GHCR_USERNAME:-}" && -z "${GHCR_READ_TOKEN:-}" ]] ||
-             [[ -z "${GHCR_USERNAME:-}" && -n "${GHCR_READ_TOKEN:-}" ]]; then
-            fail "Incomplete GHCR credentials" "Set both GHCR_USERNAME and GHCR_READ_TOKEN, or leave both empty for a public package."
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error title=Tag not found::Push $tag before deploying it." >&2
+            exit 1
           fi
-
-          curl_args=(-sS -o /dev/null -w '%{http_code}' --retry 3
-            -H "Accept: application/vnd.github+json")
-          if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-            curl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
-          fi
-          tag_status="$(curl "${curl_args[@]}" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" || true)"
-          if [[ "$tag_status" != "200" ]]; then
-            fail "Tag not found" "Push ${tag} before deploying it (GitHub returned HTTP ${tag_status:-unknown})."
-          fi
-
           image="ghcr.io/${GITHUB_REPOSITORY,,}:${tag#v}"
           {
             echo "tag=$tag"
