@@ -245,6 +245,52 @@ func TestAdminConsoleLoginIsIndependentFromPortal(t *testing.T) {
 	}
 }
 
+func TestAdminSettingsAdvertisesOAuthCallbackURLs(t *testing.T) {
+	ctx := context.Background()
+	app, db := adminTestServer(t)
+	hash, err := auth.PasswordHash("admin-password", "")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := db.CreateAdminAccount(ctx, "admin1", "admin@example.com", hash, nil); err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	response := adminPost(t, server.URL+"/api/admin/auth/login", map[string]any{
+		"email": "admin@example.com", "password": "admin-password",
+	})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("admin login = %d, want 200", response.StatusCode)
+	}
+	adminCookie := sessionCookie(t, response, auth.AdminSessionCookie)
+	response.Body.Close()
+
+	response = adminGet(t, server.URL+"/api/admin/settings", adminCookie)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("admin settings = %d, want 200", response.StatusCode)
+	}
+	var payload struct {
+		OAuthCallbacks map[string]string `json:"oauthCallbacks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode admin settings: %v", err)
+	}
+	response.Body.Close()
+
+	for _, provider := range []string{"github", "google"} {
+		got := payload.OAuthCallbacks[provider]
+		if got == "" {
+			t.Fatalf("oauthCallbacks missing %s", provider)
+		}
+		want := server.URL + "/api/auth/" + provider + "/callback"
+		if got != want {
+			t.Fatalf("oauthCallbacks[%s] = %q, want %q", provider, got, want)
+		}
+	}
+}
+
 func TestAdminPasswordChangeRotatesSessions(t *testing.T) {
 	ctx := context.Background()
 	app, db := adminTestServer(t)

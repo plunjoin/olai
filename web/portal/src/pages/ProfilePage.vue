@@ -70,6 +70,7 @@
         </template>
       </main>
     </div>
+    <ShareDialog v-if="shareTarget" :asset="shareTarget" :signed-in="Boolean(me)" @close="shareTarget = null" />
   </div>
 </template>
 
@@ -78,6 +79,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft } from 'lucide-vue-next';
 import AccountAvatar from '../components/AccountAvatar.vue';
+import ShareDialog from '../components/ShareDialog.vue';
 import PlazaCard from '../components/plaza/PlazaCard.vue';
 import PlazaRail from '../components/plaza/PlazaRail.vue';
 import { accountRequest, type Account } from '../lib/account';
@@ -99,6 +101,7 @@ const worksLoading = ref(false);
 const busy = ref(false);
 const error = ref('');
 const notice = ref('');
+const shareTarget = ref<Asset | null>(null);
 
 const handle = computed(() => String(route.params.handle || ''));
 const visible = computed(() => tab.value === 'favorites' ? favorites.value : works.value);
@@ -174,9 +177,8 @@ function searchTag(tag: string) {
 function downloadWork(asset: Asset) {
   if (asset.url) window.open(asset.url, '_blank', 'noopener');
 }
-async function shareWork(asset: Asset) {
-  const link = `${location.origin}/?work=${encodeURIComponent(asset.id)}`;
-  try { await navigator.clipboard.writeText(link); notice.value = t('已复制作品链接'); } catch { notice.value = link; }
+function shareWork(asset: Asset) {
+  shareTarget.value = asset;
 }
 async function toggleFavorite(asset: Asset) {
   if (!me.value) { router.push(`/login?next=${encodeURIComponent(route.fullPath)}`); return; }

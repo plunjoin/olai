@@ -266,6 +266,68 @@ func (d *DB) BlockedEither(ctx context.Context, a, b string) (bool, error) {
 	return err == nil, err
 }
 
+// UserSearchResult is one account a signed-in person can share a work with.
+type UserSearchResult struct {
+	UserID string
+	Handle string
+	Name   string
+	Email  string
+	Avatar string
+}
+
+// escapedLike keeps typed input literal inside a SQL LIKE pattern so a % or _
+// searches for that character instead of matching every account.
+func escapedLike(value string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(value)
+}
+
+// SearchMessageUsers finds accounts by handle or display name that the viewer
+// may message. Blocked, banned and messaging-disabled accounts stay out, and
+// the viewer never sees themselves. Handle prefix matches come first.
+func (d *DB) SearchMessageUsers(ctx context.Context, viewerID, query string, limit int) ([]UserSearchResult, error) {
+	needle := strings.ToLower(strings.TrimSpace(query))
+	if needle == "" || limit <= 0 {
+		return nil, nil
+	}
+	escaped := escapedLike(needle)
+	contains := "%" + escaped + "%"
+	prefix := escaped + "%"
+	rows, err := d.QueryContext(ctx, `SELECT p.user_id, p.handle, u.name, u.email, u.avatar
+		FROM user_profiles p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.user_id <> ?
+			AND p.allow_messages = 1
+			AND u.system = 0
+			AND NOT EXISTS (SELECT 1 FROM user_bans b WHERE b.user_id = p.user_id)
+			AND NOT EXISTS (SELECT 1 FROM user_blocks x
+				WHERE (x.blocker_id = ? AND x.blocked_id = p.user_id)
+					OR (x.blocker_id = p.user_id AND x.blocked_id = ?))
+			AND (LOWER(p.handle) LIKE ? ESCAPE '\' OR LOWER(u.name) LIKE ? ESCAPE '\')
+		ORDER BY CASE WHEN LOWER(p.handle) LIKE ? ESCAPE '\' THEN 0 ELSE 1 END, LOWER(p.handle), p.handle
+		LIMIT ?`,
+		viewerID, viewerID, viewerID, contains, contains, prefix, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UserSearchResult
+	for rows.Next() {
+		var row UserSearchResult
+		var name, avatar sql.NullString
+		if err := rows.Scan(&row.UserID, &row.Handle, &name, &row.Email, &avatar); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			row.Name = name.String
+		}
+		if avatar.Valid {
+			row.Avatar = avatar.String
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 // ---- direct messages ----
 
 type DirectConversation struct {

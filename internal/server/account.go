@@ -94,6 +94,23 @@ func (s *Server) googleLoginEnabled() bool {
 	return s.oauthEnabled(googleProvider())
 }
 
+// oauthCallbackURLs returns the exact redirect_uri the server sends to each
+// provider, so an administrator can copy the right value into the provider
+// console. A mismatch there is the single most common setup mistake and only
+// surfaces as an opaque redirect_uri_mismatch error page.
+func (s *Server) oauthCallbackURLs(r *http.Request) map[string]string {
+	base := oauthBase(s, r)
+	out := make(map[string]string, 2)
+	for _, name := range []string{"github", "google"} {
+		p, ok := oauthProviderByName(name)
+		if !ok {
+			continue
+		}
+		out[name] = base + "/api/auth/" + p.Name + "/callback"
+	}
+	return out
+}
+
 func (s *Server) accountSummary(ctx context.Context, userID string) (int64, string, error) {
 	balance, err := s.DB.BalanceOf(ctx, userID, int64(s.Pricing.SignupBonus()))
 	if err != nil {

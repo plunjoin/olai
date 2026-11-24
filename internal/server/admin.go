@@ -612,6 +612,10 @@ func (s *Server) handleAdminModelsSave(w http.ResponseWriter, r *http.Request) {
 type adminSettingsResponse struct {
 	settings.PublicSettings
 	Changed []string `json:"changed"`
+	// OAuthCallbacks holds the exact redirect_uri per provider, so an
+	// administrator can copy it into the provider console instead of guessing
+	// and hitting an opaque redirect_uri_mismatch page.
+	OAuthCallbacks map[string]string `json:"oauthCallbacks,omitempty"`
 }
 
 // handleAdminSession is the admin SPA's own gate: it reports the console
@@ -635,7 +639,10 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	s.Settings.Refresh(r.Context(), true)
 	response := s.Settings.ForClient()
 	s.attachModelOptions(r.Context(), &response)
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, adminSettingsResponse{
+		PublicSettings: response,
+		OAuthCallbacks: s.oauthCallbackURLs(r),
+	})
 }
 
 // attachModelOptions backs the default-model settings with the enabled models
@@ -704,5 +711,9 @@ func (s *Server) handleAdminSettingsSave(w http.ResponseWriter, r *http.Request)
 	if changed == nil {
 		changed = []string{}
 	}
-	writeJSON(w, http.StatusOK, adminSettingsResponse{PublicSettings: s.Settings.ForClient(), Changed: changed})
+	writeJSON(w, http.StatusOK, adminSettingsResponse{
+		PublicSettings: s.Settings.ForClient(),
+		Changed:        changed,
+		OAuthCallbacks: s.oauthCallbackURLs(r),
+	})
 }

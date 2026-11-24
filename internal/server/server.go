@@ -150,6 +150,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/profile", s.handleProfileGet)
 	mux.HandleFunc("PUT /api/profile", s.handleProfileSave)
 	mux.HandleFunc("GET /api/messages", s.handleInbox)
+	mux.HandleFunc("GET /api/users", s.handleUserSearch)
 	mux.HandleFunc("GET /api/users/{handle}", s.handlePublicProfile)
 	mux.HandleFunc("GET /api/users/{handle}/works", s.handleProfileWorks)
 	mux.HandleFunc("GET /api/users/{handle}/favorites", s.handleProfileFavorites)

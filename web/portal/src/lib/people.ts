@@ -103,6 +103,13 @@ export function sendMessage(handle: string, body: string): Promise<{ id: string;
   return peopleRequest(`/api/users/${encodeURIComponent(handle)}/messages`, json('POST', { body }));
 }
 
+/** One account the signed-in viewer may share a work with. */
+export interface ShareUser { id: string; name: string; avatar: string }
+
+export function searchUsers(query: string, signal?: AbortSignal): Promise<{ users: ShareUser[] }> {
+  return peopleRequest(`/api/users?q=${encodeURIComponent(query)}`, { signal });
+}
+
 export function getFavoriteFolders(): Promise<{ folders: FavoriteFolder[] }> {
   return peopleRequest('/api/favorites/folders');
 }

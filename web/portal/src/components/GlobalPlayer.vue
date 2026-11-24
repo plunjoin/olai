@@ -1273,7 +1273,10 @@ watch([activeMedia, duration], () => {
   if (editingLyrics.value) return;
   const media = activeMedia.value;
   if (!media || media.kind !== 'audio') { localLrc.value = ''; return; }
-  const lyrics = media.song ? sungLines(media.song) : (media.lyrics || '').replace(/^\[[^\]]+\]\s*$/gm, '');
+  // A song stub with no sung lines (admin-published music) must not shadow the
+  // plain lyrics field: fall back to it so the estimated timeline still works.
+  const sung = media.song ? sungLines(media.song) : '';
+  const lyrics = sung || (media.lyrics || '').replace(/^\[[^\]]+\]\s*$/gm, '');
   if (media.song?.instrumental) localLrc.value = '';
   else if ((media.lrcSource === 'audio' || media.lrcSource === 'manual') && media.lrc) localLrc.value = media.lrc;
   else if (lyrics && duration.value > 0) localLrc.value = generateLrcFromPrompt(lyrics, duration.value, media.title);

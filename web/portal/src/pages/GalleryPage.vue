@@ -139,6 +139,7 @@
     </div>
 
     <GlobalPlayer />
+    <ShareDialog v-if="shareTarget" :asset="shareTarget" :signed-in="Boolean(user)" @close="shareTarget = null" />
     <GalleryReportDialog v-if="reportTarget" :asset="reportTarget" @close="reportTarget = null" />
     <WorkEditorDialog v-if="editTarget" :asset="editTarget" :save="saveWorkInfo" @close="editTarget = null" @saved="applySavedWork" />
     <div v-if="toastText" class="toast plaza-toast" role="status">
@@ -159,6 +160,7 @@ import PlazaCard from '../components/plaza/PlazaCard.vue';
 import PlazaDetail from '../components/plaza/PlazaDetail.vue';
 import GalleryReportDialog from '../components/GalleryReportDialog.vue';
 import GlobalPlayer from '../components/GlobalPlayer.vue';
+import ShareDialog from '../components/ShareDialog.vue';
 import WorkEditorDialog from '../components/WorkEditorDialog.vue';
 import AccountAvatar from '../components/AccountAvatar.vue';
 import { accountRequest, type Account } from '../lib/account';
@@ -205,6 +207,7 @@ const closing = ref(false);
 const detailSource = ref<{ rect: DOMRect | null; src: string }>({ rect: null, src: '' });
 const reportTarget = ref<Asset | null>(null);
 const editTarget = ref<Asset | null>(null);
+const shareTarget = ref<Asset | null>(null);
 const user = ref<Account | null>(bootstrap?.initialUser ?? null);
 const status = ref<StatusState>({ ...DEFAULT_STATUS });
 const isNarrow = ref(false);
@@ -641,14 +644,8 @@ async function downloadAsset(asset: Asset) {
   }
   void recordGalleryDownload(asset.id).then(metrics => { if (metrics) applyMetrics(asset, metrics); });
 }
-async function shareAsset(asset: Asset) {
-  const url = `${window.location.origin}${window.location.pathname}?work=${encodeURIComponent(asset.id)}`;
-  try {
-    await navigator.clipboard.writeText(url);
-    notify(t('链接已复制，可以分享给朋友。'));
-  } catch {
-    notify(url);
-  }
+function shareAsset(asset: Asset) {
+  shareTarget.value = asset;
 }
 /** Plaza works may not live in the local library, so save metadata in place. */
 async function saveWorkInfo(updated: Asset, change: WorkMetaChange): Promise<Partial<Asset>> {

@@ -315,6 +315,38 @@ func (s *Server) handlePublicProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"profile": result})
 }
 
+// handleUserSearch lists accounts a signed-in viewer can share a work with.
+// It matches handles and display names; messaging-disabled, banned and blocked
+// accounts stay out so every result can actually receive the share.
+func (s *Server) handleUserSearch(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.requireUser(w, r)
+	if !ok {
+		return
+	}
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"users": []any{}})
+		return
+	}
+	if runes := []rune(query); len(runes) > 40 {
+		query = string(runes[:40])
+	}
+	results, err := s.DB.SearchMessageUsers(r.Context(), user.ID, query, 20)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "搜索暂不可用，请稍后重试。")
+		return
+	}
+	users := make([]any, 0, len(results))
+	for _, result := range results {
+		users = append(users, map[string]any{
+			"id":     result.Handle,
+			"name":   gallery.PublicAuthorName(store.DisplayName(result.Name, result.Email)),
+			"avatar": gallery.PublicAvatar(result.UserID, result.Avatar),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+}
+
 func (s *Server) profileByHandle(w http.ResponseWriter, r *http.Request) (*store.Profile, bool) {
 	handle := store.TrimHandle(r.PathValue("handle"))
 	profile, err := s.DB.ProfileByHandle(r.Context(), handle)

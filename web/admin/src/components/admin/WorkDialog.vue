@@ -43,6 +43,23 @@
             <input class="adm-input adm-work-file" type="file" :accept="accept" required :disabled="busy" @change="onFile" />
             <small class="adm-note">{{ t('图像、视频或音频文件；未启用云存储时不超过 32 MB。') }}</small>
           </label>
+          <template v-if="kind === 'music'">
+            <label class="adm-field">
+              <span>{{ t('专辑封面（选填）') }}</span>
+              <input class="adm-input adm-work-file" type="file" accept="image/*" :disabled="busy" @change="onCover" />
+              <small class="adm-note">{{ t('图片文件，不超过 8 MB；会显示在广场音乐卡片和详情里。') }}</small>
+            </label>
+            <label class="adm-field">
+              <span>{{ t('歌词（选填）') }}</span>
+              <textarea v-model="lyrics" class="adm-textarea" maxlength="64000" rows="5" :disabled="busy" :placeholder="t('纯文本歌词，显示在广场详情并支持下载 TXT。')" aria-label="歌词（选填）" />
+            </label>
+            <div class="adm-field">
+              <span>{{ t('LRC 时间轴歌词（选填）') }}</span>
+              <textarea v-model="lrc" class="adm-textarea" maxlength="64000" rows="5" :disabled="busy" :placeholder="t('[00:12.00]第一句歌词')" aria-label="LRC 时间轴歌词（选填）" />
+              <input class="adm-input adm-work-file" type="file" accept=".lrc,.txt,text/plain" :disabled="busy" aria-label="选择 LRC 文件" @change="onLrcFile" />
+              <small class="adm-note">{{ t('可以直接粘贴，也可以选择 .lrc 文件自动填入。') }}</small>
+            </div>
+          </template>
         </template>
       </template>
 
@@ -57,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import Select from '../ui/Select.vue';
 import { adminApi, errorMessage, MODEL_KIND_NAMES, type AdminWork, type FeedbackMessage } from '../../lib/admin';
 import { t } from '../../lib/i18n';
@@ -76,6 +93,9 @@ const title = ref(props.work?.displayTitle || props.work?.title || '');
 const prompt = ref('');
 const tags = ref('');
 const file = ref<File | null>(null);
+const cover = ref<File | null>(null);
+const lyrics = ref('');
+const lrc = ref('');
 
 const kindOptions = computed(() => (['image', 'video', 'music'] as const).map(value => ({
   value, label: MODEL_KIND_NAMES[value] || value,
@@ -86,10 +106,55 @@ const visibilityOptions = computed(() => [
 ]);
 const accept = computed(() => (kind.value === 'image' ? 'image/*' : kind.value === 'video' ? 'video/*' : 'audio/*'));
 
+// The music-only block unmounts when the kind moves away, which leaves the
+// file input visually empty while the chosen file would still be submitted.
+// Reset the music extras whenever music is no longer selected.
+watch(kind, value => {
+  if (value === 'music' || editing) return;
+  cover.value = null;
+  lyrics.value = '';
+  lrc.value = '';
+});
+
 function close() { if (!busy.value) emit('close'); }
 function onFile(event: Event) {
   const input = event.target as HTMLInputElement;
   file.value = input.files?.[0] || null;
+}
+const MAX_COVER_BYTES = 8 * 1024 * 1024;
+function onCover(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const selected = input.files?.[0] || null;
+  if (selected?.type && !selected.type.startsWith('image/')) {
+    message.value = { tone: 'error', text: t('封面需要是图片文件。') };
+    input.value = '';
+    cover.value = null;
+    return;
+  }
+  if (selected && selected.size > MAX_COVER_BYTES) {
+    message.value = { tone: 'error', text: t('封面文件不能超过 8 MB。') };
+    input.value = '';
+    cover.value = null;
+    return;
+  }
+  cover.value = selected;
+}
+async function onLrcFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const selected = input.files?.[0];
+  input.value = '';
+  if (!selected) return;
+  if (selected.size > 256 * 1024) {
+    message.value = { tone: 'error', text: t('LRC 文件不能超过 256 KB。') };
+    return;
+  }
+  const text = await selected.text();
+  if ([...text].length > 64000) {
+    message.value = { tone: 'error', text: t('LRC 歌词不能超过 64000 个字符。') };
+    return;
+  }
+  lrc.value = text;
+  message.value = null;
 }
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') close();
@@ -142,6 +207,16 @@ async function submit() {
     message.value = { tone: 'error', text: t('作品描述不能超过 16000 个字符。') };
     return;
   }
+  if (kind.value === 'music') {
+    if ([...lyrics.value].length > 64000) {
+      message.value = { tone: 'error', text: t('歌词不能超过 64000 个字符。') };
+      return;
+    }
+    if ([...lrc.value].length > 64000) {
+      message.value = { tone: 'error', text: t('LRC 歌词不能超过 64000 个字符。') };
+      return;
+    }
+  }
   busy.value = true;
   try {
     if (props.work) {
@@ -161,6 +236,11 @@ async function submit() {
       form.set('prompt', prompt.value);
       form.set('tags', tags.value);
       form.set('file', file.value);
+      if (kind.value === 'music') {
+        if (cover.value) form.set('cover', cover.value);
+        if (lyrics.value.trim()) form.set('lyrics', lyrics.value);
+        if (lrc.value.trim()) form.set('lrc', lrc.value);
+      }
       await adminApi('/api/admin/works', { method: 'POST', body: form });
     }
     emit('saved');

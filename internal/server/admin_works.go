@@ -24,6 +24,12 @@ const (
 	// configured limit on top; this only keeps a huge request from being read.
 	maxAdminWorkUpload = 64 << 20
 	maxAdminWorkForm   = 8 << 20
+	// maxAdminCoverUpload bounds the optional album cover of a music work.
+	// Inline covers add ~4/3 of their size to the record body, so the cap stays
+	// well below the 32 MB inline media limit.
+	maxAdminCoverUpload = 8 << 20
+	// maxWorkLyricsRunes matches the public projection cap for lyrics and lrc.
+	maxWorkLyricsRunes = 64000
 )
 
 // handleAdminWorks lists works for the console. It reads the title/kind
@@ -76,7 +82,7 @@ func (s *Server) handleAdminWorkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	r.Body = http.MaxBytesReader(w, r.Body, maxAdminWorkUpload+1<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxAdminWorkUpload+maxAdminCoverUpload+1<<20)
 	if err := r.ParseMultipartForm(maxAdminWorkForm); err != nil {
 		writeError(w, http.StatusBadRequest, "作品文件或表单无效，请重试。")
 		return
@@ -120,6 +126,36 @@ func (s *Server) handleAdminWorkCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "文件类型与作品类型不匹配。")
 		return
 	}
+	var coverData []byte
+	var coverMime string
+	lyrics, lrc := "", ""
+	if kind == "music" {
+		// Optional album cover. Other kinds ignore the part so an older or
+		// hand-rolled request cannot attach one to an image or video work.
+		if upload, coverHeader, err := r.FormFile("cover"); err == nil {
+			defer upload.Close()
+			coverData, err = io.ReadAll(io.LimitReader(upload, maxAdminCoverUpload+1))
+			if err != nil || len(coverData) == 0 || len(coverData) > maxAdminCoverUpload {
+				writeError(w, http.StatusRequestEntityTooLarge, "封面文件为空或超过 8 MB。")
+				return
+			}
+			coverMime, ok = workUploadMime(coverHeader.Header.Get("Content-Type"), coverHeader.Filename, coverData, "image")
+			if !ok {
+				writeError(w, http.StatusBadRequest, "封面需要是图片文件。")
+				return
+			}
+		}
+		// Lyrics are stored as text, the same fields the portal generates, so
+		// the public projection and download actions pick them up unchanged.
+		if lyrics, ok = workDescription(r.FormValue("lyrics"), maxWorkLyricsRunes); !ok {
+			writeError(w, http.StatusBadRequest, "歌词不能超过 64000 个字符。")
+			return
+		}
+		if lrc, ok = workDescription(r.FormValue("lrc"), maxWorkLyricsRunes); !ok {
+			writeError(w, http.StatusBadRequest, "LRC 歌词不能超过 64000 个字符。")
+			return
+		}
+	}
 	officialID, err := s.DB.EnsureSystemUser(ctx)
 	if err != nil {
 		s.adminFailure(w)
@@ -145,6 +181,20 @@ func (s *Server) handleAdminWorkCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		mediaURL = "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 	}
+	var coverURL string
+	if len(coverData) > 0 {
+		if s.Media.Enabled() {
+			identity := media.Identity{Owner: "user:" + officialID, UserID: officialID}
+			stored, err := s.Media.Store(ctx, coverData, coverMime, "work-"+recordID+"-cover", identity)
+			if err != nil {
+				mediaFailure(w, r, err)
+				return
+			}
+			coverURL = "/api/media/" + stored.ID
+		} else {
+			coverURL = "data:" + coverMime + ";base64," + base64.StdEncoding.EncodeToString(coverData)
+		}
+	}
 	body := map[string]any{
 		"id": recordID, "kind": kind, "status": "completed", "prompt": prompt,
 		"title": title, "visibility": visibility, "url": mediaURL,
@@ -153,6 +203,17 @@ func (s *Server) handleAdminWorkCreate(w http.ResponseWriter, r *http.Request) {
 	if kind == "music" {
 		body["song"] = map[string]any{
 			"title": title, "style": "", "instrumental": false, "sections": []any{},
+		}
+		if coverURL != "" {
+			body["coverUrl"] = coverURL
+			body["coverStatus"] = "completed"
+		}
+		if lyrics != "" {
+			body["lyrics"] = lyrics
+		}
+		if lrc != "" {
+			body["lrc"] = lrc
+			body["lrcSource"] = "manual"
 		}
 	}
 	if len(tags) > 0 {

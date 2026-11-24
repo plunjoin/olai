@@ -72,8 +72,8 @@
         </template>
 
         <div class="plaza-detail-stage-actions">
-          <button type="button" :aria-label="t('复制链接')" :title="t('复制链接')" @click="emit('share', asset)">
-            <Link2 :size="16" />
+          <button type="button" :aria-label="t('分享作品')" :title="t('分享作品')" @click="emit('share', asset)">
+            <Share2 :size="16" />
           </button>
           <button v-if="asset.kind === 'image' && fullSrc" type="button" :aria-label="t('查看大图')" :title="t('查看大图')" @click="lightbox = true">
             <Maximize2 :size="16" />
@@ -110,7 +110,7 @@
           <div v-if="moreOpen" class="plaza-card-menu is-detail" role="menu" @click.stop>
             <button v-if="asset.owner" type="button" role="menuitem" @click="moreAction('edit')"><PenLine :size="14" />{{ t('编辑作品信息') }}</button>
             <button type="button" role="menuitem" @click="moreAction('download')"><Download :size="14" />{{ t('下载作品') }}</button>
-            <button type="button" role="menuitem" @click="moreAction('share')"><Link2 :size="14" />{{ t('复制链接') }}</button>
+            <button type="button" role="menuitem" @click="moreAction('share')"><Share2 :size="14" />{{ t('分享作品') }}</button>
             <button type="button" role="menuitem" class="is-danger" @click="moreAction('report')"><Flag :size="14" />{{ t('举报作品') }}</button>
           </div>
         </div>
@@ -252,7 +252,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
-  ArrowLeft, Bookmark, Check, Copy, Download, Ellipsis, Eye, Flag, Heart, Image as ImageIcon, Link2, LoaderCircle,
+  ArrowLeft, Bookmark, Check, Copy, Download, Ellipsis, Eye, Flag, Heart, Image as ImageIcon, LoaderCircle,
   Maximize2, MessageCircle, Music2, Pause, PenLine, Play, Send, Share2, Video, X,
 } from 'lucide-vue-next';
 import AccountAvatar from '../AccountAvatar.vue';

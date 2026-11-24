@@ -160,6 +160,117 @@ func TestAdminCreatesUpdatesHidesAndDeletesWork(t *testing.T) {
 	}
 }
 
+func createMusicWork(t *testing.T, app *Server, cookie *http.Cookie, cover []byte, coverName, lyrics, lrc string) (map[string]any, *httptest.ResponseRecorder) {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range map[string]string{
+		"kind": "music", "title": "Night tide", "prompt": "A slow song about the sea",
+		"visibility": "public", "lyrics": lyrics, "lrc": lrc,
+	} {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatalf("write field: %v", err)
+		}
+	}
+	song, err := writer.CreateFormFile("file", "song.mp3")
+	if err != nil {
+		t.Fatalf("create song part: %v", err)
+	}
+	if _, err := song.Write([]byte("\xff\xfb\x90\x00rest-of-mp3")); err != nil {
+		t.Fatalf("write song: %v", err)
+	}
+	if cover != nil {
+		part, err := writer.CreateFormFile("cover", coverName)
+		if err != nil {
+			t.Fatalf("create cover part: %v", err)
+		}
+		if _, err := part.Write(cover); err != nil {
+			t.Fatalf("write cover: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	recorder := adminWorkRequest(t, app, cookie, http.MethodPost, "/api/admin/works", body.Bytes(), writer.FormDataContentType())
+	var created map[string]any
+	if recorder.Code == http.StatusCreated {
+		if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
+			t.Fatalf("decode create: %v", err)
+		}
+	}
+	return created, recorder
+}
+
+func TestAdminMusicWorkAcceptsCoverAndLyrics(t *testing.T) {
+	ctx := context.Background()
+	app, db, cookie := adminWorkServer(t)
+	cover := []byte("\x89PNG\r\n\x1a\nrest-of-png")
+	created, recorder := createMusicWork(t, app, cookie, cover, "cover.png",
+		"第一句\n第二句", "[00:01.00]第一句\n[00:03.00]第二句")
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	key, _ := created["recordKey"].(string)
+	record, err := db.RecordByKey(ctx, key)
+	if err != nil {
+		t.Fatalf("load created work: %v", err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(record.Body), &value); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if url, _ := value["coverUrl"].(string); !strings.HasPrefix(url, "data:image/png;base64,") {
+		t.Fatalf("cover url = %q", url)
+	}
+	if value["coverStatus"] != "completed" {
+		t.Fatalf("cover status = %v", value["coverStatus"])
+	}
+	if value["lyrics"] != "第一句\n第二句" || value["lrc"] != "[00:01.00]第一句\n[00:03.00]第二句" {
+		t.Fatalf("lyrics = %v / %v", value["lyrics"], value["lrc"])
+	}
+	if value["lrcSource"] != "manual" {
+		t.Fatalf("lrc source = %v", value["lrcSource"])
+	}
+	if _, ok := value["song"].(map[string]any); !ok {
+		t.Fatalf("song = %v", value["song"])
+	}
+
+	// The public projection exposes the cover and both lyric forms.
+	gallery := serve(app, httptest.NewRequest(http.MethodGet, "/api/gallery?offset=0&limit=30&sort=new", nil))
+	if gallery.Code != http.StatusOK {
+		t.Fatalf("gallery = %d body=%s", gallery.Code, gallery.Body.String())
+	}
+	var listing struct {
+		Records []map[string]any `json:"records"`
+	}
+	if err := json.Unmarshal(gallery.Body.Bytes(), &listing); err != nil {
+		t.Fatalf("decode gallery: %v", err)
+	}
+	if len(listing.Records) != 1 {
+		t.Fatalf("gallery records = %d body=%s", len(listing.Records), gallery.Body.String())
+	}
+	item := listing.Records[0]
+	if url, _ := item["coverUrl"].(string); !strings.HasPrefix(url, "/api/gallery/media/") {
+		t.Fatalf("public cover = %q", url)
+	}
+	if item["coverStatus"] != "completed" || item["lyrics"] != "第一句\n第二句" || item["lrcSource"] != "manual" {
+		t.Fatalf("public music fields = %+v", item)
+	}
+}
+
+func TestAdminMusicWorkRejectsBadCoverAndLongLyrics(t *testing.T) {
+	app, _, cookie := adminWorkServer(t)
+	_, badCover := createMusicWork(t, app, cookie, []byte("not an image"), "cover.mp3", "", "")
+	if badCover.Code != http.StatusBadRequest || !strings.Contains(badCover.Body.String(), "封面需要是图片文件") {
+		t.Fatalf("bad cover = %d body=%s", badCover.Code, badCover.Body.String())
+	}
+	long := strings.Repeat("长", maxWorkLyricsRunes+1)
+	_, longLyrics := createMusicWork(t, app, cookie, nil, "", long, "")
+	if longLyrics.Code != http.StatusBadRequest || !strings.Contains(longLyrics.Body.String(), "歌词不能超过") {
+		t.Fatalf("long lyrics = %d body=%s", longLyrics.Code, longLyrics.Body.String())
+	}
+}
+
 func TestAdminWorkCreateRejectsMismatchedFile(t *testing.T) {
 	app, _, cookie := adminWorkServer(t)
 	var body bytes.Buffer

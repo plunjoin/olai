@@ -23,6 +23,11 @@
                 <span v-if="touched.has(item.key)" class="adm-badge" data-tone="warn">{{ t('未保存') }}</span>
               </div>
               <div class="adm-setting-help">{{ t(item.help || item.key) }}{{ item.restart ? t(' · 修改后需要重新构建前端') : '' }}</div>
+              <div v-if="callbackHint(item.key)" class="adm-setting-help">
+                {{ t('在第三方平台后台登记的回调地址（需完全一致）：') }}
+                <code class="adm-mono">{{ callbackHint(item.key) }}</code>
+                <button type="button" class="adm-btn adm-btn-sm" :disabled="busy" @click="copyCallback(item.key)">{{ t('复制') }}</button>
+              </div>
             </div>
             <div class="adm-setting-control">
               <Select
@@ -86,7 +91,7 @@ interface SettingItem {
   value?: string; configured: boolean; source: 'database' | 'env' | 'default';
   options?: SettingOption[];
 }
-interface SettingsData { groups: string[]; settings: SettingItem[] }
+interface SettingsData { groups: string[]; settings: SettingItem[]; oauthCallbacks?: Record<string, string> }
 const SOURCE_LABEL = { database: t('后台配置'), env: '.env', default: t('默认值') } as const;
 const data = ref<SettingsData | null>(null);
 const error = ref('');
@@ -96,6 +101,44 @@ const touched = ref(new Set<string>());
 const busy = ref(false);
 const message = ref<FeedbackMessage>(null);
 function settingsIn(group: string) { return (data.value?.settings ?? []).filter(item => item.group === group); }
+// The provider console rejects any callback that is not byte-for-byte the one
+// the server sends, and the mismatch only shows up as an opaque error page.
+// Showing the exact value next to the credential field removes the guesswork.
+const CALLBACK_PROVIDERS: Record<string, string> = {
+  GITHUB_CLIENT_ID: 'github',
+  GOOGLE_CLIENT_ID: 'google',
+};
+function callbackHint(key: string) {
+  const provider = CALLBACK_PROVIDERS[key];
+  if (!provider) return '';
+  return data.value?.oauthCallbacks?.[provider] ?? '';
+}
+async function copyCallback(key: string) {
+  const url = callbackHint(key);
+  if (!url) return;
+  // The async clipboard API needs a focused, secure context; fall back to the
+  // legacy selection copy so the button still works everywhere.
+  try {
+    await navigator.clipboard.writeText(url);
+    message.value = { tone: 'ok', text: t('回调地址已复制。') };
+    return;
+  } catch { /* fall through to the manual copy */ }
+  const area = document.createElement('textarea');
+  area.value = url;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  try {
+    document.execCommand('copy');
+    message.value = { tone: 'ok', text: t('回调地址已复制。') };
+  } catch {
+    message.value = { tone: 'error', text: t('复制失败，请手动选择地址。') };
+  } finally {
+    document.body.removeChild(area);
+  }
+}
 function currentValue(item: SettingItem) { return draft.value[item.key] ?? item.value ?? item.default; }
 // Model defaults keep an explicit "built-in" option, and a stored upstream ID
 // that is no longer in the catalog stays visible instead of looking cleared.

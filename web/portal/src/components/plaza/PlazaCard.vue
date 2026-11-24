@@ -70,7 +70,7 @@
             <Download :size="14" />{{ t('下载作品') }}
           </button>
           <button type="button" role="menuitem" @click="choose('share')">
-            <Link2 :size="14" />{{ t('复制链接') }}
+            <Share2 :size="14" />{{ t('分享作品') }}
           </button>
           <button type="button" role="menuitem" class="is-danger" @click="choose('report')">
             <Flag :size="14" />{{ t('举报作品') }}
@@ -95,7 +95,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { Bookmark, Download, Ellipsis, Flag, Image as ImageIcon, Link2, Music2, Video } from 'lucide-vue-next';
+import { Bookmark, Download, Ellipsis, Flag, Image as ImageIcon, Music2, Share2, Video } from 'lucide-vue-next';
 import AccountAvatar from '../AccountAvatar.vue';
 import { galleryKindLabel, galleryTitle } from '../../lib/galleryDetail';
 import { t } from '../../lib/i18n';

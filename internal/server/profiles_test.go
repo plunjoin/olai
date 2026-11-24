@@ -240,6 +240,56 @@ func TestFavoriteFolderHoldsOnlyItsOwnWorks(t *testing.T) {
 	}
 }
 
+func TestUserSearchFindsMessageablePeople(t *testing.T) {
+	app, _, token := profileTestServer(t)
+	if saved := serve(app, authed(http.MethodPut, "/api/profile", token, `{"handle":"river"}`)); saved.Code != http.StatusOK {
+		t.Fatalf("profile = %d %s", saved.Code, saved.Body.String())
+	}
+	other := signIn(t, app.DB, "user-2", "user-2@example.com")
+	if saved := serve(app, authed(http.MethodPut, "/api/profile", other, `{"handle":"cedar-river"}`)); saved.Code != http.StatusOK {
+		t.Fatalf("other profile = %d %s", saved.Code, saved.Body.String())
+	}
+	name := "Cedar Song"
+	if err := app.DB.UpdateUserProfile(context.Background(), "user-2", &name, nil); err != nil {
+		t.Fatalf("name: %v", err)
+	}
+
+	byHandle := serve(app, authed(http.MethodGet, "/api/users?q=ced", token, ""))
+	if byHandle.Code != http.StatusOK || !strings.Contains(byHandle.Body.String(), `"id":"cedar-river"`) {
+		t.Fatalf("search by handle = %d %s", byHandle.Code, byHandle.Body.String())
+	}
+	if strings.Contains(byHandle.Body.String(), `"id":"river"`) {
+		t.Fatalf("search returned the viewer: %s", byHandle.Body.String())
+	}
+	byName := serve(app, authed(http.MethodGet, "/api/users?q=Song", token, ""))
+	if byName.Code != http.StatusOK || !strings.Contains(byName.Body.String(), `"id":"cedar-river"`) {
+		t.Fatalf("search by name = %d %s", byName.Code, byName.Body.String())
+	}
+}
+
+func TestUserSearchHidesPeopleWhoCannotReceiveMessages(t *testing.T) {
+	app, _, token := profileTestServer(t)
+	quiet := signIn(t, app.DB, "user-3", "user-3@example.com")
+	if saved := serve(app, authed(http.MethodPut, "/api/profile", quiet, `{"handle":"quiet-cedar","allowMessages":false}`)); saved.Code != http.StatusOK {
+		t.Fatalf("quiet profile = %d %s", saved.Code, saved.Body.String())
+	}
+	blocked := signIn(t, app.DB, "user-4", "user-4@example.com")
+	if saved := serve(app, authed(http.MethodPut, "/api/profile", blocked, `{"handle":"blocked-cedar"}`)); saved.Code != http.StatusOK {
+		t.Fatalf("blocked profile = %d %s", saved.Code, saved.Body.String())
+	}
+	if response := serve(app, authed(http.MethodPut, "/api/users/blocked-cedar/block", token, "")); response.Code != http.StatusOK {
+		t.Fatalf("block = %d %s", response.Code, response.Body.String())
+	}
+	search := serve(app, authed(http.MethodGet, "/api/users?q=cedar", token, ""))
+	if search.Code != http.StatusOK || strings.Contains(search.Body.String(), "quiet-cedar") || strings.Contains(search.Body.String(), "blocked-cedar") {
+		t.Fatalf("search exposed unreachable people: %d %s", search.Code, search.Body.String())
+	}
+	guest := serve(app, httptest.NewRequest(http.MethodGet, "/api/users?q=cedar", nil))
+	if guest.Code != http.StatusUnauthorized {
+		t.Fatalf("guest search = %d, want 401", guest.Code)
+	}
+}
+
 func folderIDFrom(body string) string {
 	marker := `"id":"`
 	start := strings.Index(body, marker)
