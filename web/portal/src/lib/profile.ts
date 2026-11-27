@@ -14,6 +14,23 @@ export const AVATAR_THEMES = [
 
 export type AvatarTheme = (typeof AVATAR_THEMES)[number]['id'];
 
+/** 主页头像上方的封面色块。预设色与客户端、服务端共用同一套 id。 */
+export const BANNER_THEMES = [
+  { id: 'sand', label: '暖沙', background: 'linear-gradient(135deg, #e8e4dc 0%, #dcd5c8 100%)' },
+  { id: 'sky', label: '天青', background: 'linear-gradient(135deg, #e3e8ee 0%, #d1d9e3 100%)' },
+  { id: 'mint', label: '苔绿', background: 'linear-gradient(135deg, #e5ebe3 0%, #d3dbcd 100%)' },
+  { id: 'lilac', label: '藕紫', background: 'linear-gradient(135deg, #ece5ea 0%, #dbd2db 100%)' },
+  { id: 'dusk', label: '暮色', background: 'linear-gradient(135deg, #eae6e0 0%, #dad2c5 100%)' },
+  { id: 'slate', label: '石板', background: 'linear-gradient(135deg, #e4e2ea 0%, #d2cfdd 100%)' },
+] as const;
+
+export type BannerTheme = (typeof BANNER_THEMES)[number]['id'];
+
+/** 只返回已知的预设封面；空值或未知值表示使用默认纸色。 */
+export function bannerTheme(value: unknown) {
+  return BANNER_THEMES.find(theme => theme.id === value) ?? null;
+}
+
 /** 上传头像在数据库里保存为 upload:<uuid>，指向当前账号的私有媒体对象。 */
 export const AVATAR_UPLOAD_PREFIX = 'upload:';
 /** 服务端只接受经过客户端裁切压缩的小图，避免把视频或原图当作头像。 */
@@ -43,6 +60,36 @@ export function avatarUploadValue(url: unknown): string | null {
   if (typeof url !== 'string') return null;
   const match = /^\/api\/media\/([a-f0-9-]{36})$/i.exec(url);
   return match && MEDIA_UUID.test(match[1]) ? `${AVATAR_UPLOAD_PREFIX}${match[1].toLowerCase()}` : null;
+}
+
+/** 上传封面在数据库里保存为 upload:<uuid>，指向当前账号的私有媒体对象。 */
+export const BANNER_UPLOAD_PREFIX = 'upload:';
+/** 服务端只接受经过客户端裁切压缩的宽幅封面。 */
+export const BANNER_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+
+export function uploadedBannerID(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.startsWith(BANNER_UPLOAD_PREFIX)) return null;
+  const id = value.slice(BANNER_UPLOAD_PREFIX.length);
+  return MEDIA_UUID.test(id) ? id.toLowerCase() : null;
+}
+
+export function uploadedBannerURL(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.startsWith(BANNER_UPLOAD_PREFIX)) return null;
+  const rest = value.slice(BANNER_UPLOAD_PREFIX.length);
+  // 别人的上传封面走公开作品媒体路由，/api/media 只对本人开放。
+  const published = /^gallery\.([A-Za-z0-9_-]{1,100})\.([a-f0-9-]{36})$/i.exec(rest);
+  if (published && MEDIA_UUID.test(published[2])) {
+    return `/api/gallery/banner/${encodeURIComponent(published[1])}.${published[2].toLowerCase()}`;
+  }
+  const id = uploadedBannerID(value);
+  return id ? `/api/media/${id}` : null;
+}
+
+/** /api/media/<uuid> → upload:<uuid>，把上传结果写进资料。 */
+export function bannerUploadValue(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  const match = /^\/api\/media\/([a-f0-9-]{36})$/i.exec(url);
+  return match && MEDIA_UUID.test(match[1]) ? `${BANNER_UPLOAD_PREFIX}${match[1].toLowerCase()}` : null;
 }
 
 /** 去掉控制字符，把连续空白收成一个空格；服务端与输入框共用。 */

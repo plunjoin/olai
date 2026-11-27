@@ -23,40 +23,111 @@
 .profile-back:hover, .profile-messages:hover { color: var(--plaza-ink); }
 .profile-messages { margin-left: auto; padding: 0 14px; background: var(--plaza-soft); }
 .profile-messages:hover { background: var(--plaza-soft-hover); }
-.profile-main { max-width: 1180px; margin: 0 auto; padding: 4px 30px 72px; }
-.profile-head {
+.profile-main { width: 100%; padding: 0 30px 72px; }
+
+/* --------------------------------------------------------------------------
+   Profile hero: a cover band with the avatar overlapping its lower edge,
+   the identity on the left and the counters plus actions on the right.
+   The band spans the whole column; the row below it stays inside the
+   reading width.
+   -------------------------------------------------------------------------- */
+.profile-hero { margin: 0 -30px 4px; }
+.profile-banner {
+  height: 190px;
+  background: linear-gradient(135deg, #e6e1d8 0%, #d7d0c3 100%);
+  background-size: cover;
+  background-position: center;
+}
+.profile-hero-body {
   display: flex;
   align-items: flex-start;
-  gap: 22px;
-  padding: 18px 0 26px;
+  gap: 20px;
+  max-width: 1180px;
+  margin: -56px auto 0;
+  padding: 0 30px;
 }
-.profile-head > .account-avatar-media {
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
+.profile-hero-avatar {
   flex-shrink: 0;
-  box-shadow: inset 0 0 0 1px rgba(30, 28, 25, 0.08), 0 10px 28px -18px rgba(30, 28, 25, 0.5);
+  padding: 5px;
+  border-radius: 50%;
+  background: var(--plaza-bg);
+  box-shadow: 0 12px 30px -16px rgba(30, 28, 25, 0.55);
 }
-.profile-identity { flex: 1; min-width: 0; padding-top: 4px; }
-.profile-identity h1 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -0.03em; }
-.profile-handle { margin: 3px 0 0; color: var(--plaza-muted); font-size: 13px; }
-.profile-bio { margin: 12px 0 0; max-width: 58ch; color: var(--plaza-ink-soft); font-size: 14.5px; line-height: 1.65; }
+.profile-hero-avatar > .account-avatar-media {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(30, 28, 25, 0.08);
+}
+.profile-identity { flex: 1; min-width: 0; padding-top: 66px; }
+.profile-name { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.2; }
+.profile-handle { margin: 4px 0 0; color: var(--plaza-muted); font-size: 13px; }
+.profile-bio { margin: 11px 0 0; max-width: 52ch; color: var(--plaza-ink-soft); font-size: 14px; line-height: 1.65; }
 .profile-joined, .profile-website { margin: 6px 0 0; color: var(--plaza-muted); font-size: 12.5px; }
+/* A status line may carry a small check icon; keep it on the text baseline. */
+.profile-joined:has(svg) { display: inline-flex; align-items: center; gap: 5px; color: var(--color-success, #138463); }
 .profile-website a { color: var(--plaza-ink-soft); text-decoration: none; border-bottom: 1px solid var(--plaza-line); }
 .profile-website a:hover { color: var(--plaza-ink); border-color: var(--plaza-ink); }
-.profile-counts { display: flex; gap: 18px; margin: 14px 0 0; color: var(--plaza-muted); font-size: 13px; }
-.profile-counts span { display: inline-flex; align-items: baseline; gap: 5px; }
-.profile-counts strong { color: var(--plaza-ink); font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
-.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-top: 6px; }
-.profile-actions .secondary-button { min-height: 36px; padding: 0 16px; border-radius: 999px; background: var(--plaza-ink); color: #fff; border-color: transparent; font-size: 13px; }
-.profile-actions .secondary-button:hover:not(:disabled) { background: #000; }
-.profile-actions .secondary-button.is-following { background: #fff; color: var(--plaza-ink); border: 1px solid var(--plaza-line); }
-.profile-actions .text-button { height: 36px; padding: 0 14px; border-radius: 999px; background: transparent; color: var(--plaza-muted); font-size: 12.5px; }
+
+.profile-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 18px;
+  flex-shrink: 0;
+  padding-top: 58px;
+}
+.profile-stats { display: flex; gap: 26px; margin: 0; }
+.profile-stat { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.profile-stat dt { color: var(--plaza-muted); font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.profile-stat dd { margin: 0; color: var(--plaza-ink); font-size: 19px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+
+/* The reading column: tabs and the work grid share one width. */
+.profile-content { max-width: 1180px; margin: 0 auto; }
+
+/* --------------------------------------------------------------------------
+   An open work sits beside the grid as an in-flow column, the same way the
+   plaza does it. The profile page keeps the reading width, so the detail
+   takes the outer edge and the works flow in the remaining space.
+   -------------------------------------------------------------------------- */
+.profile-main .plaza-content { padding: 0; max-width: none; }
+.profile-main .plaza-content.has-detail {
+  grid-template-columns: minmax(0, 1fr) clamp(260px, 28%, 460px);
+}
+.profile-main .plaza-content.has-detail .profile-content { padding: 0; }
+.profile-main .plaza-detail-pane { top: calc(74px + 12px); height: calc(100vh - 74px - 12px - 18px); }
+.profile-main .plaza-content.has-detail .plaza-masonry { columns: 3 140px; column-gap: 12px; }
+.profile-main .plaza-content.has-detail .plaza-card { margin-bottom: 14px; }
+.profile-main .plaza-detail-back { background: rgba(255, 255, 255, 0.86); }
+
+.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.profile-actions .primary-button,
+.profile-actions .outline-button {
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.profile-actions .primary-button { background: var(--plaza-ink); color: #fff; border: 1px solid transparent; }
+.profile-actions .primary-button:hover:not(:disabled) { background: #000; }
+.profile-actions .primary-button.is-following { background: #fff; color: var(--plaza-ink); border-color: var(--plaza-line); }
+.profile-actions .outline-button { background: #fff; color: var(--plaza-ink); border: 1px solid var(--plaza-line); }
+.profile-actions .outline-button:hover { border-color: var(--plaza-ink); }
+.profile-actions .text-button { height: 38px; padding: 0 14px; border-radius: 999px; background: transparent; color: var(--plaza-muted); font-size: 12.5px; }
 .profile-actions .text-button:hover { background: #fdf0f3; color: var(--color-danger, #d93657); }
-.profile-tabs { display: flex; gap: 6px; margin: 2px 0 20px; padding-top: 6px; border-top: 1px solid var(--plaza-line); }
+
+.profile-tabs { display: flex; gap: 6px; margin: 24px 0 20px; }
 .profile-tabs button {
-  min-height: 34px;
-  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 15px;
   border-radius: 999px;
   color: var(--plaza-ink-soft);
   background: transparent;
@@ -64,10 +135,25 @@
 }
 .profile-tabs button:hover { background: var(--plaza-soft); color: var(--plaza-ink); }
 .profile-tabs button.is-active { background: var(--plaza-ink); color: #fff; }
+.profile-tab-count { font-size: 12px; font-variant-numeric: tabular-nums; opacity: 0.72; }
+.profile-tabs button.is-active .profile-tab-count { opacity: 0.85; }
+
 .profile-status, .profile-notice { color: var(--plaza-ink-soft); font-size: 13.5px; }
 .profile-status[role='alert'] { display: flex; flex-direction: column; align-items: center; gap: 14px; min-height: 46vh; justify-content: center; text-align: center; }
 .profile-status[role='alert'] .secondary-button { height: 36px; padding: 0 16px; border-radius: 999px; background: #fff; border: 1px solid var(--plaza-line); color: var(--plaza-ink); }
 .profile-notice { margin: 0 0 12px; }
+.profile-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 78px 24px 84px;
+  text-align: center;
+  color: var(--plaza-muted);
+}
+.profile-empty > svg { width: 58px; height: 58px; padding: 14px; border-radius: 50%; background: var(--plaza-soft); color: #7c7468; margin-bottom: 4px; }
+.profile-empty h2 { margin: 0; font-size: 19px; font-weight: 700; color: var(--plaza-ink); letter-spacing: -0.015em; }
+.profile-empty p { max-width: 380px; margin: 0; font-size: 12.8px; line-height: 1.65; }
 
 .messages-gate { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; min-height: 46vh; color: var(--plaza-muted); font-size: 14px; text-align: center; }
 .messages-gate a { display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 999px; background: var(--plaza-ink); color: #fff; font-size: 13px; text-decoration: none; }
@@ -109,21 +195,96 @@
 .plaza-folder-picker input { width: 120px; }
 .plaza-folder-picker button { height: 34px; padding: 0 12px; border-radius: 999px; background: var(--plaza-ink); color: #fff; }
 
-.account-privacy-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; color: var(--text-soft, #4f4a42); font-size: 12.5px; font-weight: 600; }
+.account-privacy-field { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; color: var(--plaza-ink-soft, #4f4a42); font-size: 12.5px; font-weight: 600; }
 .account-privacy-field input, .account-privacy-field textarea {
-  width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--line, #e8e3da); border-radius: 12px;
-  background: #faf9f6; color: var(--text, #1e1c19); font-size: 13.5px; font-weight: 400;
+  width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--plaza-line, #e8e3da); border-radius: 12px;
+  background: var(--plaza-bg, #faf9f6); color: var(--plaza-ink, #1e1c19); font-size: 13.5px; font-weight: 400;
 }
-.account-privacy-field input:focus, .account-privacy-field textarea:focus { background: #fff; border-color: var(--text, #1e1c19); }
+.account-privacy-field input:focus, .account-privacy-field textarea:focus { background: #fff; border-color: var(--plaza-ink, #1e1c19); }
 .account-privacy-field textarea { min-height: 76px; resize: vertical; line-height: 1.55; }
 .account-privacy-switches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin: 16px 0 14px; font-size: 13px; }
 .account-privacy-switches label { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 
+/* --------------------------------------------------------------------------
+   Cover editor
+   The band above the avatar is the account's own: a preset tone or a picture
+   cropped to a wide strip. The dialog previews it the way the profile shows it.
+   -------------------------------------------------------------------------- */
+.banner-dialog { width: min(468px, calc(100vw - 32px)); overflow: hidden; }
+.banner-dialog-inner { display: flex; flex-direction: column; }
+.banner-dialog-sub { margin-top: 5px; color: var(--text-muted); font-size: 12px; line-height: 1.65; }
+.banner-dialog-body { padding: 20px 25px 4px; }
+.banner-dialog .auth-error { margin-top: 0; }
+.banner-preview {
+  position: relative;
+  height: 108px;
+  border-radius: 14px;
+  background-color: var(--plaza-bg, #f7f6f2);
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--plaza-line, #e8e3da);
+}
+.banner-preview-label {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--plaza-ink-soft, #4f4a42);
+  font-size: 11px;
+  font-weight: 600;
+}
+.banner-field { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.banner-field .field-label { margin: 0; }
+.banner-swatches { display: flex; flex-wrap: wrap; gap: 9px; }
+.banner-swatch {
+  width: 46px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--plaza-line, #e8e3da);
+  border-radius: 9px;
+  transition: border-color .16s, box-shadow .16s, transform .16s;
+}
+.banner-swatch:hover:not(:disabled) { border-color: var(--plaza-ink, #1e1c19); transform: translateY(-1px); }
+.banner-swatch.is-selected { border-color: var(--plaza-ink, #1e1c19); box-shadow: 0 0 0 3px rgba(30, 28, 25, 0.12); }
+.banner-swatch:disabled { cursor: default; opacity: .7; }
+.banner-upload { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.banner-upload .banner-upload-button { min-height: 34px; padding: 0 13px; display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.banner-upload .banner-dialog-hint { margin-top: 0; flex: 1; min-width: 170px; }
+.banner-upload-note { margin: 2px 0 0; display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 11.5px; }
+.banner-upload-clear { border: 0; padding: 0; background: none; color: var(--accent-lime, #7047eb); font-size: 11.5px; font-weight: 600; cursor: pointer; }
+.banner-upload-clear:hover:not(:disabled) { text-decoration: underline; }
+.banner-dialog .modal-footer button { min-height: 40px; font-size: 12px; }
+
+@media (max-width: 1099px) {
+  /* On a narrow screen the open work replaces the grid, like the plaza. */
+  .profile-main .plaza-content.has-detail { display: block; }
+  .profile-main .plaza-content.has-detail .profile-content { display: none; }
+  .profile-main .plaza-detail-pane { position: static; height: auto; }
+}
+
+@media (max-width: 900px) {
+  .profile-hero-body { flex-wrap: wrap; gap: 14px; }
+  .profile-identity { padding-top: 62px; }
+  .profile-hero-side { flex: 1; align-items: flex-start; padding-top: 0; gap: 12px; }
+  .profile-stats { flex-wrap: wrap; gap: 14px 22px; }
+  .profile-stat { align-items: flex-start; }
+  .profile-actions { justify-content: flex-start; }
+}
+
 @media (max-width: 800px) {
   .profile-bar { padding: 10px 16px; }
-  .profile-main { padding: 4px 16px 56px; }
-  .profile-head { display: block; }
-  .profile-actions { justify-content: flex-start; margin-top: 16px; }
+  .profile-main { padding: 0 16px 56px; }
+  .profile-hero { margin: 0 -16px 20px; }
+  .profile-banner { height: 132px; }
+  .profile-hero-body { display: block; margin: -44px 16px 0; padding: 0; }
+  .profile-hero-avatar { width: 88px; height: 88px; }
+  .profile-hero-avatar > .account-avatar-media { width: 88px; height: 88px; }
+  .profile-identity { padding-top: 12px; }
+  .profile-name { font-size: 23px; }
+  .profile-hero-side { margin-top: 16px; }
+  .profile-actions { margin-top: 16px; }
   .account-privacy-switches { grid-template-columns: 1fr; }
   .messages-main { display: block; padding: 6px 16px 24px; }
   .messages-list { margin-bottom: 14px; }
