@@ -10,7 +10,7 @@
       </p>
       <p v-if="loading" class="adm-note"><span class="adm-spinner" /> {{ t('加载中…') }}</p>
 
-      <template v-else>
+      <template v-if="!loading">
         <div class="adm-work-grid">
           <label class="adm-field">
             <span>{{ t('作品类型') }}</span>
@@ -43,23 +43,37 @@
             <input class="adm-input adm-work-file" type="file" :accept="accept" required :disabled="busy" @change="onFile" />
             <small class="adm-note">{{ t('图像、视频或音频文件；未启用云存储时不超过 32 MB。') }}</small>
           </label>
-          <template v-if="kind === 'music'">
+        </template>
+
+        <template v-if="kind === 'music'">
+          <div v-if="editing" class="adm-field">
+            <span>{{ t('专辑封面（选填）') }}</span>
+            <img v-if="existingCover" class="adm-work-cover" :src="existingCover" :alt="t('当前专辑封面')" />
+            <p v-else class="adm-note">{{ t('当前没有专辑封面。') }}</p>
+            <label class="adm-inline-check">
+              <input v-model="removeCover" type="checkbox" :disabled="busy || !existingCover" />
+              {{ t('移除当前封面') }}
+            </label>
+            <input class="adm-input adm-work-file" type="file" accept="image/*" :disabled="busy || removeCover" :aria-label="t('更换专辑封面')" @change="onCover" />
+            <small class="adm-note">{{ t('选择图片可更换封面；勾选移除后保存会删除封面。') }}</small>
+          </div>
+          <template v-if="!editing">
             <label class="adm-field">
               <span>{{ t('专辑封面（选填）') }}</span>
               <input class="adm-input adm-work-file" type="file" accept="image/*" :disabled="busy" @change="onCover" />
               <small class="adm-note">{{ t('图片文件，不超过 8 MB；会显示在广场音乐卡片和详情里。') }}</small>
             </label>
-            <label class="adm-field">
-              <span>{{ t('歌词（选填）') }}</span>
-              <textarea v-model="lyrics" class="adm-textarea" maxlength="64000" rows="5" :disabled="busy" :placeholder="t('纯文本歌词，显示在广场详情并支持下载 TXT。')" aria-label="歌词（选填）" />
-            </label>
-            <div class="adm-field">
-              <span>{{ t('LRC 时间轴歌词（选填）') }}</span>
-              <textarea v-model="lrc" class="adm-textarea" maxlength="64000" rows="5" :disabled="busy" :placeholder="t('[00:12.00]第一句歌词')" aria-label="LRC 时间轴歌词（选填）" />
-              <input class="adm-input adm-work-file" type="file" accept=".lrc,.txt,text/plain" :disabled="busy" aria-label="选择 LRC 文件" @change="onLrcFile" />
-              <small class="adm-note">{{ t('可以直接粘贴，也可以选择 .lrc 文件自动填入。') }}</small>
-            </div>
           </template>
+          <label class="adm-field">
+            <span>{{ t('歌词（选填）') }}</span>
+            <textarea v-model="lyrics" class="adm-textarea" maxlength="64000" rows="5" :disabled="busy" :placeholder="t('纯文本歌词，显示在广场详情。')" aria-label="歌词（选填）" />
+          </label>
+          <div class="adm-field">
+            <span>{{ t('LRC 时间轴歌词（选填）') }}</span>
+            <textarea v-model="lrc" class="adm-textarea" maxlength="64000" rows="5" :disabled="busy" :placeholder="t('[00:12.00]第一句歌词')" aria-label="LRC 时间轴歌词（选填）" />
+            <input class="adm-input adm-work-file" type="file" accept=".lrc,.txt,text/plain" :disabled="busy" :aria-label="t('选择 LRC 文件')" @change="onLrcFile" />
+            <small class="adm-note">{{ t('可以直接粘贴，也可以选择 .lrc 文件自动填入。') }}</small>
+          </div>
         </template>
       </template>
 
@@ -94,6 +108,8 @@ const prompt = ref('');
 const tags = ref('');
 const file = ref<File | null>(null);
 const cover = ref<File | null>(null);
+const existingCover = ref('');
+const removeCover = ref(false);
 const lyrics = ref('');
 const lrc = ref('');
 
@@ -112,6 +128,8 @@ const accept = computed(() => (kind.value === 'image' ? 'image/*' : kind.value =
 watch(kind, value => {
   if (value === 'music' || editing) return;
   cover.value = null;
+  existingCover.value = '';
+  removeCover.value = false;
   lyrics.value = '';
   lrc.value = '';
 });
@@ -170,6 +188,10 @@ async function loadDetail() {
     prompt.value = detail.prompt || '';
     kind.value = detail.kind || kind.value;
     visibility.value = detail.visibility === 'private' ? 'private' : 'public';
+    existingCover.value = detail.coverUrl || '';
+    removeCover.value = false;
+    lyrics.value = detail.lyrics || '';
+    lrc.value = detail.lrc || '';
     detailReady.value = true;
   } catch (failure) {
     // Without the real description, saving would overwrite it with an empty
@@ -220,9 +242,19 @@ async function submit() {
   busy.value = true;
   try {
     if (props.work) {
+      const body = new FormData();
+      body.set('title', name);
+      body.set('prompt', prompt.value);
+      body.set('visibility', visibility.value);
+      if (kind.value === 'music') {
+        body.set('lyrics', lyrics.value);
+        body.set('lrc', lrc.value);
+        if (removeCover.value) body.set('removeCover', '1');
+        else if (cover.value) body.set('cover', cover.value);
+      }
       await adminApi(`/api/admin/works/${encodeURIComponent(props.work.id)}`, {
         method: 'PUT',
-        body: JSON.stringify({ title: name, prompt: prompt.value, visibility: visibility.value }),
+        body,
       });
     } else {
       if (!file.value) {

@@ -233,7 +233,7 @@ func (s *Server) handleAdminWorkCreate(w http.ResponseWriter, r *http.Request) {
 	record := store.StudioRecord{
 		Key: key, UserID: officialID, Store: "assets", RecordID: recordID,
 		Data: direct, CreatedAt: now, UpdatedAt: now, Visibility: visibility,
-		Title: title, Kind: kind,
+		Title: title, Kind: kind, Status: workRecordStatus(body),
 	}
 	if err := s.DB.SaveRecord(ctx, record, chunks); err != nil {
 		s.adminFailure(w)
@@ -285,17 +285,29 @@ func (s *Server) handleAdminWorkDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	explicit, _ := value["title"].(string)
-	writeJSON(w, http.StatusOK, map[string]any{
+	result := map[string]any{
 		"id": "gallery_" + key, "recordKey": key, "recordId": record.RecordID,
 		"title": strings.TrimSpace(explicit), "displayTitle": workRecordTitle(value),
 		"prompt": stringValue(value["prompt"]), "kind": workRecordKind(value),
 		"visibility": record.Visibility, "hidden": hidden,
 		"createdAt": record.CreatedAt, "updatedAt": record.UpdatedAt,
-	})
+	}
+	if kind := workRecordKind(value); kind == "music" {
+		// The detail API is the console's only read of a record body. Only
+		// inline covers go back to the browser; OSS covers are already signed
+		// into a public URL on the owner's gallery read, not stored in the body.
+		if coverURL, ok := value["coverUrl"].(string); ok && coverURL != "" {
+			result["coverUrl"] = coverURL
+		}
+		result["lyrics"] = stringValue(value["lyrics"])
+		result["lrc"] = stringValue(value["lrc"])
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // handleAdminWorkUpdate edits one work's name, description, visibility or
-// takedown state. Media is left untouched.
+// takedown state. The main work file is never replaced; a music work may also
+// update its cover, lyrics and timed lyrics.
 func (s *Server) handleAdminWorkUpdate(w http.ResponseWriter, r *http.Request) {
 	admin, ok := s.requireAdmin(w, r)
 	if !ok {
@@ -304,6 +316,34 @@ func (s *Server) handleAdminWorkUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.sameOrigin(r) {
 		writeError(w, http.StatusForbidden, "不允许跨站调用。")
 		return
+	}
+	// Cover uploads use a multipart form; ordinary metadata edits stay JSON.
+	// A hand-rolled request may post a JSON update as multipart to reach this
+	// branch, so read and discard its unknown fields before building the update.
+	contentType := r.Header.Get("Content-Type")
+	multipartUpdate := strings.HasPrefix(strings.ToLower(contentType), "multipart/form-data")
+	var formValues map[string]string
+	if multipartUpdate {
+		r.Body = http.MaxBytesReader(w, r.Body, maxAdminCoverUpload+1<<20)
+		if err := r.ParseMultipartForm(maxAdminWorkForm); err != nil {
+			writeError(w, http.StatusBadRequest, "作品信息或封面无效，请重试。")
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		formValues = map[string]string{}
+		for _, field := range []string{"title", "prompt", "visibility", "lyrics", "lrc"} {
+			formValues[field] = r.FormValue(field)
+		}
+		if r.MultipartForm != nil {
+			for field := range r.MultipartForm.Value {
+				if _, known := formValues[field]; known || field == "removeCover" {
+					continue
+				}
+				delete(r.MultipartForm.Value, field)
+			}
+		}
 	}
 	ctx := r.Context()
 	key, ok := galleryRecordKey(r.PathValue("id"))
@@ -324,16 +364,31 @@ func (s *Server) handleAdminWorkUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "作品不存在。")
 		return
 	}
-	input, err := readJSONObject(r, 64*1024)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "作品信息格式无效。")
-		return
+	var input map[string]any
+	if multipartUpdate {
+		input = make(map[string]any)
+		form := r.MultipartForm.Value
+		for _, field := range []string{"title", "prompt", "visibility", "lyrics", "lrc"} {
+			if _, exists := form[field]; exists {
+				input[field] = formValues[field]
+			}
+		}
+		if _, exists := form["removeCover"]; exists {
+			input["removeCover"] = true
+		}
+	} else {
+		input, err = readJSONObject(r, 64*1024)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "作品信息格式无效。")
+			return
+		}
 	}
 	var value map[string]any
 	if err := json.Unmarshal([]byte(record.Body), &value); err != nil {
 		s.adminFailure(w)
 		return
 	}
+	kind := workRecordKind(value)
 	changed := false
 	if raw, exists := input["title"]; exists {
 		title, ok := raw.(string)
@@ -372,7 +427,86 @@ func (s *Server) handleAdminWorkUpdate(w http.ResponseWriter, r *http.Request) {
 		value["visibility"] = visibility
 		changed = true
 	}
+	// A multipart edit never carries takedown state; changing it stays a
+	// separate JSON action so a stale dialog cannot restore a hidden work.
 	hidden, hideRequested := input["hidden"].(bool)
+	if _, requested := input["lyrics"]; requested && kind == "music" {
+		rawLyrics, _ := input["lyrics"].(string)
+		if multipartUpdate {
+			rawLyrics = formValues["lyrics"]
+		}
+		lyrics, ok := workDescription(rawLyrics, maxWorkLyricsRunes)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "歌词不能超过 64000 个字符。")
+			return
+		}
+		value["lyrics"] = lyrics
+		changed = true
+	}
+	if _, requested := input["lrc"]; requested && kind == "music" {
+		rawLRC, _ := input["lrc"].(string)
+		if multipartUpdate {
+			rawLRC = formValues["lrc"]
+		}
+		lrc, ok := workDescription(rawLRC, maxWorkLyricsRunes)
+		if !ok {
+			writeError(w, http.StatusBadRequest, "LRC 歌词不能超过 64000 个字符。")
+			return
+		}
+		if lrc != "" {
+			value["lrc"] = lrc
+			value["lrcSource"] = "manual"
+		} else {
+			delete(value, "lrc")
+			delete(value, "lrcSource")
+		}
+		changed = true
+	}
+	if kind == "music" {
+		coverUploaded := multipartUpdate && r.MultipartForm != nil && len(r.MultipartForm.File["cover"]) > 0
+		if removeCover, ok := input["removeCover"].(bool); coverUploaded || (ok && removeCover) {
+			coverURL := ""
+			coverMime := ""
+			var coverData []byte
+			if coverUploaded {
+				upload, header, err := r.FormFile("cover")
+				if err != nil {
+					writeError(w, http.StatusBadRequest, "封面文件无效。")
+					return
+				}
+				defer upload.Close()
+				coverData, err = io.ReadAll(io.LimitReader(upload, maxAdminCoverUpload+1))
+				if err != nil || len(coverData) == 0 || len(coverData) > maxAdminCoverUpload {
+					writeError(w, http.StatusRequestEntityTooLarge, "封面文件为空或超过 8 MB。")
+					return
+				}
+				coverMime, ok = workUploadMime(header.Header.Get("Content-Type"), header.Filename, coverData, "image")
+				if !ok {
+					writeError(w, http.StatusBadRequest, "封面需要是图片文件。")
+					return
+				}
+			}
+			if len(coverData) > 0 {
+				if s.Media.Enabled() {
+					identity := media.Identity{Owner: "user:" + record.UserID, UserID: record.UserID}
+					stored, err := s.Media.Store(ctx, coverData, coverMime, "work-"+record.RecordID+"-cover", identity)
+					if err != nil {
+						mediaFailure(w, r, err)
+						return
+					}
+					coverURL = "/api/media/" + stored.ID
+				} else {
+					coverURL = "data:" + coverMime + ";base64," + base64.StdEncoding.EncodeToString(coverData)
+				}
+				value["coverUrl"] = coverURL
+				value["coverStatus"] = "completed"
+			} else {
+				delete(value, "coverUrl")
+				delete(value, "coverStatus")
+			}
+			changed = true
+		}
+	}
 	if !changed && !hideRequested {
 		writeError(w, http.StatusBadRequest, "没有需要更新的内容。")
 		return
@@ -392,7 +526,7 @@ func (s *Server) handleAdminWorkUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		updated, err := s.DB.UpdateWorkRecord(ctx, key, "", record.UpdatedAt, store.WorkRecordUpdate{
 			Data: direct, Title: workRecordTitle(value), Kind: workRecordKind(value),
-			Visibility: visibility, Chunks: chunks,
+			Status: workRecordStatus(value), Visibility: visibility, Chunks: chunks,
 		})
 		if err != nil {
 			s.adminFailure(w)

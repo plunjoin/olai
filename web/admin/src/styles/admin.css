@@ -229,6 +229,8 @@
   margin-right: 10px; padding: 5px 10px; border: 1px solid var(--border-medium); border-radius: 8px;
   background: var(--bg-subtle); color: var(--text-primary); font-size: 12px; cursor: pointer;
 }
+.adm-work-cover { display: block; max-width: 180px; max-height: 120px; margin: 8px 0; border: 1px solid var(--border-medium); border-radius: 10px; object-fit: cover; }
+.adm-inline-check { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; color: var(--text-secondary); font-size: 12px; }
 @media (max-width: 640px) {
   .adm-work-grid { grid-template-columns: 1fr; }
 }

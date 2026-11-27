@@ -59,6 +59,7 @@ export const MODEL_KIND_NAMES: Record<string, string> = {
 export interface AdminWork {
   id: string; recordKey: string; recordId: string;
   title: string; displayTitle?: string; prompt?: string;
+  coverUrl?: string; lyrics?: string; lrc?: string;
   kind: string; visibility: string; hidden: boolean;
   system: boolean; userId: string; email: string;
   createdAt: number; updatedAt: number;

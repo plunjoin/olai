@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -255,6 +256,135 @@ func TestAdminMusicWorkAcceptsCoverAndLyrics(t *testing.T) {
 	}
 	if item["coverStatus"] != "completed" || item["lyrics"] != "第一句\n第二句" || item["lrcSource"] != "manual" {
 		t.Fatalf("public music fields = %+v", item)
+	}
+}
+
+func TestAdminMusicWorkEditsCoverAndLyrics(t *testing.T) {
+	ctx := context.Background()
+	app, db, cookie := adminWorkServer(t)
+	created, recorder := createMusicWork(t, app, cookie, []byte("\x89PNG\r\n\x1a\nfirst-cover"), "cover.png",
+		"原歌词", "[00:01.00]原歌词")
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	key, _ := created["recordKey"].(string)
+	path := "/api/admin/works/gallery_" + key
+
+	detail := adminWorkRequest(t, app, cookie, http.MethodGet, path, nil, "")
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail = %d body=%s", detail.Code, detail.Body.String())
+	}
+	var fields struct {
+		CoverURL string `json:"coverUrl"`
+		Lyrics   string `json:"lyrics"`
+		LRC      string `json:"lrc"`
+	}
+	if err := json.Unmarshal(detail.Body.Bytes(), &fields); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	if !strings.HasPrefix(fields.CoverURL, "data:image/png;base64,") || fields.Lyrics != "原歌词" || fields.LRC != "[00:01.00]原歌词" {
+		t.Fatalf("detail fields = %+v", fields)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range map[string]string{
+		"title": "Edited night tide", "prompt": "An edited sea song",
+		"visibility": "public", "lyrics": "新歌词", "lrc": "[00:02.00]新歌词",
+	} {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatalf("write field: %v", err)
+		}
+	}
+	part, err := writer.CreateFormFile("cover", "replacement.png")
+	if err != nil {
+		t.Fatalf("create cover part: %v", err)
+	}
+	if _, err := part.Write([]byte("\x89PNG\r\n\x1a\nsecond-cover")); err != nil {
+		t.Fatalf("write cover: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+	updated := adminWorkRequest(t, app, cookie, http.MethodPut, path, body.Bytes(), writer.FormDataContentType())
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update = %d body=%s", updated.Code, updated.Body.String())
+	}
+	record, err := db.RecordByKey(ctx, key)
+	if err != nil {
+		t.Fatalf("reload work: %v", err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(record.Body), &value); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if value["title"] != "Edited night tide" || value["prompt"] != "An edited sea song" {
+		t.Fatalf("updated body = %+v", value)
+	}
+	if url, _ := value["coverUrl"].(string); !strings.HasPrefix(url, "data:image/png;base64,") ||
+		strings.Contains(url, base64.StdEncoding.EncodeToString([]byte("\x89PNG\r\n\x1a\nfirst-cover"))) {
+		t.Fatalf("replacement cover url = %q", url)
+	}
+	if value["lyrics"] != "新歌词" || value["lrc"] != "[00:02.00]新歌词" || value["lrcSource"] != "manual" {
+		t.Fatalf("updated lyrics = %+v", value)
+	}
+
+	var body2 bytes.Buffer
+	writer2 := multipart.NewWriter(&body2)
+	writer2.WriteField("title", "Edited night tide")
+	writer2.WriteField("prompt", "An edited sea song")
+	writer2.WriteField("visibility", "public")
+	writer2.WriteField("lyrics", "")
+	writer2.WriteField("lrc", "")
+	writer2.WriteField("removeCover", "1")
+	writer2.Close()
+	cleared := adminWorkRequest(t, app, cookie, http.MethodPut, path, body2.Bytes(), writer2.FormDataContentType())
+	if cleared.Code != http.StatusOK {
+		t.Fatalf("clear = %d body=%s", cleared.Code, cleared.Body.String())
+	}
+	clearedRecord, err := db.RecordByKey(ctx, key)
+	if err != nil {
+		t.Fatalf("reload cleared work: %v", err)
+	}
+	var clearedBody map[string]any
+	if err := json.Unmarshal([]byte(clearedRecord.Body), &clearedBody); err != nil {
+		t.Fatalf("decode cleared body: %v", err)
+	}
+	for _, field := range []string{"coverUrl", "coverStatus", "lrcSource"} {
+		if _, exists := clearedBody[field]; exists {
+			t.Fatalf("field %s still present: %v", field, clearedBody[field])
+		}
+	}
+	if clearedBody["lyrics"] != "" || clearedBody["lrc"] != nil {
+		t.Fatalf("cleared lyrics = %v / %v", clearedBody["lyrics"], clearedBody["lrc"])
+	}
+}
+
+func TestAdminMusicWorkUpdatesLyricsWithJSON(t *testing.T) {
+	ctx := context.Background()
+	app, db, cookie := adminWorkServer(t)
+	created, recorder := createMusicWork(t, app, cookie, nil, "",
+		"原歌词", "[00:01.00]原歌词")
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	key, _ := created["recordKey"].(string)
+	path := "/api/admin/works/gallery_" + key
+	update := adminWorkRequest(t, app, cookie, http.MethodPut, path,
+		[]byte(`{"lyrics":"新歌词","lrc":"[00:02.00]新歌词"}`), "application/json")
+	if update.Code != http.StatusOK {
+		t.Fatalf("update = %d body=%s", update.Code, update.Body.String())
+	}
+	record, err := db.RecordByKey(ctx, key)
+	if err != nil {
+		t.Fatalf("reload work: %v", err)
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(record.Body), &value); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if value["lyrics"] != "新歌词" || value["lrc"] != "[00:02.00]新歌词" || value["lrcSource"] != "manual" {
+		t.Fatalf("updated lyrics = %+v", value)
 	}
 }
 
