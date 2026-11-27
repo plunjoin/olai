@@ -4775,6 +4775,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 }
 .sel-chevron {
   flex: none;
+  width: 15px;
+  height: 15px;
   color: var(--text-dim);
   transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), color var(--transition);
 }
@@ -4823,7 +4825,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .sel-option[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 .sel-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel-option-icon { display: flex; flex: none; color: var(--text-muted); }
-.sel-check { flex: none; margin-left: auto; color: var(--text-primary); }
+.sel-check { flex: none; width: 14px; height: 14px; margin-left: auto; color: var(--text-primary); }
 @keyframes sel-menu-in {
   from { opacity: 0; transform: translateY(-6px) scale(0.985); }
 }

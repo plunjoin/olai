@@ -79,7 +79,7 @@
             <Maximize2 :size="16" />
           </button>
         </div>
-        <button type="button" class="plaza-detail-back" :aria-label="t('返回作品广场')" :title="t('返回作品广场')" @click="requestClose">
+        <button type="button" class="plaza-detail-back" :aria-label="backLabel || t('返回作品广场')" :title="backLabel || t('返回作品广场')" @click="requestClose">
           <ArrowLeft :size="19" />
         </button>
       </div>
@@ -274,12 +274,15 @@ const props = withDefaults(defineProps<{
   sourceRect?: DOMRect | null;
   sourceSrc?: string;
   closing?: boolean;
+  /** Where the back button sends the reader; the plaza and a profile differ. */
+  backLabel?: string;
 }>(), {
   favorite: false,
   user: null,
   sourceRect: null,
   sourceSrc: '',
   closing: false,
+  backLabel: '',
 });
 const emit = defineEmits<{
   close: [];

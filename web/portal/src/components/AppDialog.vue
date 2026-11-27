@@ -1,41 +1,31 @@
 <template>
-  <Teleport to="body">
-    <dialog ref="dialogRef" class="app-dialog" :class="className" :aria-labelledby="labelledBy" :aria-describedby="describedBy" @keydown.esc.stop @cancel.prevent="close">
-      <slot />
-    </dialog>
-  </Teleport>
+  <Dialog
+    :labelled-by="labelledBy"
+    :described-by="describedBy"
+    :class-name="['app-dialog', className]"
+    :close-on-backdrop="closeOnBackdrop"
+    :lock-scroll="false"
+    unstyled
+    @close="emit('close')"
+  >
+    <slot />
+  </Dialog>
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted } from 'vue';
+import { Dialog } from 'familiar-vue/dialog';
 import { lockBodyScroll } from '../lib/scrollLock';
 
-const props = withDefaults(defineProps<{ labelledBy: string; describedBy?: string; className?: string; closeOnBackdrop?: boolean }>(), {
+// The library dialog brings its own scroll lock, but the studio counts every
+// overlay — the player and the plaza detail included — on one shared lock.
+// This wrapper keeps that count and asks the library not to lock on its own.
+withDefaults(defineProps<{ labelledBy: string; describedBy?: string; className?: string; closeOnBackdrop?: boolean }>(), {
   describedBy: undefined, className: '', closeOnBackdrop: true,
 });
 const emit = defineEmits<{ close: [] }>();
-const dialogRef = ref<HTMLDialogElement | null>(null);
-let previous: HTMLElement | null = null;
-let releaseScroll: (() => void) | null = null;
 
-function close() { emit('close'); }
-function onPointer(event: MouseEvent) {
-  if (!props.closeOnBackdrop) return;
-  const dialog = dialogRef.value;
-  if (!dialog || event.target !== dialog) return;
-  const rect = dialog.getBoundingClientRect();
-  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) close();
-}
-onMounted(() => {
-  previous = document.activeElement as HTMLElement | null;
-  releaseScroll = lockBodyScroll();
-  dialogRef.value?.showModal();
-  dialogRef.value?.querySelector<HTMLElement>('[data-dialog-focus]')?.focus();
-});
-onBeforeUnmount(() => {
-  dialogRef.value?.close();
-  releaseScroll?.();
-  releaseScroll = null;
-  if (previous?.isConnected) previous.focus();
-});
+let releaseScroll: (() => void) | null = null;
+onMounted(() => { releaseScroll = lockBodyScroll(); });
+onBeforeUnmount(() => { releaseScroll?.(); releaseScroll = null; });
 </script>
