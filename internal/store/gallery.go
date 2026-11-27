@@ -126,6 +126,7 @@ func (d *DB) galleryFavoriteTotalIn(ctx context.Context, userID, folderID string
 	}
 	if publicOnly {
 		where += ` AND r.visibility = 'public'`
+		where += ` AND r.status = 'completed'`
 	}
 	var total int64
 	err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM gallery_favorites f

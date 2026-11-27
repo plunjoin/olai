@@ -23,10 +23,14 @@ type StudioRecord struct {
 	// with an empty Visibility keeps the stored value. The API uses it so new
 	// works start private while edits never republish or withdraw them.
 	CreateVisibility string
-	// Title and Kind are a small projection of the record body used by the
-	// admin console's work list and search. The body stays authoritative.
+	// Title, Kind and Status are a small projection of the record body used
+	// by the admin console's work list and by the public profile counters.
+	// The body stays authoritative.
 	Title string
 	Kind  string
+	// Status mirrors the work's "status" field ("pending", "completed" or
+	// "failed"). Rows written before the column existed read "unknown".
+	Status string
 }
 
 type RecordChunk struct {
@@ -270,24 +274,30 @@ var (
 	workKindPrefixRE   = regexp.MustCompile(`"kind"\s*:\s*"(image|video|music)"`)
 	workTitlePrefixRE  = regexp.MustCompile(`"title"\s*:\s*"((?:[^"\\]|\\.){0,400})`)
 	workPromptPrefixRE = regexp.MustCompile(`"prompt"\s*:\s*"((?:[^"\\]|\\.){0,400})`)
+	workStatusPrefixRE = regexp.MustCompile(`"status"\s*:\s*"(pending|completed|failed)"`)
 )
+
+// WorkStatusUnknown marks a row whose status has not been projected yet.
+// A work in that state is not counted as published.
+const WorkStatusUnknown = "unknown"
 
 const (
 	workMetaPrefixBytes = 512 * 1024
 	workMetaTitleRunes  = 80
 )
 
-// BackfillRecordMeta fills the title/kind projection for asset rows written
-// before the columns existed. It reads only a bounded prefix of every body and
-// runs in small batches, so a large inline-media record never blocks startup.
+// BackfillRecordMeta fills the title/kind/status projection for asset rows
+// written before the columns existed. It reads only a bounded prefix of every
+// body and runs in small batches, so a large inline-media record never blocks
+// startup.
 func (d *DB) BackfillRecordMeta(ctx context.Context) error {
 	const pageSize = 200
 	const updateBatch = 100
 	cursor := ""
 	for {
 		rows, err := d.QueryContext(ctx, `SELECT key, data FROM studio_records
-			WHERE store = 'assets' AND title = '' AND kind = '' AND key > ? ORDER BY key LIMIT ?`,
-			cursor, pageSize)
+			WHERE store = 'assets' AND status = ? AND key > ? ORDER BY key LIMIT ?`,
+			WorkStatusUnknown, cursor, pageSize)
 		if err != nil {
 			return err
 		}
@@ -314,9 +324,9 @@ func (d *DB) BackfillRecordMeta(ctx context.Context) error {
 		}
 		entries := make([]workMetaEntry, 0, len(records))
 		for _, record := range records {
-			kind, title, prompt := "", "", ""
+			kind, title, prompt, status := "", "", "", ""
 			if record.data == "" {
-				kind, title, prompt, err = d.chunkedWorkMeta(ctx, record.key)
+				kind, title, prompt, status, err = d.chunkedWorkMeta(ctx, record.key)
 				if err != nil {
 					return err
 				}
@@ -328,14 +338,17 @@ func (d *DB) BackfillRecordMeta(ctx context.Context) error {
 				if match := workKindPrefixRE.FindStringSubmatch(prefix); match != nil {
 					kind = match[1]
 				}
+				if match := workStatusPrefixRE.FindStringSubmatch(prefix); match != nil {
+					status = match[1]
+				}
 				title = metaString(workTitlePrefixRE, prefix)
 				prompt = metaString(workPromptPrefixRE, prefix)
 			}
 			title = workMetaTitle(title, prompt)
-			if kind == "" && title == "" {
+			if kind == "" && title == "" && status == "" {
 				continue
 			}
-			entries = append(entries, workMetaEntry{key: record.key, title: title, kind: kind})
+			entries = append(entries, workMetaEntry{key: record.key, title: title, kind: kind, status: status})
 		}
 		if err := d.updateWorkMeta(ctx, entries, updateBatch); err != nil {
 			return err
@@ -353,10 +366,10 @@ func (d *DB) BackfillRecordMeta(ctx context.Context) error {
 // prefix a single read would cover. A small overlap between chunks keeps a
 // match that straddles a boundary readable, and memory stays bounded no matter
 // how large the body is.
-func (d *DB) chunkedWorkMeta(ctx context.Context, key string) (kind, title, prompt string, err error) {
+func (d *DB) chunkedWorkMeta(ctx context.Context, key string) (kind, title, prompt, status string, err error) {
 	rows, err := d.QueryContext(ctx, `SELECT data FROM record_chunks WHERE record_key = ? ORDER BY chunk_index`, key)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	defer rows.Close()
 	const overlap = 1024
@@ -364,7 +377,7 @@ func (d *DB) chunkedWorkMeta(ctx context.Context, key string) (kind, title, prom
 	for rows.Next() {
 		var chunk string
 		if err := rows.Scan(&chunk); err != nil {
-			return "", "", "", err
+			return "", "", "", "", err
 		}
 		window := make([]byte, 0, len(tail)+len(chunk))
 		window = append(window, tail...)
@@ -372,6 +385,9 @@ func (d *DB) chunkedWorkMeta(ctx context.Context, key string) (kind, title, prom
 		text := string(window)
 		if match := workKindPrefixRE.FindStringSubmatch(text); match != nil {
 			kind = match[1]
+		}
+		if match := workStatusPrefixRE.FindStringSubmatch(text); match != nil {
+			status = match[1]
 		}
 		if value := metaString(workTitlePrefixRE, text); value != "" {
 			title = value
@@ -385,7 +401,7 @@ func (d *DB) chunkedWorkMeta(ctx context.Context, key string) (kind, title, prom
 			tail = append(tail[:0], window...)
 		}
 	}
-	return kind, title, prompt, rows.Err()
+	return kind, title, prompt, status, rows.Err()
 }
 
 func metaString(pattern *regexp.Regexp, prefix string) string {
@@ -429,7 +445,7 @@ func clampWorkTitle(value string) string {
 }
 
 type workMetaEntry struct {
-	key, title, kind string
+	key, title, kind, status string
 }
 
 func (d *DB) updateWorkMeta(ctx context.Context, entries []workMetaEntry, batchSize int) error {
@@ -439,8 +455,9 @@ func (d *DB) updateWorkMeta(ctx context.Context, entries []workMetaEntry, batchS
 			end = len(entries)
 		}
 		for _, entry := range entries[start:end] {
-			if _, err := d.ExecContext(ctx, `UPDATE studio_records SET title = ?, kind = ?
-				WHERE key = ? AND title = '' AND kind = ''`, entry.title, entry.kind, entry.key); err != nil {
+			if _, err := d.ExecContext(ctx, `UPDATE studio_records SET title = ?, kind = ?, status = ?
+				WHERE key = ? AND status = ?`,
+				entry.title, entry.kind, entry.status, entry.key, WorkStatusUnknown); err != nil {
 				return err
 			}
 		}
@@ -532,20 +549,28 @@ func (d *DB) SaveRecord(ctx context.Context, record StudioRecord, chunks []Recor
 		if createdAt <= 0 {
 			createdAt = record.UpdatedAt
 		}
+		// Only asset rows carry a work status; everything else keeps the
+		// unknown marker so the column never holds an empty string.
+		status := record.Status
+		if status == "" {
+			status = WorkStatusUnknown
+		}
 		// A row created before the created_at column existed (or by a rolling
 		// old binary) still reads 0; an ordinary edit must keep the original
 		// creation time, but a 0 is healed from this write.
-		if _, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at, visibility, title, kind)
-			VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), NULLIF(?, ''), 'public'), ?, ?)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at, visibility, title, kind, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), NULLIF(?, ''), 'public'), ?, ?, ?)
 			ON CONFLICT (key) DO UPDATE SET
 				data = excluded.data,
 				updated_at = excluded.updated_at,
 				visibility = CASE WHEN ? <> '' THEN ? ELSE studio_records.visibility END,
 				created_at = CASE WHEN studio_records.created_at = 0 THEN excluded.created_at ELSE studio_records.created_at END,
 				title = excluded.title,
-				kind = excluded.kind`,
+				kind = excluded.kind,
+				status = excluded.status`,
 			record.Key, record.UserID, record.Store, record.RecordID, record.Data, createdAt, record.UpdatedAt,
-			record.Visibility, record.CreateVisibility, record.Title, record.Kind, record.Visibility, record.Visibility); err != nil {
+			record.Visibility, record.CreateVisibility, record.Title, record.Kind, status,
+			record.Visibility, record.Visibility); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM record_chunks WHERE record_key = ?`, record.Key); err != nil {
@@ -570,10 +595,14 @@ func (d *DB) InsertRecordIfAbsent(ctx context.Context, record StudioRecord, chun
 		if createdAt <= 0 {
 			createdAt = record.UpdatedAt
 		}
-		result, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at, visibility, title, kind)
-			VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), NULLIF(?, ''), 'public'), ?, ?) ON CONFLICT (key) DO NOTHING`,
+		status := record.Status
+		if status == "" {
+			status = WorkStatusUnknown
+		}
+		result, err := tx.ExecContext(ctx, `INSERT INTO studio_records (key, user_id, store, record_id, data, created_at, updated_at, visibility, title, kind, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), NULLIF(?, ''), 'public'), ?, ?, ?) ON CONFLICT (key) DO NOTHING`,
 			record.Key, record.UserID, record.Store, record.RecordID, record.Data, createdAt, record.UpdatedAt,
-			record.Visibility, record.CreateVisibility, record.Title, record.Kind)
+			record.Visibility, record.CreateVisibility, record.Title, record.Kind, status)
 		if err != nil {
 			return err
 		}
@@ -602,10 +631,15 @@ func (d *DB) InsertRecordIfAbsent(ctx context.Context, record StudioRecord, chun
 	return inserted, err
 }
 
-func (d *DB) UpdateRecordData(ctx context.Context, key, userID, storeName string, expectedUpdatedAt int64, data string) (bool, error) {
-	result, err := d.ExecContext(ctx, `UPDATE studio_records SET data = ?, updated_at = ?
+// UpdateRecordData replaces one record body. The status argument refreshes
+// the work status projection; an empty value resets it to unknown.
+func (d *DB) UpdateRecordData(ctx context.Context, key, userID, storeName string, expectedUpdatedAt int64, data string, status string) (bool, error) {
+	if status == "" {
+		status = WorkStatusUnknown
+	}
+	result, err := d.ExecContext(ctx, `UPDATE studio_records SET data = ?, status = ?, updated_at = ?
 		WHERE key = ? AND user_id = ? AND store = ? AND updated_at = ?`,
-		data, time.Now().UnixMilli(), key, userID, storeName, expectedUpdatedAt)
+		data, status, time.Now().UnixMilli(), key, userID, storeName, expectedUpdatedAt)
 	if err != nil {
 		return false, err
 	}
@@ -620,6 +654,7 @@ type WorkRecordUpdate struct {
 	Data       string
 	Title      string
 	Kind       string
+	Status     string
 	Visibility string
 	Chunks     []RecordChunk
 }
@@ -631,8 +666,12 @@ type WorkRecordUpdate struct {
 func (d *DB) UpdateWorkRecord(ctx context.Context, key, userID string, expectedUpdatedAt int64, update WorkRecordUpdate) (bool, error) {
 	updated := false
 	err := d.InTx(ctx, func(tx *Tx) error {
-		query := `UPDATE studio_records SET data = ?, title = ?, kind = ?, updated_at = ?`
-		args := []any{update.Data, update.Title, update.Kind, time.Now().UnixMilli()}
+		status := update.Status
+		if status == "" {
+			status = WorkStatusUnknown
+		}
+		query := `UPDATE studio_records SET data = ?, title = ?, kind = ?, status = ?, updated_at = ?`
+		args := []any{update.Data, update.Title, update.Kind, status, time.Now().UnixMilli()}
 		if update.Visibility != "" {
 			query += `, visibility = ?`
 			args = append(args, update.Visibility)

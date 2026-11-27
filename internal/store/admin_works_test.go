@@ -181,6 +181,47 @@ func TestBackfillRecordMetaReadsPrefixesAndChunks(t *testing.T) {
 	}
 }
 
+func TestBackfillRecordMetaFillsTheStatusProjection(t *testing.T) {
+	ctx := context.Background()
+	db := testDB(t)
+	insertUser(t, db, "u1")
+	now := int64(100)
+	insert := func(key, data string) {
+		if _, err := db.ExecContext(ctx, `INSERT INTO studio_records
+			(key, user_id, store, record_id, data, created_at, updated_at, visibility)
+			VALUES (?, 'u1', 'assets', ?, ?, ?, ?, 'public')`, key, key[:8], data, now, now); err != nil {
+			t.Fatalf("insert %s: %v", key, err)
+		}
+	}
+	insert(recordKey(0), `{"id":"a","kind":"image","status":"completed","prompt":"x"}`)
+	insert(recordKey(1), `{"id":"b","kind":"image","status":"pending","prompt":"x"}`)
+
+	// A row that already carries a title and kind from an earlier backfill
+	// must still get its status filled in.
+	if _, err := db.ExecContext(ctx, `UPDATE studio_records SET title = 'Old', kind = 'image'
+		WHERE key = ?`, recordKey(2)); err != nil {
+		t.Fatalf("prepare: %v", err)
+	}
+	insert(recordKey(2), `{"id":"c","kind":"image","status":"failed","prompt":"x"}`)
+
+	if err := db.BackfillRecordMeta(ctx); err != nil {
+		t.Fatalf("backfill: %v", err)
+	}
+	for key, want := range map[string]string{
+		recordKey(0): "completed",
+		recordKey(1): "pending",
+		recordKey(2): "failed",
+	} {
+		var status string
+		if err := db.QueryRowContext(ctx, `SELECT status FROM studio_records WHERE key = ?`, key).Scan(&status); err != nil {
+			t.Fatalf("read %s: %v", key, err)
+		}
+		if status != want {
+			t.Fatalf("%s status = %q, want %q", key, status, want)
+		}
+	}
+}
+
 func TestEnsureSystemUserIsHiddenFromUserManagement(t *testing.T) {
 	ctx := context.Background()
 	db := testDB(t)

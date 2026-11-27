@@ -153,6 +153,62 @@ func boolField(input map[string]any, name string, fallback bool) bool {
 	return flag
 }
 
+// bannerUploadPrefix marks a cover that lives in the media store.
+const bannerUploadPrefix = "upload:"
+
+// bannerUploadMax keeps a cover small enough to serve as a band.
+const bannerUploadMax = 4 * 1024 * 1024
+
+// bannerThemes lists the preset cover tones the client offers.
+var bannerThemes = map[string]bool{
+	"sand": true, "sky": true, "mint": true, "lilac": true, "dusk": true, "slate": true,
+}
+
+// bannerIDRE matches the uuid stored after "upload:" for an uploaded cover.
+var bannerIDRE = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
+
+// errBannerInvalid marks a cover the owner picked that cannot be used.
+var errBannerInvalid = errors.New("banner invalid")
+
+// resolveBanner validates a cover the owner picked. An empty value clears the
+// cover; a preset tone is kept as-is; an upload must point at an image the
+// account owns and that was stored as a cover.
+func (s *Server) resolveBanner(ctx context.Context, userID string, raw any, current string) (string, error) {
+	if raw == nil {
+		return current, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", errBannerInvalid
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if bannerThemes[value] {
+		return value, nil
+	}
+	if !strings.HasPrefix(value, bannerUploadPrefix) {
+		return "", errBannerInvalid
+	}
+	id := strings.ToLower(strings.TrimPrefix(value, bannerUploadPrefix))
+	if !bannerIDRE.MatchString(id) {
+		return "", errBannerInvalid
+	}
+	row, err := s.DB.MediaByID(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return "", errBannerInvalid
+	}
+	if err != nil {
+		return "", err
+	}
+	if row.Owner != "user:"+userID || row.AttachmentID != "banner" ||
+		row.Size > bannerUploadMax || !strings.HasPrefix(row.Mime, "image/") {
+		return "", errBannerInvalid
+	}
+	return bannerUploadPrefix + id, nil
+}
+
 func (s *Server) handleProfileGet(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.requireUser(w, r)
 	if !ok {
@@ -166,12 +222,16 @@ func (s *Server) handleProfileGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"profile": profilePayload(profile)})
 }
 
+// profilePayload is only ever sent to the owner, so the cover keeps its
+// stored form: an upload stays "upload:<uuid>" and can be saved back as is.
+// Visitors get the published form from handlePublicProfile instead.
 func profilePayload(profile store.Profile) map[string]any {
 	return map[string]any{
 		"handle": profile.Handle, "bio": profile.Bio, "website": profile.Website,
 		"showWorks": profile.ShowWorks, "showFavorites": profile.ShowFavorites,
 		"showBio": profile.ShowBio, "showJoined": profile.ShowJoined,
 		"showFollows": profile.ShowFollows, "allowMessages": profile.AllowMessages,
+		"banner": profile.Banner,
 	}
 }
 
@@ -222,6 +282,19 @@ func (s *Server) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	banner := current.Banner
+	if raw, exists := input["banner"]; exists {
+		resolved, err := s.resolveBanner(r.Context(), user.ID, raw, current.Banner)
+		if err != nil {
+			if errors.Is(err, errBannerInvalid) {
+				writeError(w, http.StatusBadRequest, "封面选择无效。")
+				return
+			}
+			writeError(w, http.StatusServiceUnavailable, "个人资料暂不可用，请稍后重试。")
+			return
+		}
+		banner = resolved
+	}
 	next := store.Profile{
 		UserID: user.ID, Handle: handle, Bio: bio, Website: website,
 		ShowWorks:     boolField(input, "showWorks", current.ShowWorks),
@@ -230,6 +303,7 @@ func (s *Server) handleProfileSave(w http.ResponseWriter, r *http.Request) {
 		ShowJoined:    boolField(input, "showJoined", current.ShowJoined),
 		ShowFollows:   boolField(input, "showFollows", current.ShowFollows),
 		AllowMessages: boolField(input, "allowMessages", current.AllowMessages),
+		Banner:        banner,
 		UpdatedAt:     time.Now().UnixMilli(),
 	}
 	if err := s.DB.SaveProfile(r.Context(), next); err != nil {
@@ -289,6 +363,7 @@ func (s *Server) handlePublicProfile(w http.ResponseWriter, r *http.Request) {
 		"id":     profile.Handle,
 		"name":   gallery.PublicAuthorName(store.DisplayName(name, owner.Email)),
 		"avatar": gallery.PublicAvatar(profile.UserID, avatar),
+		"banner": gallery.PublicBanner(profile.UserID, profile.Banner),
 		"self":   self, "followingUser": following, "blocked": blocked,
 	}
 	if self || !blocked {
@@ -311,6 +386,27 @@ func (s *Server) handlePublicProfile(w http.ResponseWriter, r *http.Request) {
 		result["canMessage"] = (profile.AllowMessages || self) && !blocked && !self
 		result["works"] = profile.ShowWorks || self
 		result["favorites"] = (profile.ShowFavorites || self) && !blocked
+		if profile.ShowWorks || self {
+			stats, err := s.DB.AccountGalleryStats(r.Context(), profile.UserID)
+			if err != nil {
+				writeError(w, http.StatusServiceUnavailable, "个人主页暂不可用，请稍后重试。")
+				return
+			}
+			result["workCount"] = stats.Works
+			result["plays"] = stats.Plays
+			result["likes"] = stats.Likes
+			result["kindCounts"] = map[string]int64{
+				"image": stats.Images, "video": stats.Videos, "music": stats.Music,
+			}
+		}
+		if (profile.ShowFavorites || self) && !blocked {
+			favoriteCount, err := s.DB.PublicFavoriteCount(r.Context(), profile.UserID)
+			if err != nil {
+				writeError(w, http.StatusServiceUnavailable, "个人主页暂不可用，请稍后重试。")
+				return
+			}
+			result["favoriteCount"] = favoriteCount
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"profile": result})
 }

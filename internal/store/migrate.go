@@ -12,6 +12,10 @@ import (
 //go:embed migrations/sqlite/*.sql migrations/postgres/*.sql
 var migrationFS embed.FS
 
+// migrationLockKey serializes PostgreSQL schema checks across replicas.
+// SQLite serializes writes itself; the advisory lock is PostgreSQL-only.
+const migrationLockKey = "olai-schema-migrations"
+
 func (d *DB) migrate(ctx context.Context) error {
 	dialect := "sqlite"
 	if d.Postgres() {
@@ -34,11 +38,24 @@ func (d *DB) migrate(ctx context.Context) error {
 		}
 	}
 	sort.Strings(names)
+	if d.Postgres() {
+		return d.InTx(ctx, func(tx *Tx) error {
+			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext(?))`, migrationLockKey); err != nil {
+				return fmt.Errorf("获取迁移锁失败：%w", err)
+			}
+			return d.applyMigrations(ctx, tx, dialect, names)
+		})
+	}
+	return d.InTx(ctx, func(tx *Tx) error {
+		return d.applyMigrations(ctx, tx, dialect, names)
+	})
+}
+
+func (d *DB) applyMigrations(ctx context.Context, tx *Tx, dialect string, names []string) error {
 	for index, name := range names {
 		version := index + 1
 		var exists int
-		err := d.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&exists)
-		if err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version = ?`, version).Scan(&exists); err != nil {
 			return err
 		}
 		if exists > 0 {
@@ -48,7 +65,7 @@ func (d *DB) migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		err = d.InTx(ctx, func(tx *Tx) error {
+		if err := func() error {
 			for _, statement := range splitStatements(string(body)) {
 				if _, err := tx.ExecContext(ctx, statement); err != nil {
 					return fmt.Errorf("迁移 %s 失败：%w", name, err)
@@ -57,8 +74,7 @@ func (d *DB) migrate(ctx context.Context) error {
 			_, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`,
 				version, time.Now().UnixMilli())
 			return err
-		})
-		if err != nil {
+		}(); err != nil {
 			return err
 		}
 	}

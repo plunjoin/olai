@@ -101,7 +101,8 @@ func (s *Server) handleGalleryWorkMeta(w http.ResponseWriter, r *http.Request) {
 		chunks[i].RecordKey = key
 	}
 	updated, err := s.DB.UpdateWorkRecord(ctx, key, user.ID, record.UpdatedAt, store.WorkRecordUpdate{
-		Data: direct, Title: workRecordTitle(scrubbed), Kind: workRecordKind(scrubbed), Chunks: chunks,
+		Data: direct, Title: workRecordTitle(scrubbed), Kind: workRecordKind(scrubbed),
+		Status: workRecordStatus(scrubbed), Chunks: chunks,
 	})
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "作品信息暂不可用，请稍后重试。")

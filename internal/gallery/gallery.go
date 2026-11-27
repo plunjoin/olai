@@ -1088,6 +1088,34 @@ func PublicAvatar(userID, avatar string) string {
 	return publicAvatar(userID, avatar)
 }
 
+// publicBannerThemes mirrors the preset cover tones in lib/profile.ts.
+var publicBannerThemes = map[string]bool{
+	"sand": true, "sky": true, "mint": true,
+	"lilac": true, "dusk": true, "slate": true,
+}
+
+// publicBanner keeps a preset tone as-is. An uploaded cover is rewritten to
+// the public gallery media route, because /api/media only serves the owner.
+func publicBanner(userID, banner string) string {
+	if publicBannerThemes[banner] {
+		return banner
+	}
+	const prefix = "upload:"
+	if !strings.HasPrefix(banner, prefix) {
+		return ""
+	}
+	id := strings.ToLower(strings.TrimPrefix(banner, prefix))
+	if !avatarIDPattern.MatchString(id) {
+		return ""
+	}
+	return "upload:gallery." + userID + "." + id
+}
+
+// PublicBanner is the cover value the portal can render for any visitor.
+func PublicBanner(userID, banner string) string {
+	return publicBanner(userID, banner)
+}
+
 func publicAuthor(userID, name, avatar, handle string) map[string]any {
 	out := map[string]any{"name": PublicAuthorName(name), "avatar": publicAvatar(userID, avatar)}
 	if handle != "" {
@@ -1326,6 +1354,49 @@ func (m *Manager) ServeAvatar(ctx context.Context, w http.ResponseWriter, r *htt
 		return &media.Error{Status: 503, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}
 	}
 	if row.Owner != "user:"+userID || row.AttachmentID != "avatar" || row.Size > 2*1024*1024 || !strings.HasPrefix(row.Mime, "image/") {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	return m.Media.ServeMedia(ctx, w, r, identity, row)
+}
+
+// ServeBanner streams the cover band an account chose, so visitors see the
+// same picture the owner sees. It only serves a media row the account's
+// profile currently points at, and only one that was stored as a cover image.
+func (m *Manager) ServeBanner(ctx context.Context, w http.ResponseWriter, r *http.Request, identity media.Identity) error {
+	if err := m.Media.AssertOrigin(r, identity.Origin, false); err != nil {
+		return err
+	}
+	if !m.Media.Enabled() {
+		return &media.Error{Status: 503, Code: "MEDIA_UNAVAILABLE", Message: "私有媒体服务暂不可用。"}
+	}
+	raw := r.PathValue("id")
+	dot := strings.LastIndex(raw, ".")
+	if dot > 0 {
+		raw = raw[:dot] + strings.ToLower(raw[dot:])
+	}
+	match := publishedAvatarID.FindStringSubmatch(raw)
+	if match == nil {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	userID, mediaID := match[1], match[2]
+	profile, err := m.DB.ProfileByUser(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	if err != nil {
+		return &media.Error{Status: 503, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}
+	}
+	if profile.Banner != "upload:"+mediaID {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	row, err := m.DB.MediaByID(ctx, mediaID)
+	if errors.Is(err, store.ErrNotFound) {
+		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
+	}
+	if err != nil {
+		return &media.Error{Status: 503, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}
+	}
+	if row.Owner != "user:"+userID || row.AttachmentID != "banner" || row.Size > 4*1024*1024 || !strings.HasPrefix(row.Mime, "image/") {
 		return errorf(404, "MEDIA_NOT_FOUND", "媒体不存在或无权访问。")
 	}
 	return m.Media.ServeMedia(ctx, w, r, identity, row)

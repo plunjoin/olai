@@ -24,7 +24,10 @@ type Profile struct {
 	ShowJoined    bool
 	ShowFollows   bool
 	AllowMessages bool
-	UpdatedAt     int64
+	// Banner is the cover band above the avatar: a preset tone id or
+	// "upload:<uuid>" pointing at a media object the account owns.
+	Banner    string
+	UpdatedAt int64
 }
 
 // DefaultProfile fills the privacy defaults for an account that has never
@@ -40,7 +43,8 @@ func scanProfile(row interface{ Scan(...any) error }) (*Profile, error) {
 	var profile Profile
 	var showWorks, showFavorites, showBio, showJoined, showFollows, allowMessages int
 	err := row.Scan(&profile.UserID, &profile.Handle, &profile.Bio, &profile.Website,
-		&showWorks, &showFavorites, &showBio, &showJoined, &showFollows, &allowMessages, &profile.UpdatedAt)
+		&showWorks, &showFavorites, &showBio, &showJoined, &showFollows, &allowMessages,
+		&profile.Banner, &profile.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -56,7 +60,7 @@ func scanProfile(row interface{ Scan(...any) error }) (*Profile, error) {
 	return &profile, nil
 }
 
-const profileColumns = `user_id, handle, bio, website, show_works, show_favorites, show_bio, show_joined, show_follows, allow_messages, updated_at`
+const profileColumns = `user_id, handle, bio, website, show_works, show_favorites, show_bio, show_joined, show_follows, allow_messages, banner, updated_at`
 
 func (d *DB) ProfileByUser(ctx context.Context, userID string) (*Profile, error) {
 	return scanProfile(d.QueryRowContext(ctx, `SELECT `+profileColumns+` FROM user_profiles WHERE user_id = ?`, userID))
@@ -70,18 +74,18 @@ func (d *DB) ProfileByHandle(ctx context.Context, handle string) (*Profile, erro
 // unique; a conflicting handle comes back as a constraint error.
 func (d *DB) SaveProfile(ctx context.Context, profile Profile) error {
 	_, err := d.ExecContext(ctx, `INSERT INTO user_profiles
-		(user_id, handle, bio, website, show_works, show_favorites, show_bio, show_joined, show_follows, allow_messages, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(user_id, handle, bio, website, show_works, show_favorites, show_bio, show_joined, show_follows, allow_messages, banner, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id) DO UPDATE SET
 			handle = excluded.handle, bio = excluded.bio, website = excluded.website,
 			show_works = excluded.show_works, show_favorites = excluded.show_favorites,
 			show_bio = excluded.show_bio, show_joined = excluded.show_joined,
 			show_follows = excluded.show_follows, allow_messages = excluded.allow_messages,
-			updated_at = excluded.updated_at`,
+			banner = excluded.banner, updated_at = excluded.updated_at`,
 		profile.UserID, profile.Handle, profile.Bio, profile.Website,
 		boolInt(profile.ShowWorks), boolInt(profile.ShowFavorites), boolInt(profile.ShowBio),
 		boolInt(profile.ShowJoined), boolInt(profile.ShowFollows), boolInt(profile.AllowMessages),
-		profile.UpdatedAt)
+		profile.Banner, profile.UpdatedAt)
 	return err
 }
 
@@ -105,8 +109,8 @@ func (d *DB) EnsureProfile(ctx context.Context, userID, handle string) (string, 
 			next = base + "-" + strconv.Itoa(attempt+1)
 		}
 		_, err = d.ExecContext(ctx, `INSERT INTO user_profiles
-			(user_id, handle, bio, website, show_works, show_favorites, show_bio, show_joined, show_follows, allow_messages, updated_at)
-			VALUES (?, ?, '', '', 1, 0, 1, 1, 1, 1, ?)
+			(user_id, handle, bio, website, show_works, show_favorites, show_bio, show_joined, show_follows, allow_messages, banner, updated_at)
+			VALUES (?, ?, '', '', 1, 0, 1, 1, 1, 1, '', ?)
 			ON CONFLICT (user_id) DO NOTHING`, userID, next, now)
 		if err != nil && !IsUniqueViolation(err) {
 			return "", err

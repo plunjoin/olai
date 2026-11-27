@@ -11,12 +11,16 @@ export interface PrivacySettings {
   showJoined: boolean;
   showFollows: boolean;
   allowMessages: boolean;
+  /** 主页头像上方的封面：预设色 id 或 upload:<uuid>。 */
+  banner: string;
 }
 
 export interface PublicProfile {
   id: string;
   name: string;
   avatar: string;
+  /** 主页头像上方的封面：预设色 id 或 upload:<uuid>。 */
+  banner?: string;
   bio?: string;
   website?: string;
   joinedAt?: number;
@@ -28,6 +32,16 @@ export interface PublicProfile {
   canMessage: boolean;
   works: boolean;
   favorites: boolean;
+  /** Published works the owner has. Absent when the works are hidden. */
+  workCount?: number;
+  /** Times the owner's published works were opened. */
+  plays?: number;
+  /** Favorites the owner's published works received. */
+  likes?: number;
+  /** Favorites the owner shows publicly. */
+  favoriteCount?: number;
+  /** Published works split by kind. */
+  kindCounts?: { image: number; video: number; music: number };
 }
 
 export interface FavoriteFolder { id: string; name: string; count: number }

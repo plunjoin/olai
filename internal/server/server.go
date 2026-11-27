@@ -131,6 +131,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/gallery", s.handleGallery)
 	mux.HandleFunc("GET /api/gallery/media/{id}", s.handleGalleryMedia)
 	mux.HandleFunc("GET /api/gallery/avatar/{id}", s.handleGalleryAvatar)
+	mux.HandleFunc("GET /api/gallery/banner/{id}", s.handleGalleryBanner)
 	mux.HandleFunc("PUT /api/gallery/{id}/favorite", s.handleGalleryFavorite)
 	mux.HandleFunc("DELETE /api/gallery/{id}/favorite", s.handleGalleryFavorite)
 	mux.HandleFunc("POST /api/gallery/favorites/import", s.handleGalleryFavoritesImport)

@@ -378,7 +378,13 @@ func (s *Server) migrateRecords(w http.ResponseWriter, r *http.Request, user *st
 		if string(before) == string(after) {
 			continue
 		}
-		ok, err := s.DB.UpdateRecordData(ctx, record.Key, user.ID, storeName, record.UpdatedAt, string(after))
+		status := store.WorkStatusUnknown
+		if storeName == "assets" {
+			if updated, ok := updatedValue.(map[string]any); ok {
+				status = workRecordStatus(updated)
+			}
+		}
+		ok, err := s.DB.UpdateRecordData(ctx, record.Key, user.ID, storeName, record.UpdatedAt, string(after), status)
 		if err != nil || !ok {
 			failures = append(failures, "记录「"+record.RecordID+"」的附件尚未迁移，原始记录已保留，请稍后重试。")
 			continue
@@ -412,6 +418,18 @@ func splitRecord(value []byte) (string, []store.RecordChunk) {
 		start = end
 	}
 	return "", chunks
+}
+
+// workRecordStatus reads the work status that is mirrored into a column so
+// the portal can count published works without reading record bodies. An
+// unknown status is reported as store.WorkStatusUnknown.
+func workRecordStatus(value map[string]any) string {
+	status, _ := value["status"].(string)
+	switch status {
+	case "pending", "completed", "failed":
+		return status
+	}
+	return store.WorkStatusUnknown
 }
 
 // workRecordKind reads the asset kind that is mirrored into the admin listing.
@@ -530,6 +548,7 @@ func (s *Server) saveRecord(w http.ResponseWriter, r *http.Request, user *store.
 		// older client is still searchable by the name people see.
 		record.Kind = workRecordKind(recordMap)
 		record.Title = workRecordTitle(recordMap)
+		record.Status = workRecordStatus(recordMap)
 	}
 	directData, chunks := splitRecord(serialized)
 	record.Data = directData

@@ -297,6 +297,23 @@ func (s *Server) handleGalleryAvatar(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleGalleryBanner(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	identity, err := s.Media.Identify(ctx, w, r)
+	if err != nil {
+		mediaFailure(w, r, err)
+		return
+	}
+	if err := s.Gallery.ServeBanner(ctx, w, r, identity); err != nil {
+		var safe *media.Error
+		if errors.As(err, &safe) {
+			media.WriteFailure(w, safe, r.Method == http.MethodHead)
+			return
+		}
+		media.WriteFailure(w, &media.Error{Status: http.StatusServiceUnavailable, Code: "GALLERY_UNAVAILABLE", Message: "公开作品暂不可用。"}, r.Method == http.MethodHead)
+	}
+}
+
 func (s *Server) handleGalleryMedia(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	identity, err := s.Media.Identify(ctx, w, r)
