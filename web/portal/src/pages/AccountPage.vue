@@ -1,5 +1,10 @@
 <template>
   <div class="plaza-shell profile-shell">
+    <div v-if="toastText" class="toast" role="status">
+      <CircleAlert :size="17" /><span>{{ toastText }}</span>
+      <button :aria-label="t('关闭通知')" @click="clearToast"><X :size="15" /></button>
+    </div>
+    <DialogHost />
     <PlazaRail :user="user" :short-film="shortFilm" />
     <div class="plaza-main">
       <header class="profile-bar">
@@ -144,6 +149,8 @@
                 </section>
               </div>
             </div>
+
+            <MemoryPanel :cloud="Boolean(user)" variant="account" />
           </div>
         </template>
       </main>
@@ -163,9 +170,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { ArrowLeft, Check, CircleAlert, CircleCheck, Copy, Images, ImageUp, LayoutGrid, LogOut, Pencil, RefreshCw, Sparkles } from 'lucide-vue-next';
+import { ArrowLeft, Check, CircleAlert, CircleCheck, Copy, Images, ImageUp, LayoutGrid, LogOut, Pencil, RefreshCw, Sparkles, X } from 'lucide-vue-next';
 import AccountAvatar from '../components/AccountAvatar.vue';
 import BannerEditor from '../components/BannerEditor.vue';
+import DialogHost from '../components/DialogHost.vue';
+import MemoryPanel from '../components/MemoryPanel.vue';
 import ProfileDialog from '../components/ProfileDialog.vue';
 import PlazaRail from '../components/plaza/PlazaRail.vue';
 import { accountRequest, type AccountState } from '../lib/account';
@@ -173,6 +182,7 @@ import { flushStorage, initializeStorage, syncGuestRecords } from '../lib/storag
 import { avatarTheme, bannerTheme, profileDisplayName, uploadedBannerURL } from '../lib/profile';
 import { t } from '../lib/i18n';
 import { getMyProfile, saveMyProfile, type PrivacySettings } from '../lib/people';
+import { clearToast, toastText } from '../composables/ui';
 
 const account = ref<AccountState | null>(null);
 const privacy = ref<PrivacySettings>({ handle: '', bio: '', website: '', showWorks: true, showFavorites: false, showBio: true, showJoined: true, showFollows: true, allowMessages: true, banner: '' });

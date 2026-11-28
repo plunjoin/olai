@@ -154,6 +154,24 @@
 .account-card-head span { font-size: 11.5px; color: var(--plaza-muted, #7f7a70); }
 .account-note { color: var(--plaza-ink-soft, #4f4a42); font-size: 12px; line-height: 1.75; }
 
+/* Long-term memory panel on the account page. The shared memory styles use the
+   cool settings palette, so map them onto the account page's paper tones. */
+.account-memory { margin-top: 16px; }
+.account-memory .account-card-head h2 { display: flex; align-items: center; gap: 7px; }
+.account-memory .account-note { margin: 0 0 14px; }
+.account-memory .memory-toggle-row { border-color: var(--plaza-line, #e8e3da); background: var(--plaza-bg, #f7f6f2); }
+.account-memory .memory-toggle-row:hover { border-color: var(--plaza-ink-soft, #4f4a42); background: var(--plaza-soft, #efebe4); }
+.account-memory .memory-toggle-copy strong { color: var(--plaza-ink, #1e1c19); }
+.account-memory .memory-toggle-copy small { color: var(--plaza-muted, #7f7a70); }
+.account-memory .memory-add input { border-color: var(--plaza-line, #e8e3da); background: var(--plaza-surface, #fff); color: var(--plaza-ink, #1e1c19); }
+.account-memory .memory-item { border-color: var(--plaza-line, #e8e3da); background: var(--plaza-surface, #fff); }
+.account-memory .memory-item.is-editing { background: var(--plaza-bg, #f7f6f2); }
+.account-memory .memory-item-body p { color: var(--plaza-ink-soft, #4f4a42); }
+.account-memory .memory-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.account-memory .memory-empty { border-color: var(--plaza-line, #e8e3da); background: var(--plaza-bg, #f7f6f2); color: var(--plaza-muted, #7f7a70); }
+.account-memory .memory-empty svg { color: var(--plaza-muted, #7f7a70); }
+.account-memory .memory-save-hint { color: var(--plaza-muted, #7f7a70); }
+
 /* The signed-in badge rides next to the display name in the hero. */
 .account-badge {
   margin-left: 10px;
@@ -259,6 +277,7 @@
   .auth-mobile-brand { display: block; }
   .auth-card { padding: 26px 22px 22px; border-radius: 20px; }
   .account-columns { grid-template-columns: minmax(0, 1fr); }
+  .account-memory .memory-list { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 720px) {

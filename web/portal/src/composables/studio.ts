@@ -14,7 +14,8 @@ import { imageResolutionWarning, readImageResolution } from '../lib/imageResolut
 import { referenceImageBlob } from '../lib/imageReference';
 import { captureVideoCover } from '../lib/videoCover';
 import { DEFAULT_SETTINGS, type Asset, type Conversation, type ConversationKind, type CreationMeta, type Message, type MediaKind, type PublicModel, type Settings } from '../lib/types';
-import { DEFAULT_MEMORY_STATE, extractMemories, loadMemoryState, type MemoryState } from '../lib/memory';
+import { extractMemories, loadMemoryState } from '../lib/memory';
+import { memoryState } from './memory';
 import { loadStatus, DEFAULT_STATUS, type StatusState } from '../lib/status';
 import { t } from '../lib/i18n';
 import { generateTitle } from '../lib/titles';
@@ -26,8 +27,7 @@ export const ready = ref(false);
 export const loadError = ref('');
 export const account = ref<AccountState>({ user: null, generationLimit: 1 });
 export const settings = ref<Settings>({ ...DEFAULT_SETTINGS });
-/** Account-scoped long-term memory, shared by the settings dialog and chat. */
-export const memoryState = ref<MemoryState>({ ...DEFAULT_MEMORY_STATE, memories: [] });
+export { memoryState } from './memory';
 export const conversations = ref<Conversation[]>([]);
 export const assets = ref<Asset[]>([]);
 export const activeId = ref('');
