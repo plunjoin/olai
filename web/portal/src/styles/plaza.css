@@ -148,7 +148,7 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
 .plaza-search:hover { background: var(--plaza-soft-hover); }
 .plaza-search:focus-within {
   background: #fff;
-  border-color: var(--plaza-ink);
+  border-color: transparent;
   box-shadow: 0 10px 30px -22px rgba(30, 28, 25, 0.6);
   color: var(--plaza-ink);
 }
@@ -161,6 +161,8 @@ body.plaza-body::-webkit-scrollbar-thumb:hover { background: rgba(30, 28, 25, 0.
   font-size: 14px;
   background: transparent;
 }
+/* 容器已有 :focus-within 反馈，避免输入框再叠焦点轮廓、描边和光晕 */
+.plaza-search input:focus-visible { outline: none; border-color: transparent; box-shadow: none; }
 .plaza-search input::placeholder { color: #938c81; }
 .plaza-search input::-webkit-search-cancel-button { display: none; }
 .plaza-search-clear {
