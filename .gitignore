@@ -3,6 +3,7 @@ wf_modules/
 dist/
 scripts/*
 !scripts/deploy-docker.sh
+!scripts/verify-oauth-redirect.py
 tests/
 .qa/
 /temp/

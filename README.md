@@ -221,6 +221,17 @@ go run .
 
 **回调地址必须逐字符一致**：Google 校验 redirect_uri 时不做路径前缀匹配，末尾斜杠、有无路径都算不同地址，不一致只会得到一个 `redirect_uri_mismatch` 错误页。后台“系统设置 → GitHub 登录 / Google 登录”的 Client ID 一栏下方会直接显示本服务实际使用的回调地址（带复制按钮），把它原样填进第三方平台即可，不必自行推算。反向代理部署时该地址由 `SITE_ORIGIN` 决定，先确认 `SITE_ORIGIN` 与浏览器地址栏的公开域名一致。
 
+改完 Cloud Console 后可以立刻自测，不需要真的走一遍登录：
+
+```bash
+python scripts/verify-oauth-redirect.py \
+  --client-id 你的CLIENT_ID \
+  --redirect-uri https://你的域名/api/auth/google/callback \
+  --proxy http://127.0.0.1:7897
+```
+
+输出 `结果 : ok` 表示该地址已被接受；`mismatch` 表示控制台里没有这一条（核对是否加在了同一个 OAuth 客户端、是否落在“已获授权的重定向 URI”而不是“已获授权的 JavaScript 来源”）；`invalid_client` 表示客户端 ID 填错了。脚本只做一次无登录的授权请求，不消耗配额也不需要真实账号；本机需要代理时加 `--proxy`（或设置 `HTTPS_PROXY`），否则省略。
+
 若服务器无法直连 `oauth2.googleapis.com` / `openidconnect.googleapis.com`，可设置 `GOOGLE_PROXY`（留空读取 `HTTPS_PROXY` / `https_proxy`）；该代理只影响服务端换取令牌和读取用户信息，不改变浏览器到 `accounts.google.com` 的连接。**Google 登录页在中国大陆普通网络不可访问**，因此它只能作为海外用户的可选登录方式，不能替代邮箱密码或 GitHub 登录。
 
 ### 管理后台
